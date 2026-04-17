@@ -37,7 +37,6 @@
     "helmet": "^8.0.0",
     "iron-session": "^8.0.4",
     "nestjs-i18n": "^10.5.1",
-    "node-saml": "^5.0.0",
     "openid-client": "^5.7.0",
     "pino": "^9.5.0",
     "prisma": "5.22.0",

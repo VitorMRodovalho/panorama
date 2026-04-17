@@ -1,0 +1,29 @@
+{
+  "name": "@panorama/ui-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared React component kit (Tailwind + shadcn/ui) for web and admin apps.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "echo 'nothing to lint yet'",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "peerDependencies": {
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.16",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

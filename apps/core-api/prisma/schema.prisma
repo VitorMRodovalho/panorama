@@ -11,15 +11,20 @@
 //     in `tenant_memberships`.
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["multiSchema", "views"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public", "panorama_system"]
 }
+
+// NOTE: the multi-schema preview is deliberately not enabled yet. Once we
+// introduce genuinely cross-schema tables (e.g., cluster-wide config that
+// operators shouldn't touch with normal migrations), we'll flip
+// previewFeatures = ["multiSchema"] and move SystemSetting to
+// `panorama_system`. For the 0.1 scaffold, everything lives in `public` so
+// migrations stay simple.
 
 // -----------------------------------------------------------------------------
 // Global (non-tenant) entities
@@ -299,6 +304,5 @@ model SystemSetting {
   value     Json
   updatedAt DateTime @updatedAt
 
-  @@schema("panorama_system")
   @@map("system_settings")
 }
