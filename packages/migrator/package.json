@@ -1,0 +1,34 @@
+{
+  "name": "@panorama/migrator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CLI that reads Snipe-IT (API) + SnipeScheduler-FleetManager (MySQL dump) and produces Panorama fixtures.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "panorama-migrate": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "cli": "tsx src/cli.ts",
+    "test": "vitest run",
+    "lint": "echo 'nothing to lint yet'",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@panorama/shared": "workspace:*",
+    "commander": "^12.1.0",
+    "pino": "^9.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

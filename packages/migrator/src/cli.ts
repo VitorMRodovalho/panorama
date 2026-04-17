@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { runInventory } from './commands/inventory.js';
+import { runMigrate } from './commands/migrate.js';
+
+const program = new Command();
+
+program
+  .name('panorama-migrate')
+  .description('Read Snipe-IT (+ optional FleetManager dump) and produce Panorama fixtures.')
+  .version('0.0.0');
+
+program
+  .command('inventory')
+  .description('Count entities in a Snipe-IT install and flag migration risks')
+  .requiredOption('--snipeit-url <url>', 'Snipe-IT base URL (no trailing /api/v1)')
+  .requiredOption('--snipeit-token <token>', 'Snipe-IT API token')
+  .option('--out <path>', 'Optional JSON output path')
+  .option('--page-size <n>', 'Page size for paginated endpoints', (v) => parseInt(v, 10), 100)
+  .action(async (opts) => {
+    try {
+      await runInventory({
+        snipeitUrl: opts.snipeitUrl,
+        snipeitToken: opts.snipeitToken,
+        out: opts.out,
+        pageSize: opts.pageSize,
+      });
+    } catch (err) {
+      console.error('inventory failed:', err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('migrate')
+  .description('Read Snipe-IT + optional FleetManager dump, write Panorama fixtures')
+  .requiredOption('--snipeit-url <url>', 'Snipe-IT base URL')
+  .requiredOption('--snipeit-token <token>', 'Snipe-IT API token')
+  .option('--fleetmanager-dump <path>', 'Path to SnipeScheduler-FleetManager MySQL dump')
+  .requiredOption('--out <dir>', 'Output directory for fixture JSON files')
+  .option('--dry-run', 'Produce fixtures only; do not import into Panorama', false)
+  .option('--page-size <n>', 'Page size for paginated endpoints', (v) => parseInt(v, 10), 100)
+  .action(async (opts) => {
+    try {
+      await runMigrate({
+        snipeitUrl: opts.snipeitUrl,
+        snipeitToken: opts.snipeitToken,
+        fleetmanagerDump: opts.fleetmanagerDump,
+        out: opts.out,
+        dryRun: opts.dryRun,
+        pageSize: opts.pageSize,
+      });
+    } catch (err) {
+      console.error('migrate failed:', err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program.parseAsync(process.argv).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
