@@ -1,0 +1,24 @@
+# CODEOWNERS
+# Every PR must be approved by at least one owner of the touched paths.
+# Paths earlier in this file are overridden by later matches.
+
+# Fallback owner
+*                                       @VitorMRodovalho
+
+# Governance / policy changes need extra eyes
+/LICENSE                                @VitorMRodovalho
+/SECURITY.md                            @VitorMRodovalho
+/CODE_OF_CONDUCT.md                     @VitorMRodovalho
+/docs/adr/**                            @VitorMRodovalho
+/docs/en/licensing.md                   @VitorMRodovalho
+/docs/en/trademark.md                   @VitorMRodovalho
+/docs/en/commercial-repo-playbook.md    @VitorMRodovalho
+
+# CI / security-sensitive config
+/.github/**                             @VitorMRodovalho
+/.gitleaks.toml                         @VitorMRodovalho
+/apps/core-api/prisma/**                @VitorMRodovalho
+/infra/**                               @VitorMRodovalho
+
+# i18n bundles — translation contributors allowed once we hand out review rights
+/packages/i18n/**                       @VitorMRodovalho

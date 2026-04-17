@@ -1,0 +1,27 @@
+# Custom Gitleaks config for Panorama.
+# Extends the built-in ruleset with project-specific allowlist.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "panorama-session-secret"
+description = "Panorama session secret likely committed"
+regex = '''SESSION_SECRET\s*=\s*["']?[A-Za-z0-9_\-]{32,}["']?'''
+tags = ["secret", "panorama"]
+
+[allowlist]
+description = "Panorama allowlist — intentional example/placeholder values"
+paths = [
+  '''(?i)^apps/core-api/\.env\.example$''',
+  '''(?i)^infra/docker/postgres-init\.sql$''',
+  '''(?i)^docs/.*\.md$''',
+  '''(?i)^README(\..*)?\.md$''',
+]
+regexes = [
+  '''minioadmin''',
+  '''replace-me-with-32-random-bytes-in-base64url''',
+  '''POSTGRES_PASSWORD: panorama''',
+  '''password\s*=\s*'panorama'\)''',
+  '''PASSWORD 'panorama'\s+(NO)?BYPASSRLS''',
+]

@@ -1,0 +1,304 @@
+// Panorama core schema — initial draft.
+//
+// Multi-tenancy notes (see ADR-0003):
+//   * Every tenant-owned model has `tenantId` and is filtered by Prisma
+//     middleware. The middleware adds `WHERE tenant_id = current` to every
+//     query unless the caller is in cross-tenant scope.
+//   * Postgres Row-Level Security policies duplicate the predicate at the DB
+//     layer, keyed on `app.current_tenant` session GUC. RLS policies are
+//     defined in SQL migrations (Prisma can't model them natively).
+//   * `users` and `auth_identities` are global; per-tenant membership lives
+//     in `tenant_memberships`.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema", "views"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public", "panorama_system"]
+}
+
+// -----------------------------------------------------------------------------
+// Global (non-tenant) entities
+// -----------------------------------------------------------------------------
+
+model Tenant {
+  id          String    @id @default(uuid()) @db.Uuid
+  slug        String    @unique
+  name        String
+  displayName String
+  locale      String    @default("en")
+  timezone    String    @default("UTC")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  memberships TenantMembership[]
+  assets      Asset[]
+  categories  Category[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.Citext
+  displayName  String
+  firstName    String?
+  lastName     String?
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  lastLoginAt  DateTime?
+
+  authIdentities AuthIdentity[]
+  memberships    TenantMembership[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("user_status")
+}
+
+model AuthIdentity {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  provider     String   // google, microsoft, saml, password
+  subject      String   // sub from IdP (or user.id for password)
+  emailAtLink  String
+  attributes   Json?
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+// -----------------------------------------------------------------------------
+// Tenancy membership — joins global users to tenants
+// -----------------------------------------------------------------------------
+
+model TenantMembership {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  userId       String   @db.Uuid
+  role         String   // 'super_admin' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
+  isVip        Boolean  @default(false)
+  trainingValidUntil DateTime?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("tenant_memberships")
+}
+
+// -----------------------------------------------------------------------------
+// Tenant-owned catalog primitives
+// -----------------------------------------------------------------------------
+
+model Category {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  name      String
+  kind      CategoryKind
+  eula      String?
+  checkoutAccepted Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  models    AssetModel[]
+
+  @@unique([tenantId, name, kind])
+  @@index([tenantId])
+  @@map("categories")
+}
+
+enum CategoryKind {
+  HARDWARE
+  LICENSE
+  ACCESSORY
+  CONSUMABLE
+  COMPONENT
+  VEHICLE
+  OTHER
+
+  @@map("category_kind")
+}
+
+model Manufacturer {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  name      String
+  url       String?
+  supportEmail String?
+  supportPhone String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  models    AssetModel[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("manufacturers")
+}
+
+model AssetModel {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  categoryId     String   @db.Uuid
+  manufacturerId String?  @db.Uuid
+  name           String
+  modelNumber    String?
+  imageUrl       String?
+  fieldsetId     String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
+  assets         Asset[]
+
+  @@index([tenantId])
+  @@index([categoryId])
+  @@map("asset_models")
+}
+
+// -----------------------------------------------------------------------------
+// Asset — unified across hardware, vehicles, licenses, etc.
+// -----------------------------------------------------------------------------
+
+model Asset {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  modelId        String   @db.Uuid
+  tag            String
+  name           String
+  serial         String?
+  status         AssetStatus @default(READY)
+  bookable       Boolean  @default(false)
+  locationId     String?  @db.Uuid
+  assignedUserId String?  @db.Uuid
+  customFields   Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  model          AssetModel @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  reservations   Reservation[]
+
+  @@unique([tenantId, tag])
+  @@index([tenantId, status])
+  @@index([tenantId, bookable])
+  @@map("assets")
+}
+
+enum AssetStatus {
+  READY
+  IN_USE
+  RESERVED
+  MAINTENANCE
+  RETIRED
+
+  @@map("asset_status")
+}
+
+// -----------------------------------------------------------------------------
+// Reservations + approvals (from FleetManager)
+// -----------------------------------------------------------------------------
+
+model Reservation {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  assetId         String?  @db.Uuid
+  requesterUserId String   @db.Uuid
+  onBehalfUserId  String?  @db.Uuid
+  startAt         DateTime
+  endAt           DateTime
+  purpose         String?
+  approvalStatus  ApprovalStatus @default(PENDING_APPROVAL)
+  lifecycleStatus ReservationStatus @default(BOOKED)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  asset           Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, approvalStatus])
+  @@index([tenantId, assetId])
+  @@map("reservations")
+}
+
+enum ApprovalStatus {
+  PENDING_APPROVAL
+  AUTO_APPROVED
+  APPROVED
+  REJECTED
+
+  @@map("approval_status")
+}
+
+enum ReservationStatus {
+  BOOKED
+  CHECKED_OUT
+  RETURNED
+  CANCELLED
+  MISSED
+  MAINTENANCE_REQUIRED
+  REDIRECTED
+
+  @@map("reservation_status")
+}
+
+// -----------------------------------------------------------------------------
+// Audit log — hash-chained, append-only
+// -----------------------------------------------------------------------------
+
+model AuditEvent {
+  id             BigInt   @id @default(autoincrement())
+  tenantId       String?  @db.Uuid
+  actorUserId    String?  @db.Uuid
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  occurredAt     DateTime @default(now())
+  prevHash       Bytes?
+  selfHash       Bytes
+
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@map("audit_events")
+}
+
+// -----------------------------------------------------------------------------
+// System (global) — feature flags, cluster-level config
+// -----------------------------------------------------------------------------
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@schema("panorama_system")
+  @@map("system_settings")
+}

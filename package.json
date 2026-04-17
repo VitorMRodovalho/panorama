@@ -1,0 +1,37 @@
+{
+  "name": "panorama",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Unified open-source platform for IT asset and operational fleet management.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VitorMRodovalho/panorama"
+  },
+  "homepage": "https://panorama.vitormr.dev",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "e2e": "turbo run e2e",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "i18n:check": "tsx scripts/i18n-check.ts",
+    "license:check": "tsx scripts/license-check.ts",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "husky": "^9.1.7",
+    "rimraf": "^5.0.10",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.3"
+  }
+}

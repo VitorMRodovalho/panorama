@@ -1,0 +1,26 @@
+{
+  "name": "@panorama/plugin-sdk",
+  "version": "0.0.0",
+  "description": "Panorama plugin SDK — typed extension surface.",
+  "license": "AGPL-3.0-or-later",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10",
+    "react": "^18"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^10.4.15",
+    "react": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

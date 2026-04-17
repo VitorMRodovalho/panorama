@@ -1,0 +1,14 @@
+{
+  "name": "@panorama/i18n",
+  "version": "0.0.0",
+  "description": "Translation bundles for Panorama (EN / PT-BR / ES).",
+  "license": "AGPL-3.0-or-later",
+  "main": "index.js",
+  "files": ["en", "pt-br", "es", "index.js", "index.d.ts"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "echo 'nothing to lint'",
+    "typecheck": "tsc --noEmit"
+  }
+}

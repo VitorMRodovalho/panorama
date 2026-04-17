@@ -1,0 +1,81 @@
+version: 2
+
+# Dependabot watches dependency manifests and opens PRs with fixes.
+# Groups reduce PR noise. Security updates bypass groups (they open immediately).
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 10
+    groups:
+      nest:
+        patterns:
+          - "@nestjs/*"
+      next:
+        patterns:
+          - "next"
+          - "next-intl"
+          - "eslint-config-next"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+      prisma:
+        patterns:
+          - "@prisma/*"
+          - "prisma"
+      types:
+        patterns:
+          - "@types/*"
+        dependency-type: development
+      test-tooling:
+        patterns:
+          - "vitest"
+          - "@playwright/*"
+          - "playwright"
+    labels:
+      - dependencies
+      - automated
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: scope
+    ignore:
+      # Node 20 LTS is the baseline; ignore major bumps that drop 20 support
+      - dependency-name: "node"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    labels:
+      - dependencies
+      - automated
+      - ci
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: docker
+    directory: /infra/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    labels:
+      - dependencies
+      - automated
+      - infra
+    commit-message:
+      prefix: "chore(infra)"

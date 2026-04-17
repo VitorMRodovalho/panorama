@@ -1,0 +1,29 @@
+This repository (the "Panorama Community Edition") is licensed under the
+GNU Affero General Public License, version 3.0 or any later version, as
+published by the Free Software Foundation.
+
+Copyright (c) 2026 Panorama contributors.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/agpl-3.0.html>.
+
+The full AGPL-3.0 text lives at:
+
+  https://www.gnu.org/licenses/agpl-3.0.txt
+
+Bundle policy
+-------------
+- Source files committed to THIS repository are AGPL-3.0-or-later.
+- Third-party dependencies keep their upstream licences; see
+  THIRD_PARTY_NOTICES.md at release time for the aggregated inventory.
+- Enterprise-only modules live in a SEPARATE, private repository
+  (panorama-enterprise) under a commercial licence. They are pulled in
+  only when producing Enterprise-tier artefacts. The Community edition
+  in this repository never depends on them at runtime.
+
+Trademark
+---------
+"Panorama" and the Panorama wordmark are (or will be) trademarks of the
+Panorama project. Use of the name is governed by the separate Trademark
+Policy at docs/en/trademark.md. Community forks MUST rename before
+distributing a derivative product.
