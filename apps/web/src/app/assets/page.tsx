@@ -18,12 +18,24 @@ interface AssetsResponse {
   total: number;
 }
 
+interface OwnershipSummary {
+  tenantId: string;
+  activeOwners: number;
+  isSpof: boolean;
+}
+
 export default async function AssetsPage(): Promise<JSX.Element> {
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
-  const result = await apiGet<AssetsResponse>('/assets?limit=100');
-  const items: AssetListItem[] = result.ok ? result.data.items : [];
+  const [assetsRes, ownershipRes] = await Promise.all([
+    apiGet<AssetsResponse>('/assets?limit=100'),
+    apiGet<OwnershipSummary>(`/tenants/${session.currentTenantId}/ownership-summary`),
+  ]);
+  const items: AssetListItem[] = assetsRes.ok ? assetsRes.data.items : [];
+  const ownership = ownershipRes.ok ? ownershipRes.data : null;
+  const showOwnerBanner =
+    session.currentRole === 'owner' && ownership?.isSpof === true;
 
   return (
     <>
@@ -67,12 +79,18 @@ export default async function AssetsPage(): Promise<JSX.Element> {
       </header>
 
       <section className="panorama-content">
+        {showOwnerBanner ? (
+          <div className="panorama-banner-warning">
+            <strong>This tenant has a single Owner.</strong> Invite a second
+            Owner so access isn't lost if this account becomes unavailable.
+          </div>
+        ) : null}
         <div className="panorama-card">
           <h2 style={{ margin: '0 0 16px' }}>
             Assets <span className="panorama-pill">{items.length}</span>
           </h2>
-          {!result.ok ? (
-            <p className="panorama-error">Failed to load assets (HTTP {result.status}).</p>
+          {!assetsRes.ok ? (
+            <p className="panorama-error">Failed to load assets (HTTP {assetsRes.status}).</p>
           ) : items.length === 0 ? (
             <p className="panorama-empty">
               This tenant has no assets yet. Seed some via{' '}

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Param,
   Patch,
@@ -95,5 +96,32 @@ export class TenantAdminController {
       throw new UnauthorizedException('owner_role_required');
     }
     return session;
+  }
+}
+
+/**
+ * Read-only summary endpoint for the "single-Owner warning" banner
+ * that lives in the web app. Any member of the tenant can see it —
+ * transparency about who owns the tenant they belong to is fine, and
+ * the admin UI uses it to nudge a single Owner into inviting a
+ * second. Lives on a separate controller path so it isn't lumped
+ * under Owner-only authorisation.
+ */
+@Controller('tenants/:tenantId')
+export class TenantOwnershipController {
+  constructor(private readonly tenants: TenantAdminService) {}
+
+  @Get('ownership-summary')
+  async summary(
+    @Param('tenantId') tenantId: string,
+    @Req() req: Request,
+  ): Promise<{ tenantId: string; activeOwners: number; isSpof: boolean }> {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException('authentication_required');
+    if (session.currentTenantId !== tenantId) {
+      throw new UnauthorizedException('tenant_mismatch');
+    }
+    const activeOwners = await this.tenants.countActiveOwners(tenantId);
+    return { tenantId, activeOwners, isSpof: activeOwners <= 1 };
   }
 }

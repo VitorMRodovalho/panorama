@@ -124,6 +124,20 @@ a {
   margin: 8px 0 0;
 }
 
+.panorama-banner-warning {
+  border: 1px solid #b45309;
+  background: rgba(234, 179, 8, 0.08);
+  color: #fde68a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.panorama-banner-warning strong {
+  color: #fef3c7;
+}
+
 .panorama-provider-btn {
   display: flex;
   align-items: center;
