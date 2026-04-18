@@ -22,14 +22,16 @@ Target versions and tenant-visible milestones. Living document — last updated 
 - [x] **Step 2** — AuthModule: password + Google OIDC + Microsoft OIDC,
       iron-session cookies, home-realm discovery, multi-tenant
       switching, 26 tests green
-- [ ] **Step 3a** — ADRs for Tenant Owner ([0007](../adr/0007-tenant-owner-role.md))
+- [x] **Step 3a** — ADRs for Tenant Owner ([0007](../adr/0007-tenant-owner-role.md))
       and Invitation flow ([0008](../adr/0008-invitation-flow.md))
-- [ ] **Step 3b** — web login + /assets list in `apps/web` (Next.js 14
+- [x] **Step 3b** — web login + /assets list in `apps/web` (Next.js 14
       App Router). No invitation UI yet; users seeded via super-admin.
-- [ ] **Step 3c** — Invitation flow per ADR-0008: `Invitation` table,
+- [x] **Step 3c** — Invitation flow per ADR-0008: `Invitation` table,
       email token + TTL + one-time-use + partial unique index, BullMQ
-      email outbox, `/invitations/*` endpoints, acceptance web page,
-      trilingual templates, rate limiting, audit events.
+      email worker + hourly maintenance cron, `/invitations/*`
+      endpoints, acceptance web page, trilingual templates (EN / PT-BR
+      / ES), Redis-backed rate limits that fail CLOSED, and full audit
+      trail (`panorama.invitation.*`).
 - [ ] **Step 3d** — Tenant Owner enforcement per ADR-0007: Postgres
       trigger preventing last-owner removal, service guards, admin UI
       single-Owner warning, super-admin break-glass CLI.

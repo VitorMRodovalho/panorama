@@ -1,6 +1,6 @@
 # ADR-0008: Invitation flow (email-token, TTL, one-time-use, audit)
 
-- Status: Proposed
+- Status: Accepted (implemented in 0.2 step 3c, 2026-04-18)
 - Date: 2026-04-18
 - Deciders: Vitor Rodovalho
 - Related: [ADR-0007 Tenant Owner role](./0007-tenant-owner-role.md)
@@ -307,29 +307,49 @@ liability. Fixed TTL floors the risk window.
 
 ## Execution order
 
-**Not implemented at the moment this ADR is written.** Sequencing to
-avoid gaps / duality with ADR-0007 and the ongoing 0.2 work:
-
-1. ✅ 0.2 step 2 (committed) — password + OIDC + session + multi-tenant
-   switching. Schema already has `TenantMembership.status` = 'invited'.
-2. **▶ 0.2 step 3b (next)** — web login + /assets list. Users are
-   seeded by super-admin tooling; no invitation UI yet.
-3. 0.2 step 3c — **Invitation flow** lands as a dedicated PR:
-   - Migration 0004: `invitations` table + partial unique index +
-     expiration trigger.
-   - BullMQ worker for email delivery.
-   - `/invitations/*` REST endpoints.
-   - Acceptance web page on the `apps/web` side.
-   - Trilingual email templates.
-   - Rate limit + audit wiring.
-4. 0.2 step 3d — **Owner enforcement** (ADR-0007) lands in the same
-   window: Postgres trigger, service guards, "single Owner" admin UI
-   warning, break-glass CLI for super admins.
+1. ✅ 0.2 step 2 — password + OIDC + session + multi-tenant switching.
+2. ✅ 0.2 step 3b — web login + /assets list. Users seeded by super-admin.
+3. ✅ **0.2 step 3c — Invitation flow** (shipped 2026-04-18):
+   - Migration 0004 — `invitations` table + partial unique index on
+     `(tenantId, email) WHERE open`.
+   - `InvitationService` (create / list / resend / revoke / preview /
+     finalize) with sha256 tokens and conditional-UPDATE double-click
+     defence.
+   - BullMQ `invitation-email` queue + worker with 5-attempt
+     exponential backoff; repeatable `invitation-maintenance` cron
+     that sweeps expired invitations + rescues stuck-at-queued rows
+     by rotating the token.
+   - `/invitations/*` REST surface: `POST /invitations`, `GET /invitations`,
+     `POST /:id/resend`, `POST /:id/revoke`, `GET/POST /invitations/accept`.
+   - Acceptance web page (`apps/web/src/app/invitations/accept`) that
+     handles the four states with server-rendered branching.
+   - Trilingual email templates (EN / PT-BR / ES) inline in TS.
+   - Redis-backed sliding-window rate limits that **fail closed** on
+     Redis outage per §Rate limits.
+   - Audit events: `panorama.invitation.{created,email_sent,
+     email_bounced,email_failed,accepted,expired,revoked,resent}`.
+4. 0.2 step 3d — **Owner enforcement** (ADR-0007) lands next.
 5. 0.3 — bounce-handling webhook, invitation analytics, enterprise
    SCIM provisioning replacing the invitation flow for IdP-managed
    tenants.
 
-This ADR is the contract. Step 3c's commit message will cite it and
-any deviation (e.g. TTL bounds change) will land as an ADR update
-first, code second — per the ADR workflow in
-[0000-index.md](./0000-index.md).
+### Implementation notes (filed alongside the 3c commits)
+
+- The ADR's §Data-model Prisma snippet lists the email-outbox columns
+  (`emailQueuedAt` / `emailSentAt` / `emailBouncedAt` /
+  `emailLastError`) on the `Invitation` row; the final migration adds
+  one more column, `emailAttempts INT DEFAULT 0`, so the retry count
+  survives worker restarts (implementation detail of the ADR's
+  "up to 5 attempts" retry policy, not a contract change).
+- Expiration audit events are emitted by the `invitation-maintenance`
+  BullMQ cron, not by a PG trigger — the net effect matches the ADR
+  (one `panorama.invitation.expired` per row) while avoiding the
+  SECURITY-DEFINER trigger + RLS interaction on `audit_events`.
+- The BullMQ job payload carries the plaintext token for the lifetime
+  of the job (standard Auth0 / Clerk pattern — same trust zone as the
+  app; `removeOnComplete` scrubs it from Redis on success). Only
+  `sha256(token)` ever persists in the DB.
+
+This ADR is the contract. Future deviation (e.g. TTL bounds change)
+will land as an ADR update first, code second — per the ADR workflow
+in [0000-index.md](./0000-index.md).

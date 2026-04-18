@@ -267,7 +267,8 @@ describe('invitation flow e2e', () => {
       `${url}/invitations/accept?t=${encodeURIComponent(oldToken)}`,
     );
     expect(oldPreview.status).toBe(200);
-    expect((await oldPreview.json()).state).toBe('invalid');
+    const oldBody = (await oldPreview.json()) as { state: string };
+    expect(oldBody.state).toBe('invalid');
     const newPreview = await fetch(
       `${url}/invitations/accept?t=${encodeURIComponent(newToken)}`,
     );
@@ -478,8 +479,9 @@ describe('invitation flow e2e', () => {
     await adminDb.$disconnect();
 
     const cookie = await loginCookie('race@invitation-test.example', admin.password);
+    const raceToken = created.body.token;
     const doIt = () =>
-      fetch(`${url}/invitations/accept?t=${encodeURIComponent(created.body.token)}`, {
+      fetch(`${url}/invitations/accept?t=${encodeURIComponent(raceToken)}`, {
         method: 'POST',
         headers: { cookie, 'content-type': 'application/json' },
         body: '{}',
