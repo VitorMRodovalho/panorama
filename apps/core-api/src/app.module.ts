@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './modules/prisma/prisma.module.js';
@@ -13,6 +13,24 @@ import { EmailModule } from './modules/email/email.module.js';
 import { InvitationModule } from './modules/invitation/invitation.module.js';
 import { InvitationWorkerModule } from './modules/invitation/invitation-worker.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
+import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
+
+/**
+ * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
+ * registration of the SnipeitCompatModule at boot. Default on;
+ * setting the env var to "false" / "0" / "no" drops the entire
+ * /api/v1 surface without a migration rollback. The flag is read
+ * once at bootstrap — changes require a redeploy, matching the
+ * feature-flag semantics the ADR commits to.
+ */
+function snipeitShimEnabled(): boolean {
+  const raw = (process.env['FEATURE_SNIPEIT_COMPAT_SHIM'] ?? 'true').toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'no';
+}
+
+const conditionalCompatShim: DynamicModule[] = snipeitShimEnabled()
+  ? [{ module: SnipeitCompatModule, global: false }]
+  : [];
 
 @Module({
   imports: [
@@ -36,6 +54,7 @@ import { ReservationModule } from './modules/reservation/reservation.module.js';
     AssetModule,
     HealthModule,
     ImportModule,
+    ...conditionalCompatShim,
     // 0.2: NotificationModule, PluginHostModule, I18nModule.forRootAsync.
   ],
 })

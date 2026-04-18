@@ -9,6 +9,7 @@ import {
 import { Prisma, type TenantMembership, type Tenant } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PatMembershipCache } from '../auth/pat-membership-cache.service.js';
 
 /**
  * Service-layer enforcement of ADR-0007's Tenant Owner invariants.
@@ -74,6 +75,7 @@ export class TenantAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly patCache: PatMembershipCache,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -146,7 +148,7 @@ export class TenantAdminService {
       throw new BadRequestException(`invalid_status:${params.status}`);
     }
 
-    return this.prisma.runAsSuperAdmin(
+    const result = await this.prisma.runAsSuperAdmin(
       async (tx) => {
         const existing = await tx.tenantMembership.findUnique({
           where: { id: params.membershipId },
@@ -200,6 +202,10 @@ export class TenantAdminService {
       },
       { reason: `membership:update:${params.membershipId}` },
     );
+    // ADR-0010 explicit invalidation — a status/role change must be
+    // visible to PatAuthGuard on the next call, not 30s from now.
+    await this.patCache.invalidate(result.userId, result.tenantId);
+    return result;
   }
 
   /**
@@ -212,7 +218,7 @@ export class TenantAdminService {
     membershipId: string;
     actorUserId: string;
   }): Promise<void> {
-    await this.prisma.runAsSuperAdmin(
+    const deleted = await this.prisma.runAsSuperAdmin(
       async (tx) => {
         const existing = await tx.tenantMembership.findUnique({
           where: { id: params.membershipId },
@@ -234,6 +240,7 @@ export class TenantAdminService {
               status: existing.status,
             },
           });
+          return existing;
         } catch (err) {
           if (this.isOwnerInvariantViolation(err)) {
             throw new ConflictException('last_owner_must_remain_active');
@@ -243,6 +250,8 @@ export class TenantAdminService {
       },
       { reason: `membership:delete:${params.membershipId}` },
     );
+    // Post-commit cache invalidation (ADR-0010).
+    await this.patCache.invalidate(deleted.userId, deleted.tenantId);
   }
 
   // ---------------------------------------------------------------------
@@ -257,7 +266,7 @@ export class TenantAdminService {
       throw new BadRequestException('reason_required');
     }
 
-    return this.prisma.runAsSuperAdmin(
+    const outcome = await this.prisma.runAsSuperAdmin(
       async (tx) => {
         const tenant = await tx.tenant.findUnique({ where: { slug: params.tenantSlug } });
         if (!tenant) throw new NotFoundException('tenant_not_found');
@@ -311,6 +320,11 @@ export class TenantAdminService {
       },
       { reason: `tenant:nominateOwner:${params.tenantSlug}` },
     );
+    // ADR-0010 explicit invalidation — both the update and create
+    // paths above change membership.status/role so a cached PAT
+    // decision for this (userId, tenantId) must be discarded.
+    await this.patCache.invalidate(outcome.membership.userId, outcome.membership.tenantId);
+    return outcome;
   }
 
   // ---------------------------------------------------------------------

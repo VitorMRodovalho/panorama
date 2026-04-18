@@ -5,6 +5,7 @@ import { AuthService } from './auth.service.js';
 import { DiscoveryService } from './discovery.service.js';
 import { OidcService } from './oidc.service.js';
 import { PasswordService } from './password.service.js';
+import { PatMembershipCache } from './pat-membership-cache.service.js';
 import { PersonalAccessTokenService } from './personal-access-token.service.js';
 import { SessionMiddleware } from './session.middleware.js';
 import { SessionService } from './session.service.js';
@@ -38,6 +39,7 @@ import { RedisModule } from '../redis/redis.module.js';
     DiscoveryService,
     OidcService,
     PasswordService,
+    PatMembershipCache,
     PersonalAccessTokenService,
     SessionService,
     SessionMiddleware,
@@ -46,6 +48,7 @@ import { RedisModule } from '../redis/redis.module.js';
     AuthConfigService,
     AuthService,
     PasswordService,
+    PatMembershipCache,
     PersonalAccessTokenService,
     SessionService,
   ],

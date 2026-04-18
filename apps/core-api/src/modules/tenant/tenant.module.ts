@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module.js';
 import { TenantAdminController, TenantOwnershipController } from './tenant-admin.controller.js';
 import { TenantAdminService } from './tenant-admin.service.js';
 
@@ -14,6 +15,7 @@ import { TenantAdminService } from './tenant-admin.service.js';
  * AuthModule's SessionMiddleware.
  */
 @Module({
+  imports: [forwardRef(() => AuthModule)],
   controllers: [TenantAdminController, TenantOwnershipController],
   providers: [TenantAdminService],
   exports: [TenantAdminService],

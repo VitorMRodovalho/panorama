@@ -24,6 +24,16 @@ export function getRequestSession(req: unknown): PanoramaSession | null {
  * augmentation) so consumers use `getRequestSession(req)` and keep type
  * safety without touching express-serve-static-core at the type level.
  */
+/**
+ * Literal prefix of a Personal Access Token (ADR-0010). A request
+ * carrying this in its Authorization header is a compat-shim caller —
+ * native controllers under AuthModule / ReservationModule / etc.
+ * MUST NOT silently fall back to session auth when a PAT is present.
+ * We suppress the session entirely so native endpoints return 401
+ * (the intended failure mode for a PAT hitting a non-/api/v1 path).
+ */
+const PAT_BEARER_PREFIX = 'Bearer pnrm_pat_';
+
 @Injectable()
 export class SessionMiddleware implements NestMiddleware {
   private readonly log = new Logger('SessionMiddleware');
@@ -32,13 +42,23 @@ export class SessionMiddleware implements NestMiddleware {
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     let session: PanoramaSession | null = null;
-    try {
-      session = await this.sessions.getSession(req, res);
-    } catch (err) {
-      // Malformed cookie / secret mismatch / decrypt failure — treat as
-      // unauthenticated. Never leak why to the client.
-      this.log.warn({ err: String(err) }, 'session_decode_failed');
-      session = null;
+
+    // PAT-bearing request: no session. The PatAuthGuard under
+    // SnipeitCompatModule owns authentication for these. If the caller
+    // hits /reservations with a PAT (wrong surface), they get 401 —
+    // by design, not by accident.
+    const authHeader = req.headers['authorization'];
+    const hasPatBearer = typeof authHeader === 'string' && authHeader.startsWith(PAT_BEARER_PREFIX);
+
+    if (!hasPatBearer) {
+      try {
+        session = await this.sessions.getSession(req, res);
+      } catch (err) {
+        // Malformed cookie / secret mismatch / decrypt failure — treat as
+        // unauthenticated. Never leak why to the client.
+        this.log.warn({ err: String(err) }, 'session_decode_failed');
+        session = null;
+      }
     }
 
     (req as Request & { panoramaSession?: PanoramaSession | null }).panoramaSession = session;
