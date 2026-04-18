@@ -5,14 +5,16 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'apps/docs-site/**'
       - '.github/workflows/docs.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
   pull_request:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'apps/docs-site/**'
       - '.github/workflows/docs.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
   workflow_dispatch:
 
 permissions:
@@ -31,14 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @panorama/docs-site build
+      - run: pnpm docs:build
       - uses: actions/configure-pages@v5
         if: github.ref == 'refs/heads/main'
       - uses: actions/upload-pages-artifact@v3
