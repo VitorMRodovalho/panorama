@@ -1,26 +1,52 @@
 # Roadmap
 
-Target versions and tenant-visible milestones. Living document — last updated 2026-04-17.
+Target versions and tenant-visible milestones. Living document — last updated 2026-04-18.
 
-## 0.1 — Scaffold (target: end of May 2026)
+## 0.1 — Scaffold (shipped 2026-04-17)
 
-- [ ] Monorepo green: pnpm + Turborepo, CI on every PR
-- [ ] Core-api: Prisma schema for Tenant, User, AuthIdentity, Group, Asset,
-      AssetModel, Category, Manufacturer, Supplier, Location, StatusLabel,
-      CustomField, CustomFieldset
-- [ ] Auth: email/password + Google OIDC + Microsoft OIDC
-- [ ] Row-level tenancy working end-to-end, RLS tests in place
-- [ ] Web app: login → list assets → open asset detail
-- [ ] i18n: EN + PT-BR + ES bundles for the auth and assets modules
-- [ ] Docker Compose dev stack
+- [x] Monorepo green: pnpm + Turborepo, CI on every PR
+- [x] Core-api: Prisma schema for Tenant, User, AuthIdentity, Category,
+      Manufacturer, AssetModel, Asset, Reservation, AuditEvent,
+      SystemSetting (schemas for Group / Supplier / Location /
+      StatusLabel / CustomField / CustomFieldset deferred to 0.3 where
+      they're actually consumed)
+- [x] Row-level tenancy end-to-end: Prisma middleware + Postgres RLS,
+      17 integration tests green
+- [x] Docker Compose dev stack (Postgres 16 + Redis + MinIO + MailHog)
+- [x] i18n coverage gate wired in CI (EN/PT-BR/ES must stay in sync)
 
-## 0.2 — Reservations (target: July 2026)
+## 0.2 — Auth, import, web login (in progress; target Jun 2026)
 
-- [ ] Reservation model, approval workflow, blackouts, basket booking
-- [ ] Check out / check in primitives
+- [x] **Step 1** — migrator ↔ core-api fixture loop closed
+      (canonical fixtures, `ImportIdentityMap`, 6 round-trip tests)
+- [x] **Step 2** — AuthModule: password + Google OIDC + Microsoft OIDC,
+      iron-session cookies, home-realm discovery, multi-tenant
+      switching, 26 tests green
+- [ ] **Step 3a** — ADRs for Tenant Owner ([0007](../adr/0007-tenant-owner-role.md))
+      and Invitation flow ([0008](../adr/0008-invitation-flow.md))
+- [ ] **Step 3b** — web login + /assets list in `apps/web` (Next.js 14
+      App Router). No invitation UI yet; users seeded via super-admin.
+- [ ] **Step 3c** — Invitation flow per ADR-0008: `Invitation` table,
+      email token + TTL + one-time-use + partial unique index, BullMQ
+      email outbox, `/invitations/*` endpoints, acceptance web page,
+      trilingual templates, rate limiting, audit events.
+- [ ] **Step 3d** — Tenant Owner enforcement per ADR-0007: Postgres
+      trigger preventing last-owner removal, service guards, admin UI
+      single-Owner warning, super-admin break-glass CLI.
+- [ ] **Step 4** — Reservation model, approval workflow, blackouts,
+      basket booking; check-out / check-in primitives.
+- [ ] **Step 5** — Snipe-IT API compatibility shim read-only
+
+## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)
+
+- [ ] Configurable checklists (per asset type), photo evidence, EXIF strip
+- [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
+- [ ] Mileage + time-based alerts
+- [ ] CSV exports for every list view
 - [ ] Training-expiry gating
-- [ ] Snipe-IT API compatibility shim read-only
-- [ ] `panorama migrate-from-snipeit` — ALPHA (users + assets only)
+- [ ] Email bounce webhook (SES/SendGrid) → invitation state update
+- [ ] Just-in-time tenant membership based on `allowedEmailDomains` match
+      at first OIDC login (gates the enterprise SCIM story)
 
 ## 0.3 — Inspections + maintenance (target: Sept 2026)
 
@@ -29,9 +55,9 @@ Target versions and tenant-visible milestones. Living document — last updated 
 - [ ] Mileage + time-based alerts
 - [ ] CSV exports for every list view
 
-## 0.4 — Notifications + reports + webhooks (target: Nov 2026)
+## 0.4 — Notifications + reports + webhooks (target Oct 2026)
 
-- [ ] Event bus (NATS), outbox pattern, delivery retries
+- [ ] Event bus (NATS JetStream), outbox pattern, delivery retries
 - [ ] Email, Teams, Slack, webhook channels
 - [ ] Saved reports, schedule to email, CSV/XLSX/PDF render
 - [ ] First closed-beta customer live

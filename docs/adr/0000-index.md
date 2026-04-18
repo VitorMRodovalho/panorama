@@ -11,6 +11,8 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0004 | [Product name: Panorama](./0004-name.md) | Proposed | 2026-04-17 |
 | 0005 | [Licensing: AGPL-3.0-or-later for Community](./0005-licensing.md) | Accepted | 2026-04-17 |
 | 0006 | [Plugin / extension SDK boundary](./0006-plugin-sdk.md) | Draft | 2026-04-17 |
+| 0007 | [Tenant Owner role (designated admin)](./0007-tenant-owner-role.md) | Proposed | 2026-04-18 |
+| 0008 | [Invitation flow (email-token, TTL, one-time-use, audit)](./0008-invitation-flow.md) | Proposed | 2026-04-18 |
 
 ## Template
 
