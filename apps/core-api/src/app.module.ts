@@ -10,6 +10,7 @@ import { ImportModule } from './modules/import/import.module.js';
 import { RedisModule } from './modules/redis/redis.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { EmailModule } from './modules/email/email.module.js';
+import { InvitationModule } from './modules/invitation/invitation.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { EmailModule } from './modules/email/email.module.js';
     AuditModule,
     EmailModule,
     AuthModule,
+    InvitationModule,
     AssetModule,
     HealthModule,
     ImportModule,
