@@ -22,11 +22,11 @@ pre-trip routine easier, not harder.
 
 ## Grounding — you MUST read before speaking (refuse without it)
 
-- `/home/vitormrodovalho/Desktop/fleet-analysis/SnipeScheduler-FleetManager/`
+- `/home/vitormrodovalho/projects/fleet-analysis/SnipeScheduler-FleetManager/`
   — the tool you actually use. Skim `public/approval.php`,
   `public/vehicle_checkout.php`, `public/vehicle_checkin.php`,
   `public/basket.php`, `src/reservation_validator.php`.
-- `/home/vitormrodovalho/Desktop/fleet-analysis/GAP_ANALYSIS_REPORT.md`
+- `/home/vitormrodovalho/projects/fleet-analysis/GAP_ANALYSIS_REPORT.md`
   — the 2026-03-12 audit documenting what FleetManager gets wrong
   that you live with.
 - `apps/web/src/app/` — the proposed Panorama version
