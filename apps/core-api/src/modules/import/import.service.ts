@@ -71,7 +71,33 @@ export class ImportService {
       { reason: `import-fixtures from ${opts.dir}` },
     );
 
-    this.log.log({ counts: result.counts }, 'import_done');
+    // ADR-0007: every tenant must land with ≥1 active Owner. If the
+    // source fixtures don't elect one (e.g. Snipe-IT group mapping
+    // that never marks anyone as "owner"), surface the problem as a
+    // non-fatal warning in `errors` so the operator can rerun the
+    // break-glass CLI. We deliberately don't auto-elect an Owner —
+    // the ADR puts that decision on a human.
+    const orphaned = await this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const tenants = await tx.tenant.findMany({ select: { id: true, slug: true } });
+        const offenders: string[] = [];
+        for (const t of tenants) {
+          const owners = await tx.tenantMembership.count({
+            where: { tenantId: t.id, role: 'owner', status: 'active' },
+          });
+          if (owners === 0) offenders.push(t.slug);
+        }
+        return offenders;
+      },
+      { reason: 'import:owner-invariant-check' },
+    );
+    for (const slug of orphaned) {
+      const msg = `tenant_has_no_active_owner:${slug}`;
+      result.errors.push(msg);
+      this.log.warn({ slug }, 'tenant_has_no_active_owner');
+    }
+
+    this.log.log({ counts: result.counts, orphaned: orphaned.length }, 'import_done');
     return result;
   }
 

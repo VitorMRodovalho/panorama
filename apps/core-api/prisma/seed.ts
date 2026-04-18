@@ -28,6 +28,7 @@ async function main(): Promise<void> {
   }
 
   // Purge previous seed rows (OK in dev only — the guard above enforces it).
+  await prisma.invitation.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.asset.deleteMany();
   await prisma.assetModel.deleteMany();
@@ -84,11 +85,14 @@ async function main(): Promise<void> {
         lastName: tenant.displayName,
       },
     });
+    // ADR-0007 rule 2: creator of a tenant is its first Owner.
     await prisma.tenantMembership.create({
       data: {
         tenantId: tenant.id,
         userId: user.id,
-        role: 'fleet_admin',
+        role: 'owner',
+        status: 'active',
+        acceptedAt: new Date(),
       },
     });
   }
