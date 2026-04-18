@@ -150,6 +150,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@panorama/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@panorama/shared':
         specifier: workspace:*
         version: link:../../packages/shared

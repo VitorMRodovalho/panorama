@@ -181,6 +181,7 @@ export class AuthService {
       tenantId: m.tenantId,
       tenantSlug: m.tenant.slug,
       tenantDisplayName: m.tenant.displayName,
+      tenantLocale: m.tenant.locale,
       role: m.role,
       isVip: m.isVip,
     }));

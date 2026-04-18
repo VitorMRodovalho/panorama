@@ -10,6 +10,13 @@ export interface PanoramaSessionMembership {
   tenantId: string;
   tenantSlug: string;
   tenantDisplayName: string;
+  /**
+   * Tenant's preferred locale (e.g. "en", "pt-br", "es"). Used by the
+   * web frontend's i18n loader to pick the bundle for the current
+   * render. Stored here so rendering the nav never round-trips to the
+   * DB.
+   */
+  tenantLocale: string;
   role: string;
   isVip: boolean;
 }

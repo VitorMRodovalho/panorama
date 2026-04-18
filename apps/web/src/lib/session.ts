@@ -12,6 +12,7 @@ export interface PanoramaSession {
     tenantId: string;
     tenantSlug: string;
     tenantDisplayName: string;
+    tenantLocale: string;
     role: string;
     isVip: boolean;
   }>;

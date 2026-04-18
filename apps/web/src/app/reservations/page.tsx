@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { apiGet } from '../../lib/api';
+import { loadMessages } from '../../lib/i18n';
 import { getCurrentSession } from '../../lib/session';
 import { logoutAction, switchTenantAction } from '../login/actions';
 import {
@@ -81,6 +82,13 @@ export default async function ReservationsPage({
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   const isAdmin = ADMIN_ROLES.has(session.currentRole);
+  // Pick locale from the current tenant's membership — same pattern
+  // the notification email channel uses. `session` is guaranteed
+  // truthy here (redirect above short-circuits null).
+  const currentMembership = session.memberships.find(
+    (m) => m.tenantId === session.currentTenantId,
+  );
+  const messages = loadMessages(currentMembership?.tenantLocale);
 
   const scopeParam = searchParams.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
   const statusParam = (searchParams.status ?? 'open').toString();
@@ -210,7 +218,7 @@ export default async function ReservationsPage({
                 : 'panorama-banner-success'
             }
           >
-            {renderBatchBanner({
+            {renderBatchBanner(messages.t, {
               verb: searchParams.batch,
               processed: Number(searchParams.processed ?? '0'),
               skipped: Number(searchParams.skipped ?? '0'),
@@ -365,8 +373,8 @@ export default async function ReservationsPage({
                         </span>
                       ) : null}
                     </td>
-                    <td>{humaniseApproval(r.approvalStatus)}</td>
-                    <td>{humaniseLifecycle(r.lifecycleStatus)}</td>
+                    <td>{humaniseApproval(messages.t, r.approvalStatus)}</td>
+                    <td>{humaniseLifecycle(messages.t, r.lifecycleStatus)}</td>
                     <td>{r.purpose ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {isBasketAnchor && meta ? (
@@ -547,60 +555,43 @@ function canCheckin(r: ReservationView): boolean {
   return r.lifecycleStatus === 'CHECKED_OUT';
 }
 
-// TODO: migrate to packages/i18n when next-intl (or equivalent) is wired
-// on the web side. Until then, user-facing strings for reservation state
-// live here in one place so translation later is a mechanical move.
-const APPROVAL_LABELS: Record<string, string> = {
-  PENDING_APPROVAL: 'Awaiting approval',
-  AUTO_APPROVED: 'Approved (automatically)',
-  APPROVED: 'Approved',
-  REJECTED: 'Rejected',
-};
-const LIFECYCLE_LABELS: Record<string, string> = {
-  BOOKED: 'Booked',
-  CHECKED_OUT: 'Out',
-  RETURNED: 'Returned',
-  CANCELLED: 'Cancelled',
-  MISSED: 'Missed',
-  MAINTENANCE_REQUIRED: 'Maintenance required',
-  REDIRECTED: 'Redirected',
-};
+// User-facing reservation state strings live in packages/i18n.
+// Helpers translate machine enum values (PENDING_APPROVAL, BOOKED, …)
+// into ops-lingo via the loader's t() — locale picked from the
+// current tenant's preference per ADR-0003 §Locale routing.
 
-function humaniseApproval(status: string): string {
-  return APPROVAL_LABELS[status] ?? status;
+function humaniseApproval(t: (k: string) => string, status: string): string {
+  return t(`reservation.approval.${status}`);
 }
-function humaniseLifecycle(status: string): string {
-  return LIFECYCLE_LABELS[status] ?? status;
+function humaniseLifecycle(t: (k: string) => string, status: string): string {
+  return t(`reservation.lifecycle.${status}`);
 }
 
-// Skip reasons from the service (see ReservationService.runBasketBatch)
-// mapped to ops-lingo so María's team can read the banner without
-// decoding codes. Any unknown reason falls through to the raw string —
-// better than silently hiding it.
-const BATCH_SKIP_LABELS: Record<string, string> = {
-  already_cancelled: 'already cancelled',
-  cannot_cancel_returned: 'already returned',
-  cannot_cancel_checked_out: 'checked out — in service',
-  reservation_conflict: 'now conflicts with another booking',
-  'not_pending:auto_approved': 'already auto-approved',
-  'not_pending:approved': 'already approved',
-  'not_pending:rejected': 'already rejected',
-  unknown: 'unknown reason',
-};
-
-function humaniseBatchReason(raw: string): string {
-  if (BATCH_SKIP_LABELS[raw]) return BATCH_SKIP_LABELS[raw]!;
-  if (raw.startsWith('blackout_conflict')) return 'blackout window';
+// Batch skip reasons from the service (see
+// ReservationService.runBasketBatch). Values with a colon (e.g.
+// "not_pending:auto_approved") get mapped to underscore-joined keys
+// so JSON bundles don't have to escape ":"; unrecognised reasons
+// fall back to the raw string — better than silently hiding.
+function humaniseBatchReason(t: (k: string) => string, raw: string): string {
+  const key = `reservation.batch.skip.${raw.replace(/:/g, '_')}`;
+  const translated = t(key);
+  // loadMessages returns the raw key when no translation exists; use
+  // that as the cue to fall through to a dynamic fallback.
+  if (translated !== key) return translated;
+  if (raw.startsWith('blackout_conflict')) return t('reservation.batch.skip.blackout_conflict');
   if (raw.startsWith('not_pending:')) return `already ${raw.slice('not_pending:'.length)}`;
   return raw;
 }
 
-function renderBatchBanner(opts: {
-  verb: string;
-  processed: number;
-  skipped: number;
-  skippedReasons: string;
-}): JSX.Element {
+function renderBatchBanner(
+  t: (key: string) => string,
+  opts: {
+    verb: string;
+    processed: number;
+    skipped: number;
+    skippedReasons: string;
+  },
+): JSX.Element {
   const { verb, processed, skipped, skippedReasons } = opts;
   const verbPast =
     verb === 'cancel' ? 'cancelled' : verb === 'approve' ? 'approved' : 'rejected';
@@ -629,7 +620,7 @@ function renderBatchBanner(opts: {
               {reasons.map((r, i) => (
                 <span key={r.reason}>
                   {i > 0 ? '; ' : ''}
-                  {r.count} {humaniseBatchReason(r.reason)}
+                  {r.count} {humaniseBatchReason(t, r.reason)}
                 </span>
               ))}
               )
