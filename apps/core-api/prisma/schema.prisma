@@ -57,6 +57,9 @@ model Tenant {
   /// }
   /// Zero means "not enforced" for each numeric.
   reservationRules     Json      @default("{}")
+  /// Retention override (days) for notification_events.status=DISPATCHED
+  /// rows owned by this tenant. Null → default-fallback 90 d. ADR-0011.
+  notificationRetentionDays Int?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   deletedAt            DateTime?
@@ -67,6 +70,7 @@ model Tenant {
   invitations          Invitation[]
   blackouts            BlackoutSlot[]
   personalAccessTokens PersonalAccessToken[]
+  notificationEvents   NotificationEvent[]
 
   @@map("tenants")
 }
@@ -547,4 +551,58 @@ model PersonalAccessToken {
   @@index([tenantId, revokedAt])
   @@index([userId, revokedAt])
   @@map("personal_access_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// Notification event bus outbox (ADR-0011) — domain services INSERT
+// inside the same transaction as their domain write; NotificationDispatcher
+// polls and fans out to ChannelRegistry-registered handlers.
+// -----------------------------------------------------------------------------
+
+model NotificationEvent {
+  id               String                  @id @default(uuid()) @db.Uuid
+  /// Null = cluster-wide event. Most events are tenant-scoped.
+  tenantId         String?                 @db.Uuid
+  /// Registered in NOTIFICATION_PAYLOAD_SCHEMAS. Unknown types are
+  /// rejected at enqueueWithin time (ADR-0011).
+  eventType        String
+  /// Zod-validated + redaction-swept at enqueue. Never contains
+  /// plaintext tokens / passwords / secrets. CHECK constraint caps
+  /// pg_column_size(payload) <= 16384 (see migration 0011).
+  payload          Json
+  status           NotificationEventStatus @default(PENDING)
+  dispatchAttempts Int                     @default(0)
+  availableAt      DateTime                @default(now())
+  lastAttemptAt    DateTime?
+  lastError        String?
+  /// Durable per-row retry log. Queryable without joining a second
+  /// table. `lastError` is the fast-path convenience.
+  errorHistory     Json                    @default("[]")
+  /// `{ "email": "dispatched", "slack": "failed", … }` — per-channel
+  /// outcome so a "DEAD" event can still show that the email channel
+  /// succeeded.
+  channelResults   Json                    @default("{}")
+  /// Scoped to (tenantId, eventType, dedupKey) via a hand-written
+  /// partial unique index in migration 0011 (Prisma 5.x can't model
+  /// partial uniques).
+  dedupKey         String?
+  dispatchedAt     DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([tenantId, eventType, createdAt(sort: Desc)])
+  @@map("notification_events")
+}
+
+enum NotificationEventStatus {
+  PENDING
+  IN_PROGRESS
+  DISPATCHED
+  FAILED
+  DEAD
+
+  @@map("notification_event_status")
 }

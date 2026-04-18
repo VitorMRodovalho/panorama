@@ -27,6 +27,7 @@ export async function resetTestDb(admin: PrismaClient): Promise<void> {
     await tx.manufacturer.deleteMany();
     await tx.category.deleteMany();
     await tx.personalAccessToken.deleteMany();
+    await tx.notificationEvent.deleteMany();
     await tx.tenantMembership.deleteMany();
     await tx.authIdentity.deleteMany();
     await tx.user.deleteMany();

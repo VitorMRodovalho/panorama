@@ -134,19 +134,19 @@ enum NotificationEventStatus {
 can't model partial uniques):
 
 ```sql
-CREATE UNIQUE INDEX notification_events_dedup_terminal
+CREATE UNIQUE INDEX notification_events_dedup_unique
   ON notification_events ("tenantId", "eventType", "dedupKey")
-  WHERE "dedupKey" IS NOT NULL
-    AND status IN ('DISPATCHED', 'DEAD');
+  WHERE "dedupKey" IS NOT NULL;
 ```
 
-Scoping the uniqueness to `(tenantId, eventType, dedupKey)` closes
-the cross-tenant collision attack surface. Two concurrent enqueues
-with the same triple both attempt the insert; the second one fails
-with 23505 (`unique_violation`) and the service treats it as a
-successful dedup skip. The dispatcher's "skip if a terminal row
-exists" predicate becomes belt-and-suspenders — the index is the
-primary enforcement.
+Scoping the uniqueness to `(tenantId, eventType, dedupKey)` —
+across ALL statuses, not just terminal — gives us strict "one row
+per key" semantics over the key's lifetime. Two concurrent
+enqueues with the same triple both race the INSERT; the second
+fails with 23505 (`unique_violation`) and the service treats it
+as a successful dedup skip. A row that dead-letters blocks new
+attempts with the same key until an operator prunes it — by
+design, same-key reuse requires human intent.
 
 **Tamper-detection trigger** (migration 0011):
 

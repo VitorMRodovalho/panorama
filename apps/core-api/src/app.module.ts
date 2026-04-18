@@ -12,6 +12,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { InvitationModule } from './modules/invitation/invitation.module.js';
 import { InvitationWorkerModule } from './modules/invitation/invitation-worker.module.js';
+import { NotificationModule } from './modules/notification/notification.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
 
@@ -48,6 +49,7 @@ const conditionalCompatShim: DynamicModule[] = snipeitShimEnabled()
     AuditModule,
     EmailModule,
     AuthModule,
+    NotificationModule,
     InvitationModule,
     InvitationWorkerModule,
     ReservationModule,
