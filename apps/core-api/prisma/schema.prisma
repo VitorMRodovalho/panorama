@@ -31,23 +31,23 @@ datasource db {
 // -----------------------------------------------------------------------------
 
 model Tenant {
-  id                   String    @id @default(uuid()) @db.Uuid
-  slug                 String    @unique
-  name                 String
-  displayName          String
-  locale               String    @default("en")
-  timezone             String    @default("UTC")
+  id                              String    @id @default(uuid()) @db.Uuid
+  slug                            String    @unique
+  name                            String
+  displayName                     String
+  locale                          String    @default("en")
+  timezone                        String    @default("UTC")
   /// Email domains this tenant claims. A user signing in with an email
   /// matching any domain here is auto-routed to this tenant during
   /// home-realm discovery and eligible for just-in-time membership.
   /// **Community edition does NOT verify domain ownership** — anyone can
   /// claim a domain. Enterprise adds DNS TXT verification so a tenant
   /// cannot intercept users from a domain it does not control.
-  allowedEmailDomains  String[]  @default([])
+  allowedEmailDomains             String[]  @default([])
   /// Default TTL applied when an admin creates a new invitation, in
   /// seconds. Community caps between 3 600 (1 h) and 2 592 000 (30 d).
   /// See ADR-0008.
-  invitationTtlSeconds Int       @default(604800)
+  invitationTtlSeconds            Int       @default(604800)
   /// Per-tenant reservation policy — see ADR-0009. Shape:
   /// {
   ///   "min_notice_hours": 0,
@@ -56,21 +56,39 @@ model Tenant {
   ///   "auto_approve_roles": ["owner", "fleet_admin", "fleet_staff"]
   /// }
   /// Zero means "not enforced" for each numeric.
-  reservationRules     Json      @default("{}")
+  reservationRules                Json      @default("{}")
   /// Retention override (days) for notification_events.status=DISPATCHED
   /// rows owned by this tenant. Null → default-fallback 90 d. ADR-0011.
-  notificationRetentionDays Int?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  deletedAt            DateTime?
+  notificationRetentionDays       Int?
+  /// Per-tenant inspection policy (ADR-0012). Null = defaults.
+  /// Zod-validated shape: { maxPhotosPerInspection, maxPhotoBytes,
+  /// maxPhotoDimension, staleInProgressHours,
+  /// preCheckoutInspectionMaxAgeMinutes }. Community ships the
+  /// column + defaults; Enterprise gates the per-tenant override UI.
+  inspectionConfig                Json?
+  /// Photo retention override (days). Null = default 425 (DOT 49 CFR
+  /// §396.3 14-mo floor + 2-mo buffer). Service-layer floor 30.
+  inspectionPhotoRetentionDays    Int?
+  /// Reservation tether (ADR-0012 §8). When true, checkOut rejects
+  /// 409 `inspection_required` unless a COMPLETED+PASS inspection
+  /// exists for (asset, user) within the config window. Default off.
+  requireInspectionBeforeCheckout Boolean   @default(false)
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
+  deletedAt                       DateTime?
 
-  memberships          TenantMembership[]
-  assets               Asset[]
-  categories           Category[]
-  invitations          Invitation[]
-  blackouts            BlackoutSlot[]
-  personalAccessTokens PersonalAccessToken[]
-  notificationEvents   NotificationEvent[]
+  memberships             TenantMembership[]
+  assets                  Asset[]
+  categories              Category[]
+  invitations             Invitation[]
+  blackouts               BlackoutSlot[]
+  personalAccessTokens    PersonalAccessToken[]
+  notificationEvents      NotificationEvent[]
+  inspectionTemplates     InspectionTemplate[]
+  inspectionTemplateItems InspectionTemplateItem[]
+  inspections             Inspection[]
+  inspectionResponses     InspectionResponse[]
+  inspectionPhotos        InspectionPhoto[]
 
   @@map("tenants")
 }
@@ -87,21 +105,26 @@ model User {
   deletedAt   DateTime?
   lastLoginAt DateTime?
 
-  authIdentities         AuthIdentity[]
-  memberships            TenantMembership[]
-  invitationsSent        Invitation[]          @relation("InvitationInviter")
-  invitationsTargeted    Invitation[]          @relation("InvitationTarget")
-  invitationsAccepted    Invitation[]          @relation("InvitationAcceptor")
-  invitationsRevoked     Invitation[]          @relation("InvitationRevoker")
-  reservationsRequested  Reservation[]         @relation("ReservationRequester")
-  reservationsOnBehalf   Reservation[]         @relation("ReservationOnBehalf")
-  reservationsApproved   Reservation[]         @relation("ReservationApprover")
-  reservationsCancelled  Reservation[]         @relation("ReservationCanceller")
-  reservationsCheckedOut Reservation[]         @relation("ReservationCheckedOutBy")
-  reservationsCheckedIn  Reservation[]         @relation("ReservationCheckedInBy")
-  blackoutsCreated       BlackoutSlot[]
-  personalAccessTokens   PersonalAccessToken[] @relation("OwnedTokens")
-  issuedAccessTokens     PersonalAccessToken[] @relation("IssuedTokens")
+  authIdentities             AuthIdentity[]
+  memberships                TenantMembership[]
+  invitationsSent            Invitation[]          @relation("InvitationInviter")
+  invitationsTargeted        Invitation[]          @relation("InvitationTarget")
+  invitationsAccepted        Invitation[]          @relation("InvitationAcceptor")
+  invitationsRevoked         Invitation[]          @relation("InvitationRevoker")
+  reservationsRequested      Reservation[]         @relation("ReservationRequester")
+  reservationsOnBehalf       Reservation[]         @relation("ReservationOnBehalf")
+  reservationsApproved       Reservation[]         @relation("ReservationApprover")
+  reservationsCancelled      Reservation[]         @relation("ReservationCanceller")
+  reservationsCheckedOut     Reservation[]         @relation("ReservationCheckedOutBy")
+  reservationsCheckedIn      Reservation[]         @relation("ReservationCheckedInBy")
+  blackoutsCreated           BlackoutSlot[]
+  personalAccessTokens       PersonalAccessToken[] @relation("OwnedTokens")
+  issuedAccessTokens         PersonalAccessToken[] @relation("IssuedTokens")
+  inspectionTemplatesCreated InspectionTemplate[]  @relation("InspectionTemplateCreator")
+  inspectionsStarted         Inspection[]          @relation("InspectionStarter")
+  inspectionsCompleted       Inspection[]          @relation("InspectionCompleter")
+  inspectionsReviewed        Inspection[]          @relation("InspectionReviewer")
+  inspectionPhotosUploaded   InspectionPhoto[]     @relation("InspectionPhotoUploader")
 
   @@map("users")
 }
@@ -235,8 +258,9 @@ model Category {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
-  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  models AssetModel[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  models              AssetModel[]
+  inspectionTemplates InspectionTemplate[]
 
   @@unique([tenantId, name, kind])
   @@index([tenantId])
@@ -316,6 +340,7 @@ model Asset {
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   model        AssetModel    @relation(fields: [modelId], references: [id], onDelete: Restrict)
   reservations Reservation[]
+  inspections  Inspection[]
 
   @@unique([tenantId, tag])
   @@index([tenantId, status])
@@ -338,45 +363,45 @@ enum AssetStatus {
 // -----------------------------------------------------------------------------
 
 model Reservation {
-  id                 String            @id @default(uuid()) @db.Uuid
-  tenantId           String            @db.Uuid
-  assetId            String?           @db.Uuid
-  requesterUserId    String            @db.Uuid
-  onBehalfUserId     String?           @db.Uuid
+  id                 String                  @id @default(uuid()) @db.Uuid
+  tenantId           String                  @db.Uuid
+  assetId            String?                 @db.Uuid
+  requesterUserId    String                  @db.Uuid
+  onBehalfUserId     String?                 @db.Uuid
   startAt            DateTime
   endAt              DateTime
   purpose            String?
-  approvalStatus     ApprovalStatus    @default(PENDING_APPROVAL)
-  lifecycleStatus    ReservationStatus @default(BOOKED)
+  approvalStatus     ApprovalStatus          @default(PENDING_APPROVAL)
+  lifecycleStatus    ReservationStatus       @default(BOOKED)
   /// Basket grouping (ADR-0009 option B). When an admin creates several
   /// reservations at once (e.g. "3 trucks for this site visit") they
   /// share a basketId. Each row keeps its own lifecycle — approval,
   /// check-out, cancel are per-reservation. Basket is purely a
   /// creation-time + UX grouping primitive.
-  basketId           String?           @db.Uuid
+  basketId           String?                 @db.Uuid
   /// Approval trail — populated when an admin approves or rejects.
-  approverUserId     String?           @db.Uuid
+  approverUserId     String?                 @db.Uuid
   approvedAt         DateTime?
   approvalNote       String?
   /// Cancellation trail (applies whether requester or admin cancels).
   cancelReason       String?
   cancelledAt        DateTime?
-  cancelledByUserId  String?           @db.Uuid
+  cancelledByUserId  String?                 @db.Uuid
   /// Check-out capture (ADR-0009 §Part B). `checkedOutAt` set when the
   /// operator releases the asset to the requester; the asset flips to
   /// IN_USE at the same time.
   checkedOutAt       DateTime?
-  checkedOutByUserId String?           @db.Uuid
+  checkedOutByUserId String?                 @db.Uuid
   mileageOut         Int?
   conditionOut       String?
   /// Check-in capture. `damageFlag=true` routes the asset to MAINTENANCE
   /// rather than READY on return — requires ops attention before the
   /// asset becomes bookable again.
   checkedInAt        DateTime?
-  checkedInByUserId  String?           @db.Uuid
+  checkedInByUserId  String?                 @db.Uuid
   mileageIn          Int?
   conditionIn        String?
-  damageFlag         Boolean           @default(false)
+  damageFlag         Boolean                 @default(false)
   damageNote         String?
   /// `tsrange('[startAt, endAt)')` — GENERATED ALWAYS STORED column
   /// that backs the `reservations_no_overlap` exclusion constraint
@@ -384,16 +409,17 @@ model Reservation {
   /// Postgres. Prisma exposes it as Unsupported so client writes
   /// never touch it.
   bookingRange       Unsupported("tsrange")?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
-  asset        Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  requester    User   @relation("ReservationRequester", fields: [requesterUserId], references: [id])
-  onBehalf     User?  @relation("ReservationOnBehalf", fields: [onBehalfUserId], references: [id])
-  approver     User?  @relation("ReservationApprover", fields: [approverUserId], references: [id], onDelete: SetNull)
-  canceller    User?  @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
-  checkedOutBy User?  @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
-  checkedInBy  User?  @relation("ReservationCheckedInBy", fields: [checkedInByUserId], references: [id], onDelete: SetNull)
+  asset        Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  requester    User         @relation("ReservationRequester", fields: [requesterUserId], references: [id])
+  onBehalf     User?        @relation("ReservationOnBehalf", fields: [onBehalfUserId], references: [id])
+  approver     User?        @relation("ReservationApprover", fields: [approverUserId], references: [id], onDelete: SetNull)
+  canceller    User?        @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  checkedOutBy User?        @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
+  checkedInBy  User?        @relation("ReservationCheckedInBy", fields: [checkedInByUserId], references: [id], onDelete: SetNull)
+  inspections  Inspection[]
 
   @@index([tenantId, startAt])
   @@index([tenantId, approvalStatus])
@@ -605,4 +631,237 @@ enum NotificationEventStatus {
   DEAD
 
   @@map("notification_event_status")
+}
+
+// -----------------------------------------------------------------------------
+// Inspections + photo evidence (ADR-0012)
+//
+//   * Templates are tenant-authored checklists bound to a CategoryKind OR a
+//     specific Category (XOR, enforced by CHECK constraint).
+//   * An Inspection snapshots the template shape at start time into
+//     templateSnapshot Json so subsequent edits to the template don't
+//     corrupt historical responses. A BEFORE UPDATE trigger rejects any
+//     change to templateSnapshot unless panorama.allow_snapshot_edit is
+//     set in the transaction (super-admin break-glass).
+//   * Photos live under S3 key `tenants/{tenantId}/inspections/{inspId}/photos/{photoId}.jpg`
+//     enforced by a UUID-strict regex CHECK. sharp sanitises + re-encodes
+//     to JPEG; EXIF / ICC / XMP are explicitly stripped (keepExif/ICC/Metadata(false)).
+//     `capturedAt` preserves EXIF DateTimeOriginal BEFORE strip for insurance
+//     defensibility; GPS + owner fields are dropped.
+//   * Tenant isolation: RLS + FORCE RLS + mandated runInTenant.
+// -----------------------------------------------------------------------------
+
+model InspectionTemplate {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  name            String
+  description     String?
+  /// Scope: categoryKind (all assets of that kind) OR categoryId
+  /// (specific override). Exactly one set, enforced by CHECK constraint.
+  /// `categoryKind` is a deliberate denormalisation — a sentinel meaning
+  /// "any Category in this tenant with kind=X". No FK by design; renaming
+  /// a category.kind would be a breaking schema change regardless.
+  /// Launcher resolution: categoryId beats categoryKind when both match.
+  categoryKind    CategoryKind?
+  categoryId      String?       @db.Uuid
+  displayOrder    Int           @default(0)
+  archivedAt      DateTime?
+  createdByUserId String        @db.Uuid
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category    Category?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy   User                     @relation("InspectionTemplateCreator", fields: [createdByUserId], references: [id])
+  items       InspectionTemplateItem[]
+  inspections Inspection[]
+
+  // Partial composite indexes for the launcher queries are hand-written
+  // in migration.sql (Prisma can't model partial indexes).
+  @@map("inspection_templates")
+}
+
+model InspectionTemplateItem {
+  id            String             @id @default(uuid()) @db.Uuid
+  templateId    String             @db.Uuid
+  tenantId      String             @db.Uuid
+  position      Int
+  label         String
+  itemType      InspectionItemType
+  required      Boolean            @default(false)
+  /// If true AND itemType != PHOTO, the item carries BOTH an answer
+  /// AND must have at least one photo attached.
+  photoRequired Boolean            @default(false)
+  minValue      Float?
+  maxValue      Float?
+  helpText      String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template InspectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+  @@map("inspection_template_items")
+}
+
+enum InspectionItemType {
+  BOOLEAN
+  TEXT
+  NUMBER
+  PHOTO
+
+  @@map("inspection_item_type")
+}
+
+model Inspection {
+  id                String             @id @default(uuid()) @db.Uuid
+  tenantId          String             @db.Uuid
+  /// SetNull — if an operator hard-deletes a template (rare), the
+  /// inspection preserves its own snapshot and keeps working.
+  templateId        String?            @db.Uuid
+  /// Immutable snapshot of the template at start time — enforces
+  /// response integrity across template edits. Shape validated by
+  /// Zod at write time; 64 kB cap enforced by CHECK constraint.
+  /// `BEFORE UPDATE` trigger rejects column change unless the
+  /// panorama.allow_snapshot_edit GUC is set in the transaction.
+  templateSnapshot  Json
+  /// Restrict — hard-deleting an asset with inspection history is
+  /// blocked. Archive the asset instead.
+  assetId           String             @db.Uuid
+  /// Optional link to the reservation that triggered this inspection
+  /// (pre-trip / post-trip). Reservation.checkOut reads this column
+  /// plus inspections table directly (no InspectionService import —
+  /// see ADR-0012 §8).
+  reservationId     String?            @db.Uuid
+  /// Restrict — a user with inspection history blocks hard-delete.
+  /// Soft-delete via User.deletedAt is the normal pathway.
+  startedByUserId   String             @db.Uuid
+  status            InspectionStatus   @default(IN_PROGRESS)
+  outcome           InspectionOutcome?
+  summaryNote       String?
+  startedAt         DateTime           @default(now())
+  completedAt       DateTime?
+  completedByUserId String?            @db.Uuid
+  /// Review writes MUST be conditional on `reviewedAt IS NULL` at
+  /// the service layer to prevent the double-approval bug.
+  /// `reviewNote` is appendable post-review (body-shop follow-up
+  /// workflow); updates emit panorama.inspection.review_note_updated.
+  reviewedAt        DateTime?
+  reviewedByUserId  String?            @db.Uuid
+  reviewNote        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template    InspectionTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  asset       Asset                @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  reservation Reservation?         @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  startedBy   User                 @relation("InspectionStarter", fields: [startedByUserId], references: [id], onDelete: Restrict)
+  completedBy User?                @relation("InspectionCompleter", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  reviewedBy  User?                @relation("InspectionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  responses   InspectionResponse[]
+  photos      InspectionPhoto[]
+
+  @@map("inspections")
+}
+
+enum InspectionStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("inspection_status")
+}
+
+enum InspectionOutcome {
+  PASS
+  FAIL
+  NEEDS_MAINTENANCE
+
+  @@map("inspection_outcome")
+}
+
+model InspectionResponse {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid
+  inspectionId   String   @db.Uuid
+  /// References an `id` inside the parent inspection's
+  /// templateSnapshot. No FK — integrity enforced by trigger
+  /// validate_inspection_response_snapshot_ref (SECURITY DEFINER
+  /// so break-glass transactions don't hit false-negatives).
+  snapshotItemId String   @db.Uuid
+  /// At most one of these three populated (single-answer CHECK).
+  /// PHOTO-type items carry their answer in InspectionPhoto rows.
+  booleanValue   Boolean?
+  textValue      String?
+  numberValue    Float?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inspection Inspection        @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  photos     InspectionPhoto[]
+
+  @@unique([inspectionId, snapshotItemId])
+  @@map("inspection_responses")
+}
+
+model InspectionPhoto {
+  /// Server-minted UUID; never an idempotency handle — that's
+  /// clientUploadKey (below). Split prevents the existence-oracle
+  /// that would arise from treating PK-collisions as "already done".
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  inspectionId     String                @db.Uuid
+  responseId       String?               @db.Uuid
+  /// Client-generated UUID used strictly as the retry dedup key.
+  /// Unique scoped to inspectionId (@@unique below) so a 23505 on
+  /// retry guarantees same-owner, same-inspection match. Service
+  /// layer re-checks uploadedByUserId on 23505 to close the
+  /// existence-oracle corner case where a different user supplies
+  /// the same UUID.
+  clientUploadKey  String                @db.Uuid
+  /// Format: `tenants/{tenantId}/inspections/{inspectionId}/photos/{photoId}.jpg`.
+  /// UUID-strict CHECK constraint + LIKE tenantId prefix.
+  storageKey       String
+  /// Always "image/jpeg" in 0.3 — sanitise re-encodes everything.
+  contentType      String
+  sizeBytes        Int
+  /// SHA-256 of the SANITISED bytes (post-EXIF-strip + re-encode).
+  sha256           String
+  width            Int
+  height           Int
+  /// Extracted from EXIF DateTimeOriginal BEFORE strip. User-supplied,
+  /// phones lie, but strictly more credible than uploadedAt for an
+  /// insurance hearing. exifr parse wrapped in try/catch; malformed
+  /// EXIF writes null.
+  capturedAt       DateTime?
+  /// FIELD NAMES found and stripped. Values NEVER persisted.
+  /// Examples: ["GPSLatitude", "GPSLongitude", "Make", "Model",
+  /// "ICC_Profile", "XMP:Creator"].
+  exifStripped     Json                  @default("[]")
+  status           InspectionPhotoStatus @default(UPLOADED)
+  uploadedByUserId String                @db.Uuid
+  uploadedAt       DateTime              @default(now())
+  /// Soft-delete. Retention sweep (§10) hard-deletes after
+  /// Tenant.inspectionPhotoRetentionDays (default 425). GDPR Art. 17
+  /// uses the super-admin break-glass path, not the sweep.
+  deletedAt        DateTime?
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inspection Inspection          @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  response   InspectionResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  uploadedBy User                @relation("InspectionPhotoUploader", fields: [uploadedByUserId], references: [id])
+
+  @@unique([inspectionId, clientUploadKey])
+  @@map("inspection_photos")
+}
+
+enum InspectionPhotoStatus {
+  UPLOADED
+  REJECTED
+
+  @@map("inspection_photo_status")
 }
