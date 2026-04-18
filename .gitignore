@@ -5,6 +5,9 @@ node_modules/
 
 # Build output
 dist/
+dist-docs/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 build/
 .next/
 out/

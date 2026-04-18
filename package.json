@@ -24,6 +24,9 @@
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "i18n:check": "tsx scripts/i18n-check.ts",
     "license:check": "tsx scripts/license-check.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "prepare": "husky install"
   },
   "devDependencies": {
@@ -32,6 +35,8 @@
     "rimraf": "^5.0.10",
     "tsx": "^4.19.2",
     "turbo": "^2.3.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitepress": "^1.5.0",
+    "vue": "^3.5.13"
   }
 }
