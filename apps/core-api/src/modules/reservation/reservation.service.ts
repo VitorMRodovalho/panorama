@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Prisma, Reservation } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -43,6 +44,20 @@ export interface CreateReservationParams {
   startAt: Date;
   endAt: Date;
   purpose?: string;
+}
+
+export interface CreateBasketParams {
+  actor: ReservationContext;
+  assetIds: string[];
+  onBehalfUserId?: string;
+  startAt: Date;
+  endAt: Date;
+  purpose?: string;
+}
+
+export interface CreateBasketResult {
+  basketId: string;
+  reservations: Reservation[];
 }
 
 export interface ListReservationsParams {
@@ -219,6 +234,147 @@ export class ReservationService {
         return created;
       },
       { reason: `reservation:create:${actor.tenantId}` },
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Create basket (ADR-0009 option B)
+  // ---------------------------------------------------------------------
+
+  async createBasket(params: CreateBasketParams): Promise<CreateBasketResult> {
+    const { actor } = params;
+    if (params.assetIds.length === 0) {
+      throw new BadRequestException('empty_basket');
+    }
+    if (new Set(params.assetIds).size !== params.assetIds.length) {
+      throw new BadRequestException('duplicate_asset_ids');
+    }
+    if (params.startAt >= params.endAt) {
+      throw new BadRequestException('start_must_be_before_end');
+    }
+
+    // On-behalf gating matches the single-create path.
+    if (params.onBehalfUserId && params.onBehalfUserId !== actor.userId) {
+      const rules = await this.loadRules(actor.tenantId);
+      const canOnBehalf = rules.autoApproveRoles.includes(actor.role) || actor.isVip;
+      if (!canOnBehalf) throw new ForbiddenException('cannot_reserve_on_behalf');
+    }
+
+    const basketId = randomUUID();
+
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const tenant = await tx.tenant.findUnique({
+          where: { id: actor.tenantId },
+          select: { reservationRules: true },
+        });
+        if (!tenant) throw new NotFoundException('tenant_not_found');
+        const rules = this.cfg.fromJson(tenant.reservationRules);
+
+        this.enforceRulesAtCreate(rules, params.startAt, params.endAt, actor);
+
+        if (params.onBehalfUserId) {
+          const member = await tx.tenantMembership.findUnique({
+            where: {
+              tenantId_userId: { tenantId: actor.tenantId, userId: params.onBehalfUserId },
+            },
+            select: { status: true },
+          });
+          if (!member || member.status !== 'active') {
+            throw new NotFoundException('on_behalf_user_not_found');
+          }
+        }
+
+        // Per-user concurrency applies to the basket as a whole — a driver
+        // with a max_concurrent of 2 cannot bypass the limit by creating a
+        // basket of 10. Count the target user's current actives and the
+        // basket's size against the cap.
+        if (
+          rules.maxConcurrentPerUser > 0 &&
+          !rules.autoApproveRoles.includes(actor.role)
+        ) {
+          const concurrency = await tx.reservation.count({
+            where: {
+              tenantId: actor.tenantId,
+              OR: [
+                { requesterUserId: params.onBehalfUserId ?? actor.userId },
+                { onBehalfUserId: params.onBehalfUserId ?? actor.userId },
+              ],
+              approvalStatus: { in: ['PENDING_APPROVAL', 'AUTO_APPROVED', 'APPROVED'] },
+              lifecycleStatus: { in: ['BOOKED', 'CHECKED_OUT'] },
+              endAt: { gt: new Date() },
+            },
+          });
+          if (concurrency + params.assetIds.length > rules.maxConcurrentPerUser) {
+            throw new ConflictException(
+              `max_concurrent_reservations:${rules.maxConcurrentPerUser}`,
+            );
+          }
+        }
+
+        // Validate every asset + check every conflict + blackout BEFORE
+        // writing anything — first failure rolls back the whole basket.
+        for (const assetId of params.assetIds) {
+          const asset = await tx.asset.findUnique({
+            where: { id: assetId },
+            select: { id: true, tenantId: true, bookable: true, archivedAt: true, status: true },
+          });
+          if (!asset || asset.tenantId !== actor.tenantId) {
+            throw new NotFoundException(`asset_not_found:${assetId}`);
+          }
+          if (asset.archivedAt) throw new BadRequestException(`asset_archived:${assetId}`);
+          if (!asset.bookable) throw new BadRequestException(`asset_not_bookable:${assetId}`);
+          if (asset.status === 'RETIRED' || asset.status === 'MAINTENANCE') {
+            throw new ConflictException(`asset_not_available:${assetId}:${asset.status}`);
+          }
+          await this.assertNoOverlap(tx, actor.tenantId, assetId, params.startAt, params.endAt);
+          await this.assertNoBlackout(tx, actor.tenantId, assetId, params.startAt, params.endAt);
+        }
+
+        const decision = this.decideApproval(rules, actor);
+        const createdAt = new Date();
+        const rows: Reservation[] = [];
+        for (const assetId of params.assetIds) {
+          const row = await tx.reservation.create({
+            data: {
+              tenantId: actor.tenantId,
+              assetId,
+              basketId,
+              requesterUserId: actor.userId,
+              onBehalfUserId: params.onBehalfUserId ?? null,
+              startAt: params.startAt,
+              endAt: params.endAt,
+              purpose: params.purpose ?? null,
+              approvalStatus: decision,
+              lifecycleStatus: 'BOOKED',
+              ...(decision === 'AUTO_APPROVED'
+                ? { approverUserId: actor.userId, approvedAt: createdAt }
+                : {}),
+            },
+          });
+          rows.push(row);
+        }
+
+        await this.audit.recordWithin(tx, {
+          action: 'panorama.reservation.basket_created',
+          resourceType: 'reservation_basket',
+          resourceId: basketId,
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          metadata: {
+            basketId,
+            size: rows.length,
+            reservationIds: rows.map((r) => r.id),
+            assetIds: params.assetIds,
+            startAt: params.startAt.toISOString(),
+            endAt: params.endAt.toISOString(),
+            approvalStatus: decision,
+          },
+        });
+
+        return { basketId, reservations: rows };
+      },
+      { reason: `reservation:createBasket:${actor.tenantId}` },
     );
   }
 

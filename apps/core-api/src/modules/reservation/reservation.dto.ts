@@ -14,6 +14,24 @@ export const CreateReservationSchema = z
   });
 export type CreateReservationInput = z.infer<typeof CreateReservationSchema>;
 
+export const CreateBasketSchema = z
+  .object({
+    assetIds: z.array(z.string().uuid()).min(1).max(20),
+    onBehalfUserId: z.string().uuid().optional(),
+    startAt: z.string().datetime(),
+    endAt: z.string().datetime(),
+    purpose: z.string().max(2000).optional(),
+  })
+  .refine((v) => new Date(v.startAt) < new Date(v.endAt), {
+    message: 'start_must_be_before_end',
+    path: ['endAt'],
+  })
+  .refine((v) => new Set(v.assetIds).size === v.assetIds.length, {
+    message: 'duplicate_asset_ids',
+    path: ['assetIds'],
+  });
+export type CreateBasketInput = z.infer<typeof CreateBasketSchema>;
+
 export const ListReservationsSchema = z.object({
   scope: z.enum(['mine', 'tenant']).default('mine'),
   status: z

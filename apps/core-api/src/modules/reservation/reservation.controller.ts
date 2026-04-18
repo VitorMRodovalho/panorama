@@ -19,6 +19,7 @@ import {
   CancelReservationSchema,
   CheckinSchema,
   CheckoutSchema,
+  CreateBasketSchema,
   CreateBlackoutSchema,
   CreateReservationSchema,
   ListBlackoutsSchema,
@@ -52,6 +53,29 @@ export class ReservationController {
       ...(parsed.data.purpose ? { purpose: parsed.data.purpose } : {}),
     });
     return this.shape(created);
+  }
+
+  @Post('basket')
+  @HttpCode(201)
+  async createBasket(@Body() body: unknown, @Req() req: Request): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = CreateBasketSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+
+    const basketParams: Parameters<ReservationService['createBasket']>[0] = {
+      actor,
+      assetIds: parsed.data.assetIds,
+      startAt: new Date(parsed.data.startAt),
+      endAt: new Date(parsed.data.endAt),
+    };
+    if (parsed.data.onBehalfUserId) basketParams.onBehalfUserId = parsed.data.onBehalfUserId;
+    if (parsed.data.purpose) basketParams.purpose = parsed.data.purpose;
+
+    const result = await this.reservations.createBasket(basketParams);
+    return {
+      basketId: result.basketId,
+      items: result.reservations.map((r) => this.shape(r)),
+    };
   }
 
   @Get()
@@ -188,6 +212,7 @@ export class ReservationController {
     id: string;
     tenantId: string;
     assetId: string | null;
+    basketId: string | null;
     requesterUserId: string;
     onBehalfUserId: string | null;
     startAt: Date;
@@ -217,6 +242,7 @@ export class ReservationController {
       id: r.id,
       tenantId: r.tenantId,
       assetId: r.assetId,
+      basketId: r.basketId,
       requesterUserId: r.requesterUserId,
       onBehalfUserId: r.onBehalfUserId,
       startAt: r.startAt,
