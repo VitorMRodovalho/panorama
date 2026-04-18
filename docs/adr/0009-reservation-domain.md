@@ -65,9 +65,12 @@ when a future workflow extension needs one without the other.
 A reservation is in conflict with another when **all of**:
 
 - Same `tenantId`
-- Same `assetId` (and `assetId IS NOT NULL` — basket reservations
-  without an asset never conflict with other rows at create time;
-  assignment happens at approval / check-out)
+- Same `assetId` (rows with `assetId IS NULL` are not currently
+  supported at create time — the DTO (`CreateReservationSchema`,
+  `CreateBasketSchema`) requires a concrete assetId. An assetless-
+  basket workflow (model pool → asset allocated at approval / check-
+  out, FleetManager-style) is a deliberate non-goal for 0.2 — see
+  §"Basket multi-asset" below for the rejected option A.
 - Time ranges overlap, using the standard
   `tstzrange('[startA, endA)') && tstzrange('[startB, endB)')` operator
   — half-open intervals, so back-to-back reservations don't collide.
@@ -75,13 +78,23 @@ A reservation is in conflict with another when **all of**:
   AUTO_APPROVED / APPROVED **and** its lifecycle is not CANCELLED /
   RETURNED / MISSED (i.e. it's still in-play).
 
-This is checked inside the create-reservation transaction, using
-`SERIALIZABLE` isolation for the conflict query path so two concurrent
-creates for overlapping windows serialise cleanly. A UNIQUE
-CONSTRAINT on a generated tstzrange exclusion would be stronger but
-Postgres requires btree_gist + a GIST index; we ship the service-level
-check for 0.2 and revisit the exclusion constraint in 0.3 if we see
-real contention.
+This is checked inside the create-reservation transaction at Postgres
+`Serializable` isolation (via `runAsSuperAdmin(cb, { isolationLevel:
+'Serializable' })`). Two concurrent creates that both pass the
+`assertNoOverlap` probe and then both try to INSERT will surface
+SQLSTATE 40001 / Prisma `P2034`; `PrismaService.runTxWithRetry` retries
+up to 3 times with short jittered backoff. On the retry the losing
+transaction sees the committed row and returns 409 `reservation_conflict`.
+The approve path runs at the same isolation so an admin-approved row
+that conflicts with a freshly-created pending row yields the same
+retry-then-409 path.
+
+A `btree_gist` + GENERATED tstzrange exclusion constraint would move
+the guarantee to the DB layer without the retry loop and is tracked
+for 0.3; Serializable + retry is sufficient at 0.2 scale and has a
+race test
+(`apps/core-api/test/reservation-basket.e2e.test.ts::"concurrent
+baskets..."`) that proves the invariant holds.
 
 ### 3. Blackouts
 

@@ -51,6 +51,16 @@ Target versions and tenant-visible milestones. Living document — last updated 
         inline forms; `/reservations/calendar` 14-day timeline per
         asset; migration 0008 `basketId` + `POST /reservations/basket`
         (option B — shared basketId, per-row independent lifecycle).
+      - Follow-ups identified by the 2026-04-18 agent-team review:
+        - [ ] **Batch approve/reject/cancel on basket** — per-row
+          today is a 5× click count regression vs FleetManager for a
+          5-truck basket. `POST /reservations/basket/:basketId/{approve,
+          reject,cancel}` with per-sibling re-check at approval time.
+          Blocker for ops adoption; target before step 5 begins.
+        - [ ] **Exclusion constraint on (tenantId, assetId, tstzrange)**
+          via `btree_gist` + GENERATED column. Replaces the
+          Serializable + retry loop with a DB-level guarantee. Target
+          0.3 (ADR-0009 §"Conflict detection" notes this).
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
 ## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)

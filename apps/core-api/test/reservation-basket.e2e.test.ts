@@ -331,8 +331,8 @@ describe('reservation basket e2e', () => {
     // with SQLSTATE 40001 → we retry → on the retry the second
     // attempt sees the committed row and throws 409.
     const cookie = await loginCookie(admin.email, admin.password);
-    const sharedAsset = assetIds[0];
-    const disjointAsset = assetIds[1];
+    const sharedAsset = assetIds[0]!;
+    const disjointAsset = assetIds[1]!;
     const start = isoAt(600);
     const end = isoAt(602);
 
