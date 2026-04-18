@@ -233,7 +233,7 @@ export class ReservationService {
 
         return created;
       },
-      { reason: `reservation:create:${actor.tenantId}` },
+      { reason: `reservation:create:${actor.tenantId}`, isolationLevel: 'Serializable' },
     );
   }
 
@@ -374,7 +374,7 @@ export class ReservationService {
 
         return { basketId, reservations: rows };
       },
-      { reason: `reservation:createBasket:${actor.tenantId}` },
+      { reason: `reservation:createBasket:${actor.tenantId}`, isolationLevel: 'Serializable' },
     );
   }
 
@@ -541,7 +541,10 @@ export class ReservationService {
         });
         return updated;
       },
-      { reason: `reservation:${target.toLowerCase()}:${reservationId}` },
+      {
+        reason: `reservation:${target.toLowerCase()}:${reservationId}`,
+        isolationLevel: 'Serializable',
+      },
     );
   }
 
