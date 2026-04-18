@@ -38,8 +38,16 @@ Target versions and tenant-visible milestones. Living document — last updated 
       admin `PATCH/DELETE /tenants/:id/memberships/:mid`, single-Owner
       warning banner on `/assets`, and the super-admin
       `tenant-nominate-owner` break-glass CLI.
-- [ ] **Step 4** — Reservation model, approval workflow, blackouts,
-      basket booking; check-out / check-in primitives.
+- [~] **Step 4** — Reservation model, approval workflow, blackouts
+      (ADR-0009).
+      - Part A **shipped**: migration 0006 extensions + blackout_slots
+        table + per-tenant `reservationRules` JSON; ReservationService
+        with conflict detection, blackout check, min-notice /
+        max-duration / max-concurrent rules, auto-approve by role;
+        `/reservations/*` + `/blackouts/*` endpoints; web `/reservations`
+        list + new form with admin approve/reject buttons.
+      - Part B pending: check-out / check-in with mileage / condition /
+        damage capture; basket multi-asset reservations; calendar view.
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
 ## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)
