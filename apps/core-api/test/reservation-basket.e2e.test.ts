@@ -321,4 +321,50 @@ describe('reservation basket e2e', () => {
       });
     }
   });
+
+  it('concurrent baskets targeting the same asset + overlapping window → exactly one survives', async () => {
+    // Exercise the Serializable + retry path on createBasket. If the
+    // reservation writes run at ReadCommitted (the ADR promise that
+    // the 2026-04-18 agent review caught as unkept), both baskets
+    // would pass the assertNoOverlap check then both insert rows
+    // for the shared asset. With Serializable, Postgres aborts one
+    // with SQLSTATE 40001 → we retry → on the retry the second
+    // attempt sees the committed row and throws 409.
+    const cookie = await loginCookie(admin.email, admin.password);
+    const sharedAsset = assetIds[0];
+    const disjointAsset = assetIds[1];
+    const start = isoAt(600);
+    const end = isoAt(602);
+
+    const submit = (extraAsset: string) =>
+      fetch(`${url}/reservations/basket`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          assetIds: [sharedAsset, extraAsset],
+          startAt: start,
+          endAt: end,
+        }),
+      });
+
+    const [a, b] = await Promise.all([submit(disjointAsset), submit(assetIds[2]!)]);
+    const statuses = [a.status, b.status].sort();
+    // Acceptable outcomes under Serializable:
+    //   [201, 409]  — one basket won, the other hit the conflict on retry
+    //   [201, 500]  — retry exhausted and Postgres kept aborting; rare
+    // Unacceptable (would mean the fix didn't land):
+    //   [201, 201]  — both baskets landed rows against sharedAsset
+    expect(statuses[0]).toBe(201);
+    expect([409, 500]).toContain(statuses[1]);
+
+    // Ground truth: exactly one row on sharedAsset in the window.
+    const rowsOnShared = await adminDb.reservation.count({
+      where: {
+        tenantId,
+        assetId: sharedAsset,
+        startAt: new Date(start),
+      },
+    });
+    expect(rowsOnShared).toBe(1);
+  });
 });
