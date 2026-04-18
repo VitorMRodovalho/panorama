@@ -44,6 +44,10 @@ model Tenant {
   /// claim a domain. Enterprise adds DNS TXT verification so a tenant
   /// cannot intercept users from a domain it does not control.
   allowedEmailDomains String[] @default([])
+  /// Default TTL applied when an admin creates a new invitation, in
+  /// seconds. Community caps between 3 600 (1 h) and 2 592 000 (30 d).
+  /// See ADR-0008.
+  invitationTtlSeconds Int      @default(604800)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -51,6 +55,7 @@ model Tenant {
   memberships TenantMembership[]
   assets      Asset[]
   categories  Category[]
+  invitations Invitation[]
 
   @@map("tenants")
 }
@@ -69,6 +74,10 @@ model User {
 
   authIdentities AuthIdentity[]
   memberships    TenantMembership[]
+  invitationsSent    Invitation[] @relation("InvitationInviter")
+  invitationsTargeted Invitation[] @relation("InvitationTarget")
+  invitationsAccepted Invitation[] @relation("InvitationAcceptor")
+  invitationsRevoked  Invitation[] @relation("InvitationRevoker")
 
   @@map("users")
 }
@@ -135,6 +144,57 @@ model TenantMembership {
   @@index([userId])
   @@index([tenantId, status])
   @@map("tenant_memberships")
+}
+
+// -----------------------------------------------------------------------------
+// Invitations — email-token one-time-use onboarding (ADR-0008)
+// -----------------------------------------------------------------------------
+
+model Invitation {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  /// Lowercased + trimmed at write time. Citext so lookups are
+  /// case-insensitive without calling lower() at every query site.
+  email            String   @db.Citext
+  /// 'owner' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
+  role             String
+  /// SHA-256(token) base64url. Plaintext lives only in the email + URL.
+  /// Unique so a pathological collision becomes a constraint violation
+  /// instead of a silent account takeover (defence in depth at 256-bit).
+  tokenHash        String   @unique
+  /// Pre-existing Panorama User the admin is re-inviting; NULL when the
+  /// target has no account yet.
+  targetUserId     String?  @db.Uuid
+  invitedByUserId  String   @db.Uuid
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  acceptedByUserId String?  @db.Uuid
+  revokedAt        DateTime?
+  revokedByUserId  String?  @db.Uuid
+  /// Outbox state mirrored from the email delivery pipeline. See ADR-0008.
+  /// `emailAttempts` counts worker attempts (covered by the ADR's
+  /// "up to 5 attempts" retry policy — persisted here for observability
+  /// and so retries survive worker restarts).
+  emailQueuedAt    DateTime?
+  emailSentAt      DateTime?
+  emailBouncedAt   DateTime?
+  emailAttempts    Int      @default(0)
+  emailLastError   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy        User     @relation("InvitationInviter",  fields: [invitedByUserId],   references: [id])
+  targetUser       User?    @relation("InvitationTarget",   fields: [targetUserId],      references: [id], onDelete: SetNull)
+  acceptedBy       User?    @relation("InvitationAcceptor", fields: [acceptedByUserId],  references: [id], onDelete: SetNull)
+  revokedBy        User?    @relation("InvitationRevoker",  fields: [revokedByUserId],   references: [id], onDelete: SetNull)
+
+  /// A partial unique index enforces "at most one open invite per
+  /// (tenantId, email)" — written as raw SQL in the migration because
+  /// Prisma cannot model partial indexes.
+  @@index([tenantId, email])
+  @@index([expiresAt])
+  @@map("invitations")
 }
 
 // -----------------------------------------------------------------------------
