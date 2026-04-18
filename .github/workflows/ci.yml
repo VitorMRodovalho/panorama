@@ -67,6 +67,7 @@ jobs:
         run: PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f infra/docker/postgres-init.sql
         env:
           PGPASSWORD: panorama
+      - run: pnpm --filter @panorama/core-api prisma:generate
       - run: pnpm --filter @panorama/core-api prisma:deploy
       - name: Apply RLS policies
         run: |
@@ -120,6 +121,9 @@ jobs:
     name: Filesystem SCA (Trivy)
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    permissions:
+      contents: read
+      security-events: write
     # Report-only during 0.x bootstrap. Dependabot's automated security
     # fixes are chewing through transitive vulns one group at a time;
     # blocking main on that queue would stall delivery. Flip exit-code
