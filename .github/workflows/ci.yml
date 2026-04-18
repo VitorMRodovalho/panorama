@@ -57,7 +57,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Bootstrap DB (extensions + roles)
+        run: PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f infra/docker/postgres-init.sql
+        env:
+          PGPASSWORD: panorama
       - run: pnpm --filter @panorama/core-api prisma:deploy
+      - name: Apply RLS policies
+        run: |
+          for rls in apps/core-api/prisma/migrations/*/rls.sql; do
+            echo "Applying $rls"
+            PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f "$rls"
+          done
       - run: pnpm test
 
   i18n-coverage:

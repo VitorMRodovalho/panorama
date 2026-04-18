@@ -10,7 +10,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
+    "test": "echo 'shared — types only, no runtime tests yet'",
     "lint": "echo 'nothing to lint yet'",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"

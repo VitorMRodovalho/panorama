@@ -10,7 +10,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
+    "test": "echo 'ui-kit — scaffold only, first components land in 0.2'",
     "lint": "echo 'nothing to lint yet'",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"

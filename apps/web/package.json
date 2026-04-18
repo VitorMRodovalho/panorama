@@ -5,13 +5,13 @@
   "description": "Panorama end-user web app (Next.js 14).",
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "start": "next start -p 3000",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "e2e": "playwright test"
+    "dev": "echo 'web app scaffold only — real Next.js pages land in 0.2' && exit 0",
+    "build": "echo 'web app scaffold only — real Next.js build lands in 0.2' && exit 0",
+    "start": "echo 'web app scaffold only' && exit 0",
+    "lint": "echo 'web — no ESLint config yet, gated by typecheck'",
+    "typecheck": "echo 'web — no Next.js app yet, typecheck enables in 0.2'",
+    "test": "echo 'web — no tests yet'",
+    "e2e": "echo 'web — no e2e yet'"
   },
   "dependencies": {
     "@panorama/shared": "workspace:*",

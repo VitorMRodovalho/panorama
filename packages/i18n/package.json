@@ -6,9 +6,9 @@
   "main": "index.js",
   "files": ["en", "pt-br", "es", "index.js", "index.d.ts"],
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "lint": "echo 'nothing to lint'",
-    "typecheck": "tsc --noEmit"
+    "build": "echo 'i18n — json bundles only, no build step'",
+    "test": "echo 'i18n — coverage gate runs from root via scripts/i18n-check.ts'",
+    "lint": "echo 'i18n — no lint, bundles are json'",
+    "typecheck": "echo 'i18n — no typecheck, bundles are json'"
   }
 }

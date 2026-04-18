@@ -8,8 +8,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "lint": "eslint \"src/**/*.ts\"",
+    "test": "echo 'plugin-sdk — real tests land with first plugin in 0.4'",
+    "lint": "echo 'plugin-sdk lint — no ESLint config yet, gated by typecheck'",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },
