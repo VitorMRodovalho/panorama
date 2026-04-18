@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/modules/prisma/prisma.service.js';
 import { NotificationService } from '../src/modules/notification/notification.service.js';
@@ -14,6 +14,7 @@ import { NotificationDispatcher } from '../src/modules/notification/notification
 import {
   redactSensitive,
 } from '../src/modules/notification/notification.service.js';
+import { ReservationService } from '../src/modules/reservation/reservation.service.js';
 import { resetTestDb } from './_reset-db.js';
 
 /**
@@ -113,6 +114,15 @@ describe('notification bus integration', () => {
     userId = user.id;
     await adminDb.tenantMembership.create({
       data: { tenantId, userId, role: 'owner', status: 'active' },
+    });
+
+    samplePayloadImpl = () => ({
+      reservationId: '00000000-0000-0000-0000-000000000099',
+      assetId: null,
+      requesterUserId: userId,
+      approverUserId: userId,
+      startAt: new Date().toISOString(),
+      endAt: new Date(Date.now() + 3600_000).toISOString(),
     });
   }, 120_000);
 
@@ -289,7 +299,7 @@ describe('notification bus integration', () => {
       const channelResults = row?.channelResults as Record<string, unknown>;
       expect((channelResults?.['stub'] as { status: string })?.status).toBe('dispatched');
       const audit = await adminDb.auditEvent.findFirst({
-        where: { action: 'panorama.notification.dispatched', resourceId: row?.id },
+        where: { action: 'panorama.notification.dispatched', resourceId: row!.id },
       });
       expect(audit).toBeTruthy();
     } finally {
@@ -358,7 +368,7 @@ describe('notification bus integration', () => {
       data: {
         tenantId,
         eventType: 'panorama.reservation.approved',
-        payload: samplePayload(),
+        payload: samplePayload() as Prisma.InputJsonValue,
         status: 'IN_PROGRESS',
         lastAttemptAt: new Date(Date.now() - 120_000), // 2 minutes ago
       },
@@ -379,7 +389,7 @@ describe('notification bus integration', () => {
       data: {
         tenantId,
         eventType: 'panorama.reservation.approved',
-        payload: samplePayload(),
+        payload: samplePayload() as Prisma.InputJsonValue,
         status: 'IN_PROGRESS',
         lastAttemptAt: new Date(Date.now() - 5_000), // 5s ago
       },
@@ -397,7 +407,7 @@ describe('notification bus integration', () => {
       data: {
         tenantId,
         eventType: 'panorama.reservation.approved',
-        payload: samplePayload(),
+        payload: samplePayload() as Prisma.InputJsonValue,
         status: 'PENDING',
       },
     });
@@ -417,6 +427,94 @@ describe('notification bus integration', () => {
     const meta = audit?.metadata as Record<string, unknown>;
     expect(meta['fromStatus']).toBe('PENDING');
     expect(meta['toStatus']).toBe('DISPATCHED');
+  });
+
+  // ---- end-to-end: reservation.approve emits a notification ----
+
+  it('ReservationService.approve enqueues panorama.reservation.approved (end-to-end)', async () => {
+    const reservations = app.get(ReservationService);
+
+    // Seed a bookable asset + a PENDING reservation owned by a
+    // non-admin so the approve path actually transitions the row.
+    const category = await adminDb.category.create({
+      data: { tenantId, name: 'E2E Category', kind: 'VEHICLE' },
+    });
+    const model = await adminDb.assetModel.create({
+      data: { tenantId, categoryId: category.id, name: 'E2E Model' },
+    });
+    const asset = await adminDb.asset.create({
+      data: {
+        tenantId,
+        modelId: model.id,
+        tag: 'E2E-01',
+        name: 'E2E Truck',
+        bookable: true,
+        status: 'READY',
+      },
+    });
+    const driver = await adminDb.user.create({
+      data: { email: 'e2e-driver@example.com', displayName: 'E2E Driver' },
+    });
+    await adminDb.tenantMembership.create({
+      data: { tenantId, userId: driver.id, role: 'driver', status: 'active' },
+    });
+
+    // Driver's pending reservation.
+    const pending = await reservations.create({
+      actor: {
+        tenantId,
+        userId: driver.id,
+        role: 'driver',
+        isVip: false,
+      },
+      assetId: asset.id,
+      startAt: new Date(Date.now() + 48 * 3600_000),
+      endAt: new Date(Date.now() + 50 * 3600_000),
+    });
+    expect(pending.approvalStatus).toBe('PENDING_APPROVAL');
+
+    // Before approve: only the panorama.reservation.created
+    // notification-side emission is NOT yet wired; expect zero
+    // notification rows for reservation.approved/rejected.
+    const beforeApprove = await adminDb.notificationEvent.count({
+      where: { tenantId, eventType: 'panorama.reservation.approved' },
+    });
+    expect(beforeApprove).toBe(0);
+
+    // Approve as the seeded owner (isAdmin=true path).
+    await reservations.approve({
+      actor: {
+        tenantId,
+        userId: userId, // seeded owner from beforeAll
+        role: 'owner',
+        isVip: false,
+      },
+      reservationId: pending.id,
+      note: 'all good',
+    });
+
+    const rows = await adminDb.notificationEvent.findMany({
+      where: { tenantId, eventType: 'panorama.reservation.approved' },
+    });
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.status).toBe('PENDING');
+    expect(row.dedupKey).toBe(`panorama.reservation.approved:${pending.id}`);
+    const payload = row.payload as Record<string, unknown>;
+    expect(payload['reservationId']).toBe(pending.id);
+    expect(payload['assetId']).toBe(asset.id);
+    expect(payload['requesterUserId']).toBe(driver.id);
+    expect(payload['approverUserId']).toBe(userId);
+    expect(payload['note']).toBe('all good');
+
+    // And the enqueue audit row landed.
+    const audit = await adminDb.auditEvent.findFirst({
+      where: {
+        action: 'panorama.notification.enqueued',
+        resourceId: row.id,
+      },
+    });
+    expect(audit).toBeTruthy();
   });
 
   it('normal dispatcher-driven PENDING → IN_PROGRESS → DISPATCHED does NOT fire tamper audit', async () => {
@@ -442,13 +540,10 @@ describe('notification bus integration', () => {
   });
 });
 
-function samplePayload(): Record<string, unknown> {
-  return {
-    reservationId: '00000000-0000-0000-0000-000000000099',
-    assetId: '00000000-0000-0000-0000-000000000098',
-    requesterUserId: '00000000-0000-0000-0000-000000000097',
-    approverUserId: '00000000-0000-0000-0000-000000000096',
-    startAt: new Date().toISOString(),
-    endAt: new Date(Date.now() + 3600_000).toISOString(),
-  };
-}
+// samplePayload is produced via a closure in beforeAll so it can bind
+// to the seeded `userId`. The email channel (auto-registered by
+// NotificationModule) looks up the user — using a fake UUID would
+// trip `tenant_or_requester_missing` and flip the row to FAILED in
+// tests that are only exercising dispatcher bookkeeping.
+let samplePayloadImpl: () => Record<string, unknown> = () => ({});
+const samplePayload = (): Record<string, unknown> => samplePayloadImpl();

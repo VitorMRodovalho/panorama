@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma, Reservation } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationService } from '../notification/notification.service.js';
 import {
   ReservationConfigService,
   type ReservationRules,
@@ -124,6 +125,7 @@ export class ReservationService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly cfg: ReservationConfigService,
+    private readonly notifications: NotificationService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -596,16 +598,35 @@ export class ReservationService {
         approvalNote: note ?? null,
       },
     });
+    const action =
+      target === 'APPROVED'
+        ? 'panorama.reservation.approved'
+        : 'panorama.reservation.rejected';
     await this.audit.recordWithin(tx, {
-      action:
-        target === 'APPROVED'
-          ? 'panorama.reservation.approved'
-          : 'panorama.reservation.rejected',
+      action,
       resourceType: 'reservation',
       resourceId: reservationId,
       tenantId: actor.tenantId,
       actorUserId: actor.userId,
       metadata: { note: note ?? null },
+    });
+    // Fan-out via the notification bus (ADR-0011). Same tx so the
+    // event emit is atomic with the decision — rollback takes it
+    // with the domain write. dedupKey prevents double-email on a
+    // racing approve+re-approve.
+    await this.notifications.enqueueWithin(tx, {
+      eventType: action,
+      tenantId: actor.tenantId,
+      dedupKey: `${action}:${reservationId}`,
+      payload: {
+        reservationId,
+        assetId: updated.assetId,
+        requesterUserId: updated.requesterUserId,
+        approverUserId: actor.userId,
+        startAt: updated.startAt.toISOString(),
+        endAt: updated.endAt.toISOString(),
+        ...(note ? { note } : {}),
+      },
     });
     return updated;
   }

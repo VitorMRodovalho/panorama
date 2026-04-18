@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationModule } from '../notification/notification.module.js';
 import { ReservationConfigService } from './reservation.config.js';
 import {
   BlackoutController,
@@ -15,6 +16,7 @@ import { ReservationService } from './reservation.service.js';
  * asset flows land in Part B.
  */
 @Module({
+  imports: [NotificationModule],
   controllers: [ReservationController, BlackoutController],
   providers: [ReservationService, BlackoutService, ReservationConfigService],
   exports: [ReservationService, BlackoutService, ReservationConfigService],
