@@ -65,6 +65,27 @@ same licence as the repository. We may later require contributors to sign a CLA
 before we can merge Enterprise-destined code — see
 [ADR-0002](./docs/adr/0002-oss-commercial-split.md).
 
+## AI assistance attribution
+
+Panorama is developed with AI coding assistance (Claude Code). Our convention is:
+
+- Commits that received meaningful AI help include an `Assisted-By:` trailer, e.g.
+  ```
+  Assisted-By: Claude (Anthropic) <noreply@anthropic.com>
+  ```
+  This is a **non-standard, informational trailer** — it is not Git-recognised
+  and does NOT register the assistant as a co-author in GitHub's UI. The human
+  listed as `Author:` is the sole author of record and the responsible party
+  for the change.
+- Commits landed before 2026-04-18 may still carry the legacy
+  `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
+  trailer. We are not rewriting history to change them — the trailer is
+  inaccurate only in the sense of the framing, not in the sense of the work
+  done. Going forward `Assisted-By:` is the standard.
+- Contributors are under no obligation to disclose AI assistance unless a
+  policy change requires it (e.g. an enterprise customer contract). Use your
+  judgement.
+
 ## Community
 
 - Discussions: GitHub Discussions on this repo
