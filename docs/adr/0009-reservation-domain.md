@@ -1,6 +1,6 @@
 # ADR-0009: Reservation domain — two-axis state, conflict detection, blackouts, approval
 
-- Status: Proposed
+- Status: Accepted (implemented in 0.2 step 4 Parts A + B, 2026-04-18)
 - Date: 2026-04-18
 - Deciders: Vitor Rodovalho
 - Related: [ADR-0003 Multi-tenancy](./0003-multi-tenancy.md), [ADR-0007 Tenant Owner](./0007-tenant-owner-role.md), [ADR-0008 Invitation flow](./0008-invitation-flow.md)
@@ -146,18 +146,55 @@ Metadata includes `{ assetId, requesterUserId, onBehalfUserId,
 startAt, endAt, reason?, approverUserId? }` so auditors can
 reconstruct the state sequence without joining against live rows.
 
-## Out of scope for 0.2 step 4 Part A
+## Part B additions (shipped 2026-04-18)
 
-Part A ships everything above EXCEPT:
+### Check-out / check-in data capture
 
-- **Check-out / check-in** with captured mileage, condition,
-  photos, damage reports. Lands in Part B.
-- **Basket reservations** (one reservation holding multiple assets of
-  different models). The schema allows `assetId=null` today; Part B
-  adds `reservation_items` for the multi-asset bag + the assignment
-  flow at approval / checkout.
-- **Calendar view** on web. Part A ships a list + form only; the
-  calendar / timeline UI lands with Part B.
+Migration 0007 adds nullable capture columns on `reservations`:
+`checkedOutAt`, `checkedOutByUserId`, `mileageOut`, `conditionOut`,
+`checkedInAt`, `checkedInByUserId`, `mileageIn`, `conditionIn`,
+`damageFlag BOOLEAN DEFAULT false`, `damageNote TEXT`. Service
+invariants:
+
+- Check-out requires approval_status in {APPROVED, AUTO_APPROVED}
+  and lifecycle=BOOKED. Asset must be READY or RESERVED (not
+  MAINTENANCE/RETIRED). On success: lifecycle→CHECKED_OUT and
+  `asset.status → IN_USE`.
+- Check-in requires lifecycle=CHECKED_OUT. Mileage monotonicity
+  enforced (in ≥ out when both present). `damageFlag=true` routes
+  `asset.status → MAINTENANCE` on check-in (ops inspects before
+  the asset becomes bookable again); otherwise READY.
+- Authorization: requester, onBehalf target, the user who
+  performed the check-out, or admin.
+
+### Basket multi-asset — option B: shared `basketId`
+
+Migration 0008 adds `reservations.basketId UUID NULL` + index on
+`(tenantId, basketId)`. The creation endpoint
+`POST /reservations/basket` takes
+`{ assetIds: [...], startAt, endAt, purpose }` and in one transaction
+creates N reservations with the same generated `basketId`. Each row
+then behaves independently — approve, reject, check-out, check-in,
+and cancel are per-reservation; basket is purely a creation-time + UX
+grouping (shared colour / pill in the list and calendar).
+
+Rejected alternative (option A): a `reservation_items
+(reservation_id, model_id, quantity)` line-item table with assets
+allocated at check-out from the model pool — FleetManager's pattern,
+better for rental-equipment-style workflows ("2 cameras of model
+X"). For fleet-asset workflows the user typically wants a specific
+vehicle, and option B keeps the schema thin + each row's lifecycle
+self-contained. Option A remains an easy addition later if
+model-pool allocation turns into a concrete requirement.
+
+### Calendar view
+
+`/reservations/calendar` renders a 14-day (toggle 7/14/30) timeline:
+per-asset rows, colored blocks per state, asset-scoped blackouts as
+amber blocks, global blackouts as a thin amber bar across every
+asset's track. Server-rendered only — zero client JS for 0.2.
+
+## Out of scope (deferred)
 - **Snipe-IT asset-status propagation** — FleetManager flipped the
   Snipe-IT `status_label` on approval / check-out. Panorama owns both
   sides in 0.2 so propagation isn't needed; integration with an

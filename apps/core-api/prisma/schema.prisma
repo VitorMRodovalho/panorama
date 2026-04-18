@@ -341,6 +341,12 @@ model Reservation {
   purpose         String?
   approvalStatus  ApprovalStatus @default(PENDING_APPROVAL)
   lifecycleStatus ReservationStatus @default(BOOKED)
+  /// Basket grouping (ADR-0009 option B). When an admin creates several
+  /// reservations at once (e.g. "3 trucks for this site visit") they
+  /// share a basketId. Each row keeps its own lifecycle — approval,
+  /// check-out, cancel are per-reservation. Basket is purely a
+  /// creation-time + UX grouping primitive.
+  basketId        String?  @db.Uuid
   /// Approval trail — populated when an admin approves or rejects.
   approverUserId  String?  @db.Uuid
   approvedAt      DateTime?
@@ -381,6 +387,7 @@ model Reservation {
   @@index([tenantId, assetId])
   @@index([tenantId, requesterUserId])
   @@index([tenantId, lifecycleStatus])
+  @@index([tenantId, basketId])
   @@map("reservations")
 }
 

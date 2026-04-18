@@ -13,7 +13,7 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0006 | [Plugin / extension SDK boundary](./0006-plugin-sdk.md) | Draft | 2026-04-17 |
 | 0007 | [Tenant Owner role (designated admin)](./0007-tenant-owner-role.md) | Accepted | 2026-04-18 |
 | 0008 | [Invitation flow (email-token, TTL, one-time-use, audit)](./0008-invitation-flow.md) | Accepted | 2026-04-18 |
-| 0009 | [Reservation domain (two-axis state, conflicts, blackouts, approval)](./0009-reservation-domain.md) | Proposed | 2026-04-18 |
+| 0009 | [Reservation domain (two-axis state, conflicts, blackouts, approval)](./0009-reservation-domain.md) | Accepted | 2026-04-18 |
 
 ## Template
 
