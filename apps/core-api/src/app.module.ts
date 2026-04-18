@@ -12,6 +12,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { InvitationModule } from './modules/invitation/invitation.module.js';
 import { InvitationWorkerModule } from './modules/invitation/invitation-worker.module.js';
+import { ReservationModule } from './modules/reservation/reservation.module.js';
 
 @Module({
   imports: [
@@ -31,11 +32,11 @@ import { InvitationWorkerModule } from './modules/invitation/invitation-worker.m
     AuthModule,
     InvitationModule,
     InvitationWorkerModule,
+    ReservationModule,
     AssetModule,
     HealthModule,
     ImportModule,
-    // 0.2: ReservationModule, NotificationModule, PluginHostModule,
-    //      I18nModule.forRootAsync.
+    // 0.2: NotificationModule, PluginHostModule, I18nModule.forRootAsync.
   ],
 })
 export class AppModule {}
