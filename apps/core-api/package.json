@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@casl/ability": "^6.7.1",
@@ -47,8 +48,11 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.15",
+    "@swc/core": "^1.15.26",
     "@types/express": "^5.0.0",
     "eslint": "^9.16.0",
+    "tsx": "^4.19.2",
+    "unplugin-swc": "^1.5.9",
     "vitest": "^2.1.8"
   }
 }
