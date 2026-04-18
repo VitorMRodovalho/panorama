@@ -131,6 +131,8 @@ export default async function ReservationsPage({
           <a href="/assets">Assets</a>
           <span>·</span>
           <strong>Reservations</strong>
+          <span>·</span>
+          <a href="/reservations/calendar">Calendar</a>
         </nav>
 
         {searchParams.error ? (
