@@ -92,6 +92,8 @@ model User {
   reservationsOnBehalf  Reservation[] @relation("ReservationOnBehalf")
   reservationsApproved  Reservation[] @relation("ReservationApprover")
   reservationsCancelled Reservation[] @relation("ReservationCanceller")
+  reservationsCheckedOut Reservation[] @relation("ReservationCheckedOutBy")
+  reservationsCheckedIn  Reservation[] @relation("ReservationCheckedInBy")
   blackoutsCreated      BlackoutSlot[]
 
   @@map("users")
@@ -347,6 +349,22 @@ model Reservation {
   cancelReason    String?
   cancelledAt     DateTime?
   cancelledByUserId String? @db.Uuid
+  /// Check-out capture (ADR-0009 §Part B). `checkedOutAt` set when the
+  /// operator releases the asset to the requester; the asset flips to
+  /// IN_USE at the same time.
+  checkedOutAt    DateTime?
+  checkedOutByUserId String? @db.Uuid
+  mileageOut      Int?
+  conditionOut    String?
+  /// Check-in capture. `damageFlag=true` routes the asset to MAINTENANCE
+  /// rather than READY on return — requires ops attention before the
+  /// asset becomes bookable again.
+  checkedInAt     DateTime?
+  checkedInByUserId String? @db.Uuid
+  mileageIn       Int?
+  conditionIn     String?
+  damageFlag      Boolean  @default(false)
+  damageNote      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -355,6 +373,8 @@ model Reservation {
   onBehalf        User?    @relation("ReservationOnBehalf",  fields: [onBehalfUserId],  references: [id])
   approver        User?    @relation("ReservationApprover",  fields: [approverUserId],  references: [id], onDelete: SetNull)
   canceller       User?    @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  checkedOutBy    User?    @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
+  checkedInBy     User?    @relation("ReservationCheckedInBy",  fields: [checkedInByUserId],  references: [id], onDelete: SetNull)
 
   @@index([tenantId, startAt])
   @@index([tenantId, approvalStatus])
