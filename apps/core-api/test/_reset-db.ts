@@ -19,6 +19,7 @@ import type { PrismaClient } from '@prisma/client';
 export async function resetTestDb(admin: PrismaClient): Promise<void> {
   await admin.$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL panorama.bypass_owner_check = 'on'");
+    await tx.blackoutSlot.deleteMany();
     await tx.invitation.deleteMany();
     await tx.reservation.deleteMany();
     await tx.asset.deleteMany();
