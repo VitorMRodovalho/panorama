@@ -187,9 +187,12 @@ Migration 0008 adds `reservations.basketId UUID NULL` + index on
 `POST /reservations/basket` takes
 `{ assetIds: [...], startAt, endAt, purpose }` and in one transaction
 creates N reservations with the same generated `basketId`. Each row
-then behaves independently — approve, reject, check-out, check-in,
-and cancel are per-reservation; basket is purely a creation-time + UX
-grouping (shared colour / pill in the list and calendar).
+then behaves independently at the lifecycle level — check-out and
+check-in are per-reservation (different drivers may pick up different
+trucks from the same basket at different times); approve / reject /
+cancel can be invoked per row **or** batched on the whole basket (see
+§"Basket batch decisions" below). The basket is primarily a creation-
+time + UX grouping (shared colour / pill in the list and calendar).
 
 Rejected alternative (option A): a `reservation_items
 (reservation_id, model_id, quantity)` line-item table with assets
@@ -199,6 +202,98 @@ X"). For fleet-asset workflows the user typically wants a specific
 vehicle, and option B keeps the schema thin + each row's lifecycle
 self-contained. Option A remains an easy addition later if
 model-pool allocation turns into a concrete requirement.
+
+### Basket batch decisions
+
+Approving a 5-truck basket one row at a time was a 15-click operation
+versus 3 clicks in the SnipeScheduler-FleetManager tool we're
+replacing. The 2026-04-18 fleet-ops persona review surfaced this as
+an adoption blocker. Batch endpoints close the gap without changing
+the underlying per-row state model:
+
+- `POST /reservations/basket/:basketId/approve`  (owner / fleet_admin)
+- `POST /reservations/basket/:basketId/reject`   (owner / fleet_admin)
+- `POST /reservations/basket/:basketId/cancel`   (admin OR non-admin
+  who is requester/onBehalf on **every** row of the basket — see
+  "Authorization" below)
+
+**Semantics — best-effort with per-row skip.** The batch runs inside
+a single Serializable transaction with the existing P2034 retry
+wrapper. For each row of the basket the service:
+
+1. Checks the lifecycle + approval predicate (PENDING_APPROVAL for
+   approve/reject; not CANCELLED/RETURNED/CHECKED_OUT for cancel).
+   Failing rows are recorded as `skipped` with a machine-readable
+   reason ("already_cancelled", "not_pending:rejected", etc.).
+2. Runs the per-row transition via the shared `decideWithin(tx, ...)`
+   or `cancelWithin(tx, ...)` internal — the same code paths the
+   single-row endpoints use, so conflict re-check + blackout re-check
+   + audit event emission stay identical. A fresh overlap conflict
+   on approve is a per-row skip (reason
+   `reservation_conflict`), not a batch abort; the ops user sees
+   "3 of 5 approved, 2 skipped (reservation_conflict)" and can take
+   targeted action on the remaining rows.
+3. A non-skippable exception (DB error, permission error) propagates
+   and rolls back the whole batch — the envelope audit event below
+   rolls back with it, so no lying summary row is ever committed.
+
+**Authorization.** Approve / reject are admin-only (matching the
+per-row endpoints). Cancel requires **either** admin **or** that the
+actor is requester/onBehalf on every row of the basket. Partial
+ownership is rejected with 403, not silently filtered — returning a
+mixed skip-list to a non-admin would leak which other rows exist in
+the basket. In practice baskets are single-requester by construction
+(`createBasket` copies the actor's id into every row), so this rule
+is transparent for legitimate users.
+
+**Error-code disclosure — deliberate.** A basketId belonging to
+another tenant returns 404 `basket_not_found` (cross-tenant rows
+filter out at query time); a basketId belonging to the caller's
+tenant but owned by a peer returns 403 `not_allowed_to_cancel`. A
+same-tenant peer can therefore distinguish "exists but not mine"
+from "doesn't exist in this tenant". This is consistent with the
+per-row cancel endpoint and is an accepted disclosure — tenant
+membership is not itself confidential between members.
+
+**Audit.** Per-row events remain (`panorama.reservation.approved` /
+`rejected` / `cancelled`) — existing audit queries by
+`resourceType=reservation` keep working unchanged. A new envelope
+event per batch (`panorama.reservation.basket_approved` /
+`basket_rejected` / `basket_cancelled`) carries the full
+`{ basketId, processedCount, skippedCount, processedReservationIds,
+skipped: [{reservationId, reason}], note?, reason? }`. An on-call
+paged at 3am runs one query on the envelope events to reconstruct
+"who approved which basket, what was skipped, why".
+
+**Result shape.** The service returns:
+
+```json
+{
+  "basketId": "…",
+  "processed": [{ "reservationId": "…", "outcome": "approved" }, …],
+  "skipped":   [{ "reservationId": "…", "reason": "reservation_conflict" }, …]
+}
+```
+
+Processed + skipped never overlap and together cover every row of
+the basket.
+
+**Size cap.** `CreateBasketSchema` caps `assetIds.length` at 20; the
+batch endpoints inherit that ceiling via the rows that exist. A
+Serializable retry on a 20-row batch replays the loop; at 3 attempts
+× 20 rows the worst case is 60 iterations plus audit writes, which
+fits comfortably in the transaction window.
+
+**Feature flag.** `reservationRules.enable_basket_batch` (default
+`true`) toggles the batch endpoints per tenant. Set to `false` via
+SQL to disable server-side without a redeploy — a defensive valve if
+a tenant hits pathological contention.
+
+**Rollback.** The three endpoints + `runBasketBatch` + the new
+`decideWithin` / `cancelWithin` extractions are code-only (no
+migration, no new column — the `basketId` column already exists
+since migration 0008). A revert of the commit removes the endpoints;
+the per-row endpoints remain functional throughout.
 
 ### Calendar view
 

@@ -3,12 +3,15 @@ import { apiGet } from '../../lib/api';
 import { getCurrentSession } from '../../lib/session';
 import { logoutAction, switchTenantAction } from '../login/actions';
 import {
+  approveBasketAction,
   approveReservationAction,
+  cancelBasketAction,
   cancelReservationAction,
   checkinReservationAction,
   checkoutReservationAction,
   createBasketAction,
   createReservationAction,
+  rejectBasketAction,
   rejectReservationAction,
 } from './actions';
 
@@ -63,6 +66,10 @@ interface ReservationsPageProps {
     checkedin?: string;
     basket?: string;
     basketId?: string;
+    batch?: string;
+    processed?: string;
+    skipped?: string;
+    skippedReasons?: string;
   };
 }
 
@@ -88,6 +95,35 @@ export default async function ReservationsPage({
   const assets: AssetListItem[] = (assetList.ok ? assetList.data.items : []).filter(
     (a) => a.bookable,
   );
+
+  // Batch-action metadata per basket: first-row id (where we anchor the
+  // buttons), total size, how many rows are batch-eligible per verb.
+  // Computed once server-side; the row renderer just reads from the Map.
+  const basketMeta = new Map<
+    string,
+    { firstRowId: string; size: number; pending: number; cancellable: number }
+  >();
+  for (const r of items) {
+    if (!r.basketId) continue;
+    const prev = basketMeta.get(r.basketId);
+    const isPending = r.approvalStatus === 'PENDING_APPROVAL' && r.lifecycleStatus !== 'CANCELLED';
+    const isCancellable =
+      r.lifecycleStatus !== 'CANCELLED' &&
+      r.lifecycleStatus !== 'RETURNED' &&
+      r.lifecycleStatus !== 'CHECKED_OUT';
+    if (!prev) {
+      basketMeta.set(r.basketId, {
+        firstRowId: r.id,
+        size: 1,
+        pending: isPending ? 1 : 0,
+        cancellable: isCancellable ? 1 : 0,
+      });
+    } else {
+      prev.size += 1;
+      if (isPending) prev.pending += 1;
+      if (isCancellable) prev.cancellable += 1;
+    }
+  }
 
   return (
     <>
@@ -163,6 +199,23 @@ export default async function ReservationsPage({
         {searchParams.basket ? (
           <div className="panorama-banner-success">
             Basket created{searchParams.basketId ? ` (basket ${searchParams.basketId.slice(0, 8)}…).` : '.'}
+          </div>
+        ) : null}
+        {searchParams.batch ? (
+          <div
+            className={
+              Number(searchParams.processed ?? '0') === 0 &&
+              Number(searchParams.skipped ?? '0') === 0
+                ? 'panorama-banner-warning'
+                : 'panorama-banner-success'
+            }
+          >
+            {renderBatchBanner({
+              verb: searchParams.batch,
+              processed: Number(searchParams.processed ?? '0'),
+              skipped: Number(searchParams.skipped ?? '0'),
+              skippedReasons: searchParams.skippedReasons ?? '',
+            })}
           </div>
         ) : null}
 
@@ -292,7 +345,10 @@ export default async function ReservationsPage({
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => (
+                {items.map((r) => {
+                  const meta = r.basketId ? basketMeta.get(r.basketId) : undefined;
+                  const isBasketAnchor = meta !== undefined && meta.firstRowId === r.id;
+                  return (
                   <tr key={r.id} data-basket={r.basketId ?? undefined}>
                     <td>{new Date(r.startAt).toLocaleString()}</td>
                     <td>{new Date(r.endAt).toLocaleString()}</td>
@@ -313,6 +369,88 @@ export default async function ReservationsPage({
                     <td>{humaniseLifecycle(r.lifecycleStatus)}</td>
                     <td>{r.purpose ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
+                      {isBasketAnchor && meta ? (
+                        <div style={{ marginBottom: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {isAdmin && meta.pending > 0 ? (
+                            <>
+                              <details style={{ display: 'inline-block' }}>
+                                <summary
+                                  className="panorama-button"
+                                  style={{ cursor: 'pointer' }}
+                                  title={`Approve all ${meta.pending} pending reservations in this basket`}
+                                >
+                                  Approve {meta.pending} pending
+                                </summary>
+                                <form
+                                  action={approveBasketAction}
+                                  className="panorama-inline-form"
+                                >
+                                  <input type="hidden" name="basketId" value={r.basketId!} />
+                                  <input
+                                    type="text"
+                                    name="note"
+                                    placeholder="Note (optional, attached to each row)"
+                                    maxLength={500}
+                                  />
+                                  <button type="submit" className="panorama-button">
+                                    Approve basket
+                                  </button>
+                                </form>
+                              </details>
+                              <details style={{ display: 'inline-block' }}>
+                                <summary
+                                  className="panorama-button secondary"
+                                  style={{ cursor: 'pointer' }}
+                                  title={`Reject all ${meta.pending} pending reservations in this basket`}
+                                >
+                                  Reject {meta.pending} pending
+                                </summary>
+                                <form
+                                  action={rejectBasketAction}
+                                  className="panorama-inline-form"
+                                >
+                                  <input type="hidden" name="basketId" value={r.basketId!} />
+                                  <input
+                                    type="text"
+                                    name="note"
+                                    placeholder="Reason shown to the requester (recommended)"
+                                    maxLength={500}
+                                  />
+                                  <button type="submit" className="panorama-button secondary">
+                                    Reject basket
+                                  </button>
+                                </form>
+                              </details>
+                            </>
+                          ) : null}
+                          {meta.cancellable > 0 ? (
+                            <details style={{ display: 'inline-block' }}>
+                              <summary
+                                className="panorama-button secondary"
+                                style={{ cursor: 'pointer' }}
+                                title={`Cancel ${meta.cancellable} of ${meta.size} reservations in this basket (terminal rows like checked-out are skipped)`}
+                              >
+                                Cancel {meta.cancellable} of {meta.size}
+                              </summary>
+                              <form
+                                action={cancelBasketAction}
+                                className="panorama-inline-form"
+                              >
+                                <input type="hidden" name="basketId" value={r.basketId!} />
+                                <input
+                                  type="text"
+                                  name="reason"
+                                  placeholder="Reason (optional, attached to each row)"
+                                  maxLength={500}
+                                />
+                                <button type="submit" className="panorama-button secondary">
+                                  Cancel basket
+                                </button>
+                              </form>
+                            </details>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {canCancel(r, isAdmin) ? (
                         <form action={cancelReservationAction} style={{ display: 'inline' }}>
                           <input type="hidden" name="id" value={r.id} />
@@ -378,7 +516,8 @@ export default async function ReservationsPage({
                       ) : null}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -432,4 +571,73 @@ function humaniseApproval(status: string): string {
 }
 function humaniseLifecycle(status: string): string {
   return LIFECYCLE_LABELS[status] ?? status;
+}
+
+// Skip reasons from the service (see ReservationService.runBasketBatch)
+// mapped to ops-lingo so María's team can read the banner without
+// decoding codes. Any unknown reason falls through to the raw string —
+// better than silently hiding it.
+const BATCH_SKIP_LABELS: Record<string, string> = {
+  already_cancelled: 'already cancelled',
+  cannot_cancel_returned: 'already returned',
+  cannot_cancel_checked_out: 'checked out — in service',
+  reservation_conflict: 'now conflicts with another booking',
+  'not_pending:auto_approved': 'already auto-approved',
+  'not_pending:approved': 'already approved',
+  'not_pending:rejected': 'already rejected',
+  unknown: 'unknown reason',
+};
+
+function humaniseBatchReason(raw: string): string {
+  if (BATCH_SKIP_LABELS[raw]) return BATCH_SKIP_LABELS[raw]!;
+  if (raw.startsWith('blackout_conflict')) return 'blackout window';
+  if (raw.startsWith('not_pending:')) return `already ${raw.slice('not_pending:'.length)}`;
+  return raw;
+}
+
+function renderBatchBanner(opts: {
+  verb: string;
+  processed: number;
+  skipped: number;
+  skippedReasons: string;
+}): JSX.Element {
+  const { verb, processed, skipped, skippedReasons } = opts;
+  const verbPast =
+    verb === 'cancel' ? 'cancelled' : verb === 'approve' ? 'approved' : 'rejected';
+  if (processed === 0 && skipped === 0) {
+    return <>Basket {verb}: nothing to apply — the basket was empty or all rows were terminal.</>;
+  }
+  const reasons = skippedReasons
+    .split('|')
+    .filter((s) => s.length > 0)
+    .map((pair) => {
+      const idx = pair.lastIndexOf(':');
+      if (idx < 0) return { reason: pair, count: 1 };
+      const reason = pair.slice(0, idx);
+      const count = Number(pair.slice(idx + 1));
+      return { reason, count: Number.isFinite(count) ? count : 1 };
+    });
+  return (
+    <>
+      Basket {verb}: <strong>{processed}</strong> {verbPast}
+      {skipped > 0 ? (
+        <>
+          , <strong>{skipped}</strong> skipped
+          {reasons.length > 0 ? (
+            <>
+              {' '}(
+              {reasons.map((r, i) => (
+                <span key={r.reason}>
+                  {i > 0 ? '; ' : ''}
+                  {r.count} {humaniseBatchReason(r.reason)}
+                </span>
+              ))}
+              )
+            </>
+          ) : null}
+        </>
+      ) : null}
+      .
+    </>
+  );
 }

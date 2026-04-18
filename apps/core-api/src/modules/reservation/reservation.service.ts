@@ -81,6 +81,19 @@ export interface ApprovalDecisionParams {
   note?: string;
 }
 
+export interface BasketBatchParams {
+  actor: ReservationContext;
+  basketId: string;
+  note?: string;
+  reason?: string;
+}
+
+export interface BasketBatchResult {
+  basketId: string;
+  processed: Array<{ reservationId: string; outcome: 'approved' | 'rejected' | 'cancelled' }>;
+  skipped: Array<{ reservationId: string; reason: string }>;
+}
+
 export interface CheckoutParams {
   actor: ReservationContext;
   reservationId: string;
@@ -440,51 +453,63 @@ export class ReservationService {
   // ---------------------------------------------------------------------
 
   async cancel(params: CancelReservationParams): Promise<Reservation> {
-    const { actor, reservationId, reason } = params;
     return this.prisma.runAsSuperAdmin(
-      async (tx) => {
-        const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
-        if (!existing || existing.tenantId !== actor.tenantId) {
-          throw new NotFoundException('reservation_not_found');
-        }
-        if (existing.lifecycleStatus === 'CANCELLED') return existing;
-        if (existing.lifecycleStatus === 'RETURNED') {
-          throw new BadRequestException('cannot_cancel_returned');
-        }
-        if (existing.lifecycleStatus === 'CHECKED_OUT') {
-          throw new BadRequestException('cannot_cancel_checked_out');
-        }
-        const isRequester =
-          existing.requesterUserId === actor.userId ||
-          existing.onBehalfUserId === actor.userId;
-        if (!isRequester && !isAdmin(actor.role)) {
-          throw new ForbiddenException('not_allowed_to_cancel');
-        }
-
-        const updated = await tx.reservation.update({
-          where: { id: reservationId },
-          data: {
-            lifecycleStatus: 'CANCELLED',
-            cancelledAt: new Date(),
-            cancelledByUserId: actor.userId,
-            cancelReason: reason ?? null,
-          },
-        });
-        await this.audit.recordWithin(tx, {
-          action: 'panorama.reservation.cancelled',
-          resourceType: 'reservation',
-          resourceId: reservationId,
-          tenantId: actor.tenantId,
-          actorUserId: actor.userId,
-          metadata: {
-            reason: reason ?? null,
-            wasApprovalStatus: existing.approvalStatus,
-          },
-        });
-        return updated;
-      },
-      { reason: `reservation:cancel:${reservationId}` },
+      (tx) => this.cancelWithin(tx, params),
+      { reason: `reservation:cancel:${params.reservationId}` },
     );
+  }
+
+  /**
+   * Per-row cancel body shared by the single-row endpoint and
+   * `cancelBasket`. Caller owns the transaction + any authorisation
+   * gate above the basket level. This method still enforces the
+   * per-row authorisation (requester / onBehalf / admin) so a
+   * mis-used call site can't cancel a row it shouldn't.
+   */
+  private async cancelWithin(
+    tx: Prisma.TransactionClient,
+    params: CancelReservationParams,
+  ): Promise<Reservation> {
+    const { actor, reservationId, reason } = params;
+    const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
+    if (!existing || existing.tenantId !== actor.tenantId) {
+      throw new NotFoundException('reservation_not_found');
+    }
+    if (existing.lifecycleStatus === 'CANCELLED') return existing;
+    if (existing.lifecycleStatus === 'RETURNED') {
+      throw new BadRequestException('cannot_cancel_returned');
+    }
+    if (existing.lifecycleStatus === 'CHECKED_OUT') {
+      throw new BadRequestException('cannot_cancel_checked_out');
+    }
+    const isRequester =
+      existing.requesterUserId === actor.userId ||
+      existing.onBehalfUserId === actor.userId;
+    if (!isRequester && !isAdmin(actor.role)) {
+      throw new ForbiddenException('not_allowed_to_cancel');
+    }
+
+    const updated = await tx.reservation.update({
+      where: { id: reservationId },
+      data: {
+        lifecycleStatus: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledByUserId: actor.userId,
+        cancelReason: reason ?? null,
+      },
+    });
+    await this.audit.recordWithin(tx, {
+      action: 'panorama.reservation.cancelled',
+      resourceType: 'reservation',
+      resourceId: reservationId,
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      metadata: {
+        reason: reason ?? null,
+        wasApprovalStatus: existing.approvalStatus,
+      },
+    });
+    return updated;
   }
 
   // ---------------------------------------------------------------------
@@ -503,73 +528,253 @@ export class ReservationService {
     params: ApprovalDecisionParams,
     target: 'APPROVED' | 'REJECTED',
   ): Promise<Reservation> {
-    const { actor, reservationId, note } = params;
-    if (!isAdmin(actor.role)) {
+    if (!isAdmin(params.actor.role)) {
       throw new ForbiddenException('admin_role_required');
     }
     return this.prisma.runAsSuperAdmin(
-      async (tx) => {
-        const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
-        if (!existing || existing.tenantId !== actor.tenantId) {
-          throw new NotFoundException('reservation_not_found');
-        }
-        if (existing.approvalStatus !== 'PENDING_APPROVAL') {
-          throw new BadRequestException(
-            `not_pending:${existing.approvalStatus.toLowerCase()}`,
-          );
-        }
-        if (existing.lifecycleStatus === 'CANCELLED') {
-          throw new BadRequestException('already_cancelled');
-        }
-
-        // Re-check overlap at approval time — the asset may have been
-        // double-booked by another approved reservation since the
-        // requester submitted this one.
-        if (target === 'APPROVED' && existing.assetId) {
-          await this.assertNoOverlap(
-            tx,
-            actor.tenantId,
-            existing.assetId,
-            existing.startAt,
-            existing.endAt,
-            { ignoreId: existing.id },
-          );
-          await this.assertNoBlackout(
-            tx,
-            actor.tenantId,
-            existing.assetId,
-            existing.startAt,
-            existing.endAt,
-          );
-        }
-
-        const updated = await tx.reservation.update({
-          where: { id: reservationId },
-          data: {
-            approvalStatus: target,
-            approverUserId: actor.userId,
-            approvedAt: new Date(),
-            approvalNote: note ?? null,
-          },
-        });
-        await this.audit.recordWithin(tx, {
-          action:
-            target === 'APPROVED'
-              ? 'panorama.reservation.approved'
-              : 'panorama.reservation.rejected',
-          resourceType: 'reservation',
-          resourceId: reservationId,
-          tenantId: actor.tenantId,
-          actorUserId: actor.userId,
-          metadata: { note: note ?? null },
-        });
-        return updated;
-      },
+      (tx) => this.decideWithin(tx, params, target),
       {
-        reason: `reservation:${target.toLowerCase()}:${reservationId}`,
+        reason: `reservation:${target.toLowerCase()}:${params.reservationId}`,
         isolationLevel: 'Serializable',
       },
     );
+  }
+
+  /**
+   * Per-row approve/reject body shared by the single-row endpoint and
+   * `approveBasket` / `rejectBasket`. Caller owns the transaction and
+   * the admin-role check. Throws `BadRequestException` / `ConflictException`
+   * on skippable preconditions so batch callers can catch and record
+   * a per-row skip reason.
+   */
+  private async decideWithin(
+    tx: Prisma.TransactionClient,
+    params: ApprovalDecisionParams,
+    target: 'APPROVED' | 'REJECTED',
+  ): Promise<Reservation> {
+    const { actor, reservationId, note } = params;
+    const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
+    if (!existing || existing.tenantId !== actor.tenantId) {
+      throw new NotFoundException('reservation_not_found');
+    }
+    if (existing.approvalStatus !== 'PENDING_APPROVAL') {
+      throw new BadRequestException(
+        `not_pending:${existing.approvalStatus.toLowerCase()}`,
+      );
+    }
+    if (existing.lifecycleStatus === 'CANCELLED') {
+      throw new BadRequestException('already_cancelled');
+    }
+
+    // Re-check overlap at approval time — the asset may have been
+    // double-booked by another approved reservation since the
+    // requester submitted this one.
+    if (target === 'APPROVED' && existing.assetId) {
+      await this.assertNoOverlap(
+        tx,
+        actor.tenantId,
+        existing.assetId,
+        existing.startAt,
+        existing.endAt,
+        { ignoreId: existing.id },
+      );
+      await this.assertNoBlackout(
+        tx,
+        actor.tenantId,
+        existing.assetId,
+        existing.startAt,
+        existing.endAt,
+      );
+    }
+
+    const updated = await tx.reservation.update({
+      where: { id: reservationId },
+      data: {
+        approvalStatus: target,
+        approverUserId: actor.userId,
+        approvedAt: new Date(),
+        approvalNote: note ?? null,
+      },
+    });
+    await this.audit.recordWithin(tx, {
+      action:
+        target === 'APPROVED'
+          ? 'panorama.reservation.approved'
+          : 'panorama.reservation.rejected',
+      resourceType: 'reservation',
+      resourceId: reservationId,
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      metadata: { note: note ?? null },
+    });
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------
+  // Basket batch decisions (ADR-0009 §"Basket batch decisions")
+  // ---------------------------------------------------------------------
+  //
+  // Single-tx best-effort semantics: each eligible row transitions, each
+  // ineligible row is recorded as skipped with a machine-readable reason.
+  // Audit emits per-row events (symmetry with single-row approve/reject/
+  // cancel) plus one envelope event per basket carrying the full
+  // processed/skipped vector so an on-call at 3am finds everything with
+  // a single query on `panorama.reservation.basket_*`.
+
+  async approveBasket(params: BasketBatchParams): Promise<BasketBatchResult> {
+    if (!isAdmin(params.actor.role)) {
+      throw new ForbiddenException('admin_role_required');
+    }
+    return this.runBasketBatch(params, 'APPROVED');
+  }
+
+  async rejectBasket(params: BasketBatchParams): Promise<BasketBatchResult> {
+    if (!isAdmin(params.actor.role)) {
+      throw new ForbiddenException('admin_role_required');
+    }
+    return this.runBasketBatch(params, 'REJECTED');
+  }
+
+  async cancelBasket(params: BasketBatchParams): Promise<BasketBatchResult> {
+    return this.runBasketBatch(params, 'CANCELLED');
+  }
+
+  private async runBasketBatch(
+    params: BasketBatchParams,
+    operation: 'APPROVED' | 'REJECTED' | 'CANCELLED',
+  ): Promise<BasketBatchResult> {
+    const { actor, basketId, note, reason } = params;
+    await this.assertBatchEnabled(actor.tenantId);
+
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const rows = await tx.reservation.findMany({
+          where: { tenantId: actor.tenantId, basketId },
+          orderBy: { id: 'asc' },
+        });
+        if (rows.length === 0) throw new NotFoundException('basket_not_found');
+
+        // cancel-specific authorisation: non-admins must be
+        // requester/onBehalf on EVERY row of the basket. Baskets today
+        // are always single-requester by construction (createBasket
+        // copies the actor's id to every row); this defensive check
+        // closes the "one row not mine" leak surfaced in tech-lead
+        // review — a non-admin never learns the composition of a
+        // basket they don't fully own.
+        if (operation === 'CANCELLED' && !isAdmin(actor.role)) {
+          const notMine = rows.find(
+            (r) =>
+              r.requesterUserId !== actor.userId &&
+              r.onBehalfUserId !== actor.userId,
+          );
+          if (notMine) {
+            throw new ForbiddenException('not_allowed_to_cancel');
+          }
+        }
+
+        const processed: BasketBatchResult['processed'] = [];
+        const skipped: BasketBatchResult['skipped'] = [];
+
+        for (const row of rows) {
+          try {
+            if (operation === 'CANCELLED') {
+              // cancelWithin is idempotent on already-cancelled rows;
+              // treat "already cancelled" and "returned / checked-out"
+              // as a skip so a mixed basket (1 checked-out, 2 booked)
+              // still cancels the 2 bookable rows.
+              if (row.lifecycleStatus === 'CANCELLED') {
+                skipped.push({ reservationId: row.id, reason: 'already_cancelled' });
+                continue;
+              }
+              if (row.lifecycleStatus === 'RETURNED') {
+                skipped.push({ reservationId: row.id, reason: 'cannot_cancel_returned' });
+                continue;
+              }
+              if (row.lifecycleStatus === 'CHECKED_OUT') {
+                skipped.push({ reservationId: row.id, reason: 'cannot_cancel_checked_out' });
+                continue;
+              }
+              const rowParams: CancelReservationParams = { actor, reservationId: row.id };
+              if (reason) rowParams.reason = reason;
+              await this.cancelWithin(tx, rowParams);
+              processed.push({ reservationId: row.id, outcome: 'cancelled' });
+            } else {
+              // approve / reject — per-row predicate check before the
+              // write so we don't burn a re-check overlap probe on
+              // rows that are already decided.
+              if (row.approvalStatus !== 'PENDING_APPROVAL') {
+                skipped.push({
+                  reservationId: row.id,
+                  reason: `not_pending:${row.approvalStatus.toLowerCase()}`,
+                });
+                continue;
+              }
+              if (row.lifecycleStatus === 'CANCELLED') {
+                skipped.push({ reservationId: row.id, reason: 'already_cancelled' });
+                continue;
+              }
+              const rowParams: ApprovalDecisionParams = { actor, reservationId: row.id };
+              if (note) rowParams.note = note;
+              await this.decideWithin(tx, rowParams, operation);
+              processed.push({
+                reservationId: row.id,
+                outcome: operation === 'APPROVED' ? 'approved' : 'rejected',
+              });
+            }
+          } catch (err) {
+            // ConflictException = re-check overlap or blackout fired
+            // on this row; BadRequestException = lifecycle/approval
+            // predicate we didn't pre-filter (defence in depth — the
+            // Within methods own their own invariants). Both are
+            // per-row skippable; anything else propagates and rolls
+            // back the whole batch (the basket-level audit event
+            // below rolls back with it, so no lying envelope event).
+            if (err instanceof ConflictException || err instanceof BadRequestException) {
+              skipped.push({ reservationId: row.id, reason: err.message });
+              continue;
+            }
+            throw err;
+          }
+        }
+
+        const envelopeAction =
+          operation === 'APPROVED'
+            ? 'panorama.reservation.basket_approved'
+            : operation === 'REJECTED'
+              ? 'panorama.reservation.basket_rejected'
+              : 'panorama.reservation.basket_cancelled';
+
+        await this.audit.recordWithin(tx, {
+          action: envelopeAction,
+          resourceType: 'reservation_basket',
+          resourceId: basketId,
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          metadata: {
+            basketId,
+            processedCount: processed.length,
+            skippedCount: skipped.length,
+            processedReservationIds: processed.map((p) => p.reservationId),
+            skipped,
+            note: note ?? null,
+            reason: reason ?? null,
+          },
+        });
+
+        return { basketId, processed, skipped };
+      },
+      {
+        reason: `reservation:basket_${operation.toLowerCase()}:${basketId}`,
+        isolationLevel: 'Serializable',
+      },
+    );
+  }
+
+  private async assertBatchEnabled(tenantId: string): Promise<void> {
+    const rules = await this.loadRules(tenantId);
+    if (!rules.enableBasketBatch) {
+      throw new ForbiddenException('basket_batch_disabled');
+    }
   }
 
   // ---------------------------------------------------------------------

@@ -29,6 +29,9 @@ function fmtError(raw: string): string {
   if (e.includes('cannot_checkin_when_lifecycle')) return 'Reservation must be checked-out before check-in.';
   if (e.includes('mileage_not_monotonic')) return 'Check-in mileage must be ≥ check-out mileage.';
   if (e.includes('not_allowed')) return "You aren't allowed to perform this action.";
+  if (e.includes('basket_not_found')) return 'Basket not found (it may have been fully cancelled or deleted).';
+  if (e.includes('basket_batch_disabled')) return 'Basket batch actions are disabled for this tenant.';
+  if (e.includes('admin_role_required')) return 'Admin role required for this action.';
   return raw;
 }
 
@@ -149,6 +152,74 @@ export async function rejectReservationAction(formData: FormData): Promise<void>
     redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
   }
   redirect('/reservations?rejected=1');
+}
+
+async function runBatchAction(
+  formData: FormData,
+  endpoint: 'approve' | 'reject' | 'cancel',
+): Promise<void> {
+  const basketId = String(formData.get('basketId') ?? '').trim();
+  if (!basketId) redirect('/reservations');
+
+  const payload: Record<string, unknown> = {};
+  if (endpoint === 'cancel') {
+    const reason = String(formData.get('reason') ?? '').trim();
+    if (reason) payload['reason'] = reason;
+  } else {
+    const note = String(formData.get('note') ?? '').trim();
+    if (note) payload['note'] = note;
+  }
+
+  const res = await fetch(`${CORE_API}/reservations/basket/${basketId}/${endpoint}`, {
+    method: 'POST',
+    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
+    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    processed?: unknown[];
+    skipped?: Array<{ reservationId?: string; reason?: string }>;
+  };
+  const processed = Array.isArray(body.processed) ? body.processed.length : 0;
+  const skippedArr = Array.isArray(body.skipped) ? body.skipped : [];
+  const skipped = skippedArr.length;
+
+  // Group skip reasons so the banner surfaces WHICH preconditions
+  // fired, not just a bare count. persona-fleet-ops blocker: "1 skipped"
+  // is the scariest banner in fleet ops — was it a benign already-
+  // approved sibling, or an In-Service vehicle the driver took on the
+  // road? We pass a compact reason:count summary through the URL.
+  const reasonCounts = new Map<string, number>();
+  for (const s of skippedArr) {
+    const key = typeof s.reason === 'string' ? s.reason : 'unknown';
+    reasonCounts.set(key, (reasonCounts.get(key) ?? 0) + 1);
+  }
+  const reasonsParam = Array.from(reasonCounts.entries())
+    .map(([reason, count]) => `${reason}:${count}`)
+    .join('|');
+
+  const params = new URLSearchParams();
+  params.set('batch', endpoint);
+  params.set('processed', String(processed));
+  params.set('skipped', String(skipped));
+  if (reasonsParam) params.set('skippedReasons', reasonsParam);
+  redirect(`/reservations?${params.toString()}`);
+}
+
+export async function approveBasketAction(formData: FormData): Promise<void> {
+  return runBatchAction(formData, 'approve');
+}
+
+export async function rejectBasketAction(formData: FormData): Promise<void> {
+  return runBatchAction(formData, 'reject');
+}
+
+export async function cancelBasketAction(formData: FormData): Promise<void> {
+  return runBatchAction(formData, 'cancel');
 }
 
 export async function checkoutReservationAction(formData: FormData): Promise<void> {

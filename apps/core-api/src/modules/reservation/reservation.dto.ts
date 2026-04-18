@@ -51,6 +51,12 @@ export const ApprovalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+export const BasketBatchDecisionSchema = z.object({
+  note: z.string().max(500).optional(),
+  reason: z.string().max(500).optional(),
+});
+export type BasketBatchDecisionInput = z.infer<typeof BasketBatchDecisionSchema>;
+
 export const CheckoutSchema = z.object({
   mileage: z.number().int().nonnegative().optional(),
   condition: z.string().max(2000).optional(),

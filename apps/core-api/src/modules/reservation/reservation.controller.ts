@@ -16,6 +16,7 @@ import {
 import type { Request } from 'express';
 import {
   ApprovalDecisionSchema,
+  BasketBatchDecisionSchema,
   CancelReservationSchema,
   CheckinSchema,
   CheckoutSchema,
@@ -164,6 +165,60 @@ export class ReservationController {
     if (parsed.data.note) rejectParams.note = parsed.data.note;
     const updated = await this.reservations.reject(rejectParams);
     return this.shape(updated);
+  }
+
+  @Post('basket/:basketId/approve')
+  @HttpCode(200)
+  async approveBasket(
+    @Param('basketId') basketId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = BasketBatchDecisionSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const callParams: Parameters<ReservationService['approveBasket']>[0] = {
+      actor,
+      basketId,
+    };
+    if (parsed.data.note) callParams.note = parsed.data.note;
+    return this.reservations.approveBasket(callParams);
+  }
+
+  @Post('basket/:basketId/reject')
+  @HttpCode(200)
+  async rejectBasket(
+    @Param('basketId') basketId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = BasketBatchDecisionSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const callParams: Parameters<ReservationService['rejectBasket']>[0] = {
+      actor,
+      basketId,
+    };
+    if (parsed.data.note) callParams.note = parsed.data.note;
+    return this.reservations.rejectBasket(callParams);
+  }
+
+  @Post('basket/:basketId/cancel')
+  @HttpCode(200)
+  async cancelBasket(
+    @Param('basketId') basketId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = BasketBatchDecisionSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const callParams: Parameters<ReservationService['cancelBasket']>[0] = {
+      actor,
+      basketId,
+    };
+    if (parsed.data.reason) callParams.reason = parsed.data.reason;
+    return this.reservations.cancelBasket(callParams);
   }
 
   @Post(':id/checkout')

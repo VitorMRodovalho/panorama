@@ -14,6 +14,14 @@ export interface ReservationRules {
   maxDurationHours: number;
   maxConcurrentPerUser: number;
   autoApproveRoles: string[];
+  /**
+   * Server-side kill-switch for the basket batch approve/reject/cancel
+   * endpoints (ADR-0009 §"Basket batch decisions"). Defaults to `true`
+   * so tenants get the feature without intervention; a tenant hitting
+   * pathological contention can be flipped to `false` via SQL without
+   * a redeploy.
+   */
+  enableBasketBatch: boolean;
 }
 
 export const DEFAULT_AUTO_APPROVE_ROLES = ['owner', 'fleet_admin', 'fleet_staff'];
@@ -28,11 +36,13 @@ export class ReservationConfigService {
     const autoApproveRoles = Array.isArray(obj['auto_approve_roles'])
       ? (obj['auto_approve_roles'] as unknown[]).filter((v): v is string => typeof v === 'string')
       : DEFAULT_AUTO_APPROVE_ROLES;
+    const enableBasketBatch = coerceBool(obj['enable_basket_batch'], true);
     return {
       minNoticeHours: Math.max(0, minNoticeHours),
       maxDurationHours: Math.max(0, maxDurationHours),
       maxConcurrentPerUser: Math.max(0, maxConcurrentPerUser),
       autoApproveRoles: autoApproveRoles.length > 0 ? autoApproveRoles : DEFAULT_AUTO_APPROVE_ROLES,
+      enableBasketBatch,
     };
   }
 }
@@ -42,6 +52,16 @@ function coerceInt(v: unknown, fallback: number): number {
   if (typeof v === 'string' && v.trim() !== '') {
     const n = Number(v);
     if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return fallback;
+}
+
+function coerceBool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (s === 'true' || s === '1' || s === 'yes') return true;
+    if (s === 'false' || s === '0' || s === 'no') return false;
   }
   return fallback;
 }
