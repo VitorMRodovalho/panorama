@@ -63,9 +63,10 @@ Target versions and tenant-visible milestones. Living document — last updated 
           0.3 (ADR-0009 §"Conflict detection" notes this).
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
-## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)
+## 0.3 — Inspections, maintenance, enterprise prep (target Sept 2026)
 
 - [ ] Configurable checklists (per asset type), photo evidence, EXIF strip
+      — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md)
 - [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
 - [ ] Mileage + time-based alerts
 - [ ] CSV exports for every list view
@@ -73,13 +74,6 @@ Target versions and tenant-visible milestones. Living document — last updated 
 - [ ] Email bounce webhook (SES/SendGrid) → invitation state update
 - [ ] Just-in-time tenant membership based on `allowedEmailDomains` match
       at first OIDC login (gates the enterprise SCIM story)
-
-## 0.3 — Inspections + maintenance (target: Sept 2026)
-
-- [ ] Configurable checklists (per asset type), photo evidence, EXIF strip
-- [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
-- [ ] Mileage + time-based alerts
-- [ ] CSV exports for every list view
 
 ## 0.4 — Notifications + reports + webhooks (target Oct 2026)
 

@@ -16,6 +16,7 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0009 | [Reservation domain (two-axis state, conflicts, blackouts, approval)](./0009-reservation-domain.md) | Accepted | 2026-04-18 |
 | 0010 | [Snipe-IT compat shim — auth model (per-user PATs)](./0010-snipeit-compat-shim-auth.md) | Accepted | 2026-04-18 |
 | 0011 | [Notification event bus — architecture](./0011-notification-event-bus.md) | Accepted | 2026-04-18 |
+| 0012 | [Inspection checklists + photo evidence pipeline](./0012-inspection-photo-pipeline.md) | Accepted | 2026-04-18 |
 
 ## Template
 
