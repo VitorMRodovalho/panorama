@@ -33,6 +33,20 @@ export const ApprovalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+export const CheckoutSchema = z.object({
+  mileage: z.number().int().nonnegative().optional(),
+  condition: z.string().max(2000).optional(),
+});
+export type CheckoutInput = z.infer<typeof CheckoutSchema>;
+
+export const CheckinSchema = z.object({
+  mileage: z.number().int().nonnegative().optional(),
+  condition: z.string().max(2000).optional(),
+  damageFlag: z.boolean().optional(),
+  damageNote: z.string().max(2000).optional(),
+});
+export type CheckinInput = z.infer<typeof CheckinSchema>;
+
 export const CreateBlackoutSchema = z
   .object({
     assetId: z.string().uuid().nullable().optional(),

@@ -17,6 +17,8 @@ import type { Request } from 'express';
 import {
   ApprovalDecisionSchema,
   CancelReservationSchema,
+  CheckinSchema,
+  CheckoutSchema,
   CreateBlackoutSchema,
   CreateReservationSchema,
   ListBlackoutsSchema,
@@ -140,6 +142,48 @@ export class ReservationController {
     return this.shape(updated);
   }
 
+  @Post(':id/checkout')
+  @HttpCode(200)
+  async checkout(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = CheckoutSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const checkoutParams: Parameters<ReservationService['checkOut']>[0] = {
+      actor,
+      reservationId: id,
+    };
+    if (parsed.data.mileage !== undefined) checkoutParams.mileage = parsed.data.mileage;
+    if (parsed.data.condition !== undefined) checkoutParams.condition = parsed.data.condition;
+    const updated = await this.reservations.checkOut(checkoutParams);
+    return this.shape(updated);
+  }
+
+  @Post(':id/checkin')
+  @HttpCode(200)
+  async checkin(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const actor = this.actorFromSession(req);
+    const parsed = CheckinSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const checkinParams: Parameters<ReservationService['checkIn']>[0] = {
+      actor,
+      reservationId: id,
+    };
+    if (parsed.data.mileage !== undefined) checkinParams.mileage = parsed.data.mileage;
+    if (parsed.data.condition !== undefined) checkinParams.condition = parsed.data.condition;
+    if (parsed.data.damageFlag !== undefined) checkinParams.damageFlag = parsed.data.damageFlag;
+    if (parsed.data.damageNote !== undefined) checkinParams.damageNote = parsed.data.damageNote;
+    const updated = await this.reservations.checkIn(checkinParams);
+    return this.shape(updated);
+  }
+
   private shape(r: {
     id: string;
     tenantId: string;
@@ -157,6 +201,16 @@ export class ReservationController {
     cancelledAt: Date | null;
     cancelledByUserId: string | null;
     cancelReason: string | null;
+    checkedOutAt: Date | null;
+    checkedOutByUserId: string | null;
+    mileageOut: number | null;
+    conditionOut: string | null;
+    checkedInAt: Date | null;
+    checkedInByUserId: string | null;
+    mileageIn: number | null;
+    conditionIn: string | null;
+    damageFlag: boolean;
+    damageNote: string | null;
     createdAt: Date;
   }): unknown {
     return {
@@ -176,6 +230,16 @@ export class ReservationController {
       cancelledAt: r.cancelledAt,
       cancelledByUserId: r.cancelledByUserId,
       cancelReason: r.cancelReason,
+      checkedOutAt: r.checkedOutAt,
+      checkedOutByUserId: r.checkedOutByUserId,
+      mileageOut: r.mileageOut,
+      conditionOut: r.conditionOut,
+      checkedInAt: r.checkedInAt,
+      checkedInByUserId: r.checkedInByUserId,
+      mileageIn: r.mileageIn,
+      conditionIn: r.conditionIn,
+      damageFlag: r.damageFlag,
+      damageNote: r.damageNote,
       createdAt: r.createdAt,
     };
   }

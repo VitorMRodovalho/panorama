@@ -66,6 +66,22 @@ export interface ApprovalDecisionParams {
   note?: string;
 }
 
+export interface CheckoutParams {
+  actor: ReservationContext;
+  reservationId: string;
+  mileage?: number;
+  condition?: string;
+}
+
+export interface CheckinParams {
+  actor: ReservationContext;
+  reservationId: string;
+  mileage?: number;
+  condition?: string;
+  damageFlag?: boolean;
+  damageNote?: string;
+}
+
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
 function isAdmin(role: string): boolean {
@@ -371,6 +387,164 @@ export class ReservationService {
       },
       { reason: `reservation:${target.toLowerCase()}:${reservationId}` },
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // Check-out / Check-in (ADR-0009 Part B)
+  // ---------------------------------------------------------------------
+
+  async checkOut(params: CheckoutParams): Promise<Reservation> {
+    const { actor, reservationId } = params;
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
+        if (!existing || existing.tenantId !== actor.tenantId) {
+          throw new NotFoundException('reservation_not_found');
+        }
+        this.assertRequesterOrAdmin(existing, actor);
+        if (
+          existing.approvalStatus !== 'APPROVED' &&
+          existing.approvalStatus !== 'AUTO_APPROVED'
+        ) {
+          throw new BadRequestException(
+            `cannot_checkout_when_approval:${existing.approvalStatus.toLowerCase()}`,
+          );
+        }
+        if (existing.lifecycleStatus !== 'BOOKED') {
+          throw new BadRequestException(
+            `cannot_checkout_when_lifecycle:${existing.lifecycleStatus.toLowerCase()}`,
+          );
+        }
+        if (!existing.assetId) {
+          throw new BadRequestException('no_asset_to_checkout');
+        }
+
+        const asset = await tx.asset.findUnique({
+          where: { id: existing.assetId },
+          select: { id: true, tenantId: true, status: true, archivedAt: true },
+        });
+        if (!asset || asset.tenantId !== actor.tenantId) {
+          throw new NotFoundException('asset_not_found');
+        }
+        if (asset.archivedAt) throw new BadRequestException('asset_archived');
+        if (asset.status !== 'READY' && asset.status !== 'RESERVED') {
+          // RESERVED is acceptable — it means an earlier approval already
+          // reserved the asset for this booking. READY is the default.
+          throw new ConflictException(`asset_not_ready:${asset.status}`);
+        }
+
+        const now = new Date();
+        const updated = await tx.reservation.update({
+          where: { id: reservationId },
+          data: {
+            lifecycleStatus: 'CHECKED_OUT',
+            checkedOutAt: now,
+            checkedOutByUserId: actor.userId,
+            mileageOut: params.mileage ?? null,
+            conditionOut: params.condition ?? null,
+          },
+        });
+        await tx.asset.update({
+          where: { id: asset.id },
+          data: { status: 'IN_USE' },
+        });
+        await this.audit.recordWithin(tx, {
+          action: 'panorama.reservation.checked_out',
+          resourceType: 'reservation',
+          resourceId: reservationId,
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          metadata: {
+            assetId: asset.id,
+            mileage: params.mileage ?? null,
+            condition: params.condition ?? null,
+          },
+        });
+        return updated;
+      },
+      { reason: `reservation:checkout:${reservationId}` },
+    );
+  }
+
+  async checkIn(params: CheckinParams): Promise<Reservation> {
+    const { actor, reservationId } = params;
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
+        if (!existing || existing.tenantId !== actor.tenantId) {
+          throw new NotFoundException('reservation_not_found');
+        }
+        this.assertRequesterOrAdmin(existing, actor, {
+          alsoAllow: existing.checkedOutByUserId,
+        });
+        if (existing.lifecycleStatus !== 'CHECKED_OUT') {
+          throw new BadRequestException(
+            `cannot_checkin_when_lifecycle:${existing.lifecycleStatus.toLowerCase()}`,
+          );
+        }
+        if (!existing.assetId) {
+          throw new BadRequestException('no_asset_to_checkin');
+        }
+        if (
+          params.mileage !== undefined &&
+          existing.mileageOut !== null &&
+          existing.mileageOut !== undefined &&
+          params.mileage < existing.mileageOut
+        ) {
+          throw new BadRequestException('mileage_not_monotonic');
+        }
+
+        const damageFlag = params.damageFlag ?? false;
+        const nextAssetStatus = damageFlag ? 'MAINTENANCE' : 'READY';
+        const now = new Date();
+
+        const updated = await tx.reservation.update({
+          where: { id: reservationId },
+          data: {
+            lifecycleStatus: 'RETURNED',
+            checkedInAt: now,
+            checkedInByUserId: actor.userId,
+            mileageIn: params.mileage ?? null,
+            conditionIn: params.condition ?? null,
+            damageFlag,
+            damageNote: params.damageNote ?? null,
+          },
+        });
+        await tx.asset.update({
+          where: { id: existing.assetId },
+          data: { status: nextAssetStatus },
+        });
+        await this.audit.recordWithin(tx, {
+          action: 'panorama.reservation.checked_in',
+          resourceType: 'reservation',
+          resourceId: reservationId,
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          metadata: {
+            assetId: existing.assetId,
+            mileage: params.mileage ?? null,
+            condition: params.condition ?? null,
+            damageFlag,
+            damageNote: params.damageNote ?? null,
+            assetNextStatus: nextAssetStatus,
+          },
+        });
+        return updated;
+      },
+      { reason: `reservation:checkin:${reservationId}` },
+    );
+  }
+
+  private assertRequesterOrAdmin(
+    reservation: { requesterUserId: string; onBehalfUserId: string | null },
+    actor: ReservationContext,
+    opts: { alsoAllow?: string | null } = {},
+  ): void {
+    if (isAdmin(actor.role)) return;
+    if (reservation.requesterUserId === actor.userId) return;
+    if (reservation.onBehalfUserId === actor.userId) return;
+    if (opts.alsoAllow && opts.alsoAllow === actor.userId) return;
+    throw new ForbiddenException('not_allowed');
   }
 
   // ---------------------------------------------------------------------
