@@ -12,6 +12,63 @@ import { currentTenantId } from '../tenant/tenant.context.js';
 const SERIALIZATION_FAILURE_CODE = 'P2034';
 
 /**
+ * Fields whose plaintext we never want in a log line. Hashes live in
+ * Postgres as pre-images to the real secret (password, PAT plaintext,
+ * invitation token, email-hash) — tee'ing them to stdout via a stray
+ * `log: ['query']` setting on an operator's machine is exactly the
+ * "token in URL without server-side hash" failure mode adjacent.
+ *
+ * The redaction is belt-and-braces with never-enabling query logging
+ * in production: if someone later flips `log: ['query']` on to debug,
+ * the sensitive values are already blanked.
+ *
+ * Kept EXPORTED so test code can assert the redaction list hasn't
+ * silently shrunk.
+ */
+export const PRISMA_REDACT_FIELDS = [
+  'tokenHash',
+  'password',
+  'secretHash',
+  'emailHash',
+] as const;
+
+const REDACTED = '<redacted>';
+const SENSITIVE_QUERY_PATTERN = new RegExp(
+  `"?(${PRISMA_REDACT_FIELDS.join('|')})"?`,
+  'i',
+);
+
+/**
+ * Redact sensitive field values from a freeform log string. Handles
+ * the three shapes Prisma actually emits:
+ *
+ *   * JSON payload: `"tokenHash":"abc..."` → `"tokenHash":"<redacted>"`
+ *   * Object literal: `tokenHash: 'abc'` → `tokenHash: '<redacted>'`
+ *   * SQL literal: `"tokenHash" = 'abc'` → `"tokenHash" = '<redacted>'`
+ *
+ * Field names are matched word-bounded so `tokenHash` doesn't collide
+ * with, say, `apiTokenHashedAt` (hypothetical). EXPORTED for unit tests.
+ */
+export function redactSensitive(text: string): string {
+  let out = text;
+  for (const field of PRISMA_REDACT_FIELDS) {
+    out = out.replace(
+      new RegExp(`("${field}"\\s*:\\s*)"[^"]*"`, 'g'),
+      `$1"${REDACTED}"`,
+    );
+    out = out.replace(
+      new RegExp(`(\\b${field}\\s*:\\s*)['"][^'"]*['"]`, 'g'),
+      `$1'${REDACTED}'`,
+    );
+    out = out.replace(
+      new RegExp(`("?\\b${field}\\b"?\\s*=\\s*)'[^']*'`, 'g'),
+      `$1'${REDACTED}'`,
+    );
+  }
+  return out;
+}
+
+/**
  * Injectable Prisma wrapper with two safety rails:
  *
  *   1. `runInTenant(tenantId, cb)` — opens a transaction, emits
@@ -56,15 +113,33 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       log: [
         { emit: 'event', level: 'warn' },
         { emit: 'event', level: 'error' },
+        { emit: 'event', level: 'query' },
       ],
       ...(opts?.datasourceUrl ? { datasources: { db: { url: opts.datasourceUrl } } } : {}),
     });
+    // Redact plaintext + pre-image pairs (tokenHash, password, etc.)
+    // from every Prisma-emitted log before it reaches the Nest logger.
+    // Defence in depth — we don't enable `log: ['query']` in prod, but
+    // an operator toggling it on to debug mustn't see pre-images.
     this.$on('warn' as never, (e: Prisma.LogEvent) =>
-      this.log.warn({ target: e.target, message: e.message }),
+      this.log.warn({ target: e.target, message: redactSensitive(e.message) }),
     );
     this.$on('error' as never, (e: Prisma.LogEvent) =>
-      this.log.error({ target: e.target, message: e.message }),
+      this.log.error({ target: e.target, message: redactSensitive(e.message) }),
     );
+    // Query events surface SQL + serialised params. If the query text
+    // mentions a sensitive column name, blank the whole params vector
+    // — we can't positionally map $1/$2/... back to columns without
+    // parsing the SQL, and over-redaction is cheaper than a leak.
+    this.$on('query' as never, (e: Prisma.QueryEvent) => {
+      const params = SENSITIVE_QUERY_PATTERN.test(e.query) ? REDACTED : e.params;
+      this.log.debug({
+        target: 'query',
+        query: redactSensitive(e.query),
+        params,
+        duration: e.duration,
+      });
+    });
   }
 
   async onModuleInit(): Promise<void> {

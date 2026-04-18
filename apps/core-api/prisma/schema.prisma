@@ -31,23 +31,23 @@ datasource db {
 // -----------------------------------------------------------------------------
 
 model Tenant {
-  id          String    @id @default(uuid()) @db.Uuid
-  slug        String    @unique
-  name        String
-  displayName String
-  locale      String    @default("en")
-  timezone    String    @default("UTC")
+  id                   String    @id @default(uuid()) @db.Uuid
+  slug                 String    @unique
+  name                 String
+  displayName          String
+  locale               String    @default("en")
+  timezone             String    @default("UTC")
   /// Email domains this tenant claims. A user signing in with an email
   /// matching any domain here is auto-routed to this tenant during
   /// home-realm discovery and eligible for just-in-time membership.
   /// **Community edition does NOT verify domain ownership** — anyone can
   /// claim a domain. Enterprise adds DNS TXT verification so a tenant
   /// cannot intercept users from a domain it does not control.
-  allowedEmailDomains String[] @default([])
+  allowedEmailDomains  String[]  @default([])
   /// Default TTL applied when an admin creates a new invitation, in
   /// seconds. Community caps between 3 600 (1 h) and 2 592 000 (30 d).
   /// See ADR-0008.
-  invitationTtlSeconds Int      @default(604800)
+  invitationTtlSeconds Int       @default(604800)
   /// Per-tenant reservation policy — see ADR-0009. Shape:
   /// {
   ///   "min_notice_hours": 0,
@@ -56,45 +56,48 @@ model Tenant {
   ///   "auto_approve_roles": ["owner", "fleet_admin", "fleet_staff"]
   /// }
   /// Zero means "not enforced" for each numeric.
-  reservationRules Json @default("{}")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  reservationRules     Json      @default("{}")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
 
-  memberships TenantMembership[]
-  assets      Asset[]
-  categories  Category[]
-  invitations Invitation[]
-  blackouts   BlackoutSlot[]
+  memberships          TenantMembership[]
+  assets               Asset[]
+  categories           Category[]
+  invitations          Invitation[]
+  blackouts            BlackoutSlot[]
+  personalAccessTokens PersonalAccessToken[]
 
   @@map("tenants")
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique @db.Citext
-  displayName  String
-  firstName    String?
-  lastName     String?
-  status       UserStatus @default(ACTIVE)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
-  lastLoginAt  DateTime?
+  id          String     @id @default(uuid()) @db.Uuid
+  email       String     @unique @db.Citext
+  displayName String
+  firstName   String?
+  lastName    String?
+  status      UserStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  lastLoginAt DateTime?
 
-  authIdentities AuthIdentity[]
-  memberships    TenantMembership[]
-  invitationsSent    Invitation[] @relation("InvitationInviter")
-  invitationsTargeted Invitation[] @relation("InvitationTarget")
-  invitationsAccepted Invitation[] @relation("InvitationAcceptor")
-  invitationsRevoked  Invitation[] @relation("InvitationRevoker")
-  reservationsRequested Reservation[] @relation("ReservationRequester")
-  reservationsOnBehalf  Reservation[] @relation("ReservationOnBehalf")
-  reservationsApproved  Reservation[] @relation("ReservationApprover")
-  reservationsCancelled Reservation[] @relation("ReservationCanceller")
-  reservationsCheckedOut Reservation[] @relation("ReservationCheckedOutBy")
-  reservationsCheckedIn  Reservation[] @relation("ReservationCheckedInBy")
-  blackoutsCreated      BlackoutSlot[]
+  authIdentities         AuthIdentity[]
+  memberships            TenantMembership[]
+  invitationsSent        Invitation[]          @relation("InvitationInviter")
+  invitationsTargeted    Invitation[]          @relation("InvitationTarget")
+  invitationsAccepted    Invitation[]          @relation("InvitationAcceptor")
+  invitationsRevoked     Invitation[]          @relation("InvitationRevoker")
+  reservationsRequested  Reservation[]         @relation("ReservationRequester")
+  reservationsOnBehalf   Reservation[]         @relation("ReservationOnBehalf")
+  reservationsApproved   Reservation[]         @relation("ReservationApprover")
+  reservationsCancelled  Reservation[]         @relation("ReservationCanceller")
+  reservationsCheckedOut Reservation[]         @relation("ReservationCheckedOutBy")
+  reservationsCheckedIn  Reservation[]         @relation("ReservationCheckedInBy")
+  blackoutsCreated       BlackoutSlot[]
+  personalAccessTokens   PersonalAccessToken[] @relation("OwnedTokens")
+  issuedAccessTokens     PersonalAccessToken[] @relation("IssuedTokens")
 
   @@map("users")
 }
@@ -108,21 +111,21 @@ enum UserStatus {
 }
 
 model AuthIdentity {
-  id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
   /// 'password' | 'google' | 'microsoft' | 'saml' | 'webauthn'
-  provider     String
+  provider    String
   /// For password: userId (self-referential). For OIDC/SAML: the IdP's sub claim.
-  subject      String
-  emailAtLink  String
+  subject     String
+  emailAtLink String
   /// Argon2id hash for the 'password' provider. NULL for every other provider.
   /// Never exposed via the API surface.
-  secretHash   String?
-  attributes   Json?
-  createdAt    DateTime @default(now())
-  lastUsedAt   DateTime?
+  secretHash  String?
+  attributes  Json?
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, subject])
   @@index([userId])
@@ -134,28 +137,28 @@ model AuthIdentity {
 // -----------------------------------------------------------------------------
 
 model TenantMembership {
-  id                 String   @id @default(uuid()) @db.Uuid
-  tenantId           String   @db.Uuid
-  userId             String   @db.Uuid
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @db.Uuid
+  userId             String    @db.Uuid
   /// 'super_admin' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
   role               String
   /// 'active' — user can use this tenant. 'invited' — pending acceptance,
   /// no access until first login with email match or explicit acceptance.
   /// 'suspended' — access revoked, membership preserved for audit.
-  status             String   @default("active")
-  isVip              Boolean  @default(false)
+  status             String    @default("active")
+  isVip              Boolean   @default(false)
   trainingValidUntil DateTime?
   /// Invitation trail — populated when a membership is created by an
   /// admin before the target user has authenticated into Panorama.
-  invitedByUserId    String?  @db.Uuid
+  invitedByUserId    String?   @db.Uuid
   invitedAt          DateTime?
   acceptedAt         DateTime?
   metadata           Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId])
   @@index([userId])
@@ -168,26 +171,26 @@ model TenantMembership {
 // -----------------------------------------------------------------------------
 
 model Invitation {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @db.Uuid
   /// Lowercased + trimmed at write time. Citext so lookups are
   /// case-insensitive without calling lower() at every query site.
-  email            String   @db.Citext
+  email            String    @db.Citext
   /// 'owner' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
   role             String
   /// SHA-256(token) base64url. Plaintext lives only in the email + URL.
   /// Unique so a pathological collision becomes a constraint violation
   /// instead of a silent account takeover (defence in depth at 256-bit).
-  tokenHash        String   @unique
+  tokenHash        String    @unique
   /// Pre-existing Panorama User the admin is re-inviting; NULL when the
   /// target has no account yet.
-  targetUserId     String?  @db.Uuid
-  invitedByUserId  String   @db.Uuid
+  targetUserId     String?   @db.Uuid
+  invitedByUserId  String    @db.Uuid
   expiresAt        DateTime
   acceptedAt       DateTime?
-  acceptedByUserId String?  @db.Uuid
+  acceptedByUserId String?   @db.Uuid
   revokedAt        DateTime?
-  revokedByUserId  String?  @db.Uuid
+  revokedByUserId  String?   @db.Uuid
   /// Outbox state mirrored from the email delivery pipeline. See ADR-0008.
   /// `emailAttempts` counts worker attempts (covered by the ADR's
   /// "up to 5 attempts" retry policy — persisted here for observability
@@ -195,16 +198,16 @@ model Invitation {
   emailQueuedAt    DateTime?
   emailSentAt      DateTime?
   emailBouncedAt   DateTime?
-  emailAttempts    Int      @default(0)
+  emailAttempts    Int       @default(0)
   emailLastError   String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invitedBy        User     @relation("InvitationInviter",  fields: [invitedByUserId],   references: [id])
-  targetUser       User?    @relation("InvitationTarget",   fields: [targetUserId],      references: [id], onDelete: SetNull)
-  acceptedBy       User?    @relation("InvitationAcceptor", fields: [acceptedByUserId],  references: [id], onDelete: SetNull)
-  revokedBy        User?    @relation("InvitationRevoker",  fields: [revokedByUserId],   references: [id], onDelete: SetNull)
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy  User   @relation("InvitationInviter", fields: [invitedByUserId], references: [id])
+  targetUser User?  @relation("InvitationTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  acceptedBy User?  @relation("InvitationAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  revokedBy  User?  @relation("InvitationRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
 
   /// A partial unique index enforces "at most one open invite per
   /// (tenantId, email)" — written as raw SQL in the migration because
@@ -219,17 +222,17 @@ model Invitation {
 // -----------------------------------------------------------------------------
 
 model Category {
-  id        String  @id @default(uuid()) @db.Uuid
-  tenantId  String  @db.Uuid
-  name      String
-  kind      CategoryKind
-  eula      String?
-  checkoutAccepted Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String       @db.Uuid
+  name             String
+  kind             CategoryKind
+  eula             String?
+  checkoutAccepted Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  models    AssetModel[]
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  models AssetModel[]
 
   @@unique([tenantId, name, kind])
   @@index([tenantId])
@@ -249,16 +252,16 @@ enum CategoryKind {
 }
 
 model Manufacturer {
-  id        String  @id @default(uuid()) @db.Uuid
-  tenantId  String  @db.Uuid
-  name      String
-  url       String?
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  name         String
+  url          String?
   supportEmail String?
   supportPhone String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  models    AssetModel[]
+  models AssetModel[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -277,9 +280,9 @@ model AssetModel {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  category       Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
-  assets         Asset[]
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  manufacturer Manufacturer? @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
+  assets       Asset[]
 
   @@index([tenantId])
   @@index([categoryId])
@@ -291,24 +294,24 @@ model AssetModel {
 // -----------------------------------------------------------------------------
 
 model Asset {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @db.Uuid
-  modelId        String   @db.Uuid
+  id             String      @id @default(uuid()) @db.Uuid
+  tenantId       String      @db.Uuid
+  modelId        String      @db.Uuid
   tag            String
   name           String
   serial         String?
   status         AssetStatus @default(READY)
-  bookable       Boolean  @default(false)
-  locationId     String?  @db.Uuid
-  assignedUserId String?  @db.Uuid
-  customFields   Json     @default("{}")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  bookable       Boolean     @default(false)
+  locationId     String?     @db.Uuid
+  assignedUserId String?     @db.Uuid
+  customFields   Json        @default("{}")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
   archivedAt     DateTime?
 
-  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  model          AssetModel @relation(fields: [modelId], references: [id], onDelete: Restrict)
-  reservations   Reservation[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  model        AssetModel    @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  reservations Reservation[]
 
   @@unique([tenantId, tag])
   @@index([tenantId, status])
@@ -331,56 +334,56 @@ enum AssetStatus {
 // -----------------------------------------------------------------------------
 
 model Reservation {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String   @db.Uuid
-  assetId         String?  @db.Uuid
-  requesterUserId String   @db.Uuid
-  onBehalfUserId  String?  @db.Uuid
-  startAt         DateTime
-  endAt           DateTime
-  purpose         String?
-  approvalStatus  ApprovalStatus @default(PENDING_APPROVAL)
-  lifecycleStatus ReservationStatus @default(BOOKED)
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenantId           String            @db.Uuid
+  assetId            String?           @db.Uuid
+  requesterUserId    String            @db.Uuid
+  onBehalfUserId     String?           @db.Uuid
+  startAt            DateTime
+  endAt              DateTime
+  purpose            String?
+  approvalStatus     ApprovalStatus    @default(PENDING_APPROVAL)
+  lifecycleStatus    ReservationStatus @default(BOOKED)
   /// Basket grouping (ADR-0009 option B). When an admin creates several
   /// reservations at once (e.g. "3 trucks for this site visit") they
   /// share a basketId. Each row keeps its own lifecycle — approval,
   /// check-out, cancel are per-reservation. Basket is purely a
   /// creation-time + UX grouping primitive.
-  basketId        String?  @db.Uuid
+  basketId           String?           @db.Uuid
   /// Approval trail — populated when an admin approves or rejects.
-  approverUserId  String?  @db.Uuid
-  approvedAt      DateTime?
-  approvalNote    String?
+  approverUserId     String?           @db.Uuid
+  approvedAt         DateTime?
+  approvalNote       String?
   /// Cancellation trail (applies whether requester or admin cancels).
-  cancelReason    String?
-  cancelledAt     DateTime?
-  cancelledByUserId String? @db.Uuid
+  cancelReason       String?
+  cancelledAt        DateTime?
+  cancelledByUserId  String?           @db.Uuid
   /// Check-out capture (ADR-0009 §Part B). `checkedOutAt` set when the
   /// operator releases the asset to the requester; the asset flips to
   /// IN_USE at the same time.
-  checkedOutAt    DateTime?
-  checkedOutByUserId String? @db.Uuid
-  mileageOut      Int?
-  conditionOut    String?
+  checkedOutAt       DateTime?
+  checkedOutByUserId String?           @db.Uuid
+  mileageOut         Int?
+  conditionOut       String?
   /// Check-in capture. `damageFlag=true` routes the asset to MAINTENANCE
   /// rather than READY on return — requires ops attention before the
   /// asset becomes bookable again.
-  checkedInAt     DateTime?
-  checkedInByUserId String? @db.Uuid
-  mileageIn       Int?
-  conditionIn     String?
-  damageFlag      Boolean  @default(false)
-  damageNote      String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  checkedInAt        DateTime?
+  checkedInByUserId  String?           @db.Uuid
+  mileageIn          Int?
+  conditionIn        String?
+  damageFlag         Boolean           @default(false)
+  damageNote         String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
-  asset           Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  requester       User     @relation("ReservationRequester", fields: [requesterUserId], references: [id])
-  onBehalf        User?    @relation("ReservationOnBehalf",  fields: [onBehalfUserId],  references: [id])
-  approver        User?    @relation("ReservationApprover",  fields: [approverUserId],  references: [id], onDelete: SetNull)
-  canceller       User?    @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
-  checkedOutBy    User?    @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
-  checkedInBy     User?    @relation("ReservationCheckedInBy",  fields: [checkedInByUserId],  references: [id], onDelete: SetNull)
+  asset        Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  requester    User   @relation("ReservationRequester", fields: [requesterUserId], references: [id])
+  onBehalf     User?  @relation("ReservationOnBehalf", fields: [onBehalfUserId], references: [id])
+  approver     User?  @relation("ReservationApprover", fields: [approverUserId], references: [id], onDelete: SetNull)
+  canceller    User?  @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  checkedOutBy User?  @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
+  checkedInBy  User?  @relation("ReservationCheckedInBy", fields: [checkedInByUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, startAt])
   @@index([tenantId, approvalStatus])
@@ -405,8 +408,8 @@ model BlackoutSlot {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdByUserId], references: [id])
 
   @@index([tenantId, startAt])
   @@index([tenantId, assetId])
@@ -439,18 +442,18 @@ enum ReservationStatus {
 // -----------------------------------------------------------------------------
 
 model AuditEvent {
-  id             BigInt   @id @default(autoincrement())
-  tenantId       String?  @db.Uuid
-  actorUserId    String?  @db.Uuid
-  action         String
-  resourceType   String
-  resourceId     String?
-  metadata       Json?
-  ipAddress      String?
-  userAgent      String?
-  occurredAt     DateTime @default(now())
-  prevHash       Bytes?
-  selfHash       Bytes
+  id           BigInt   @id @default(autoincrement())
+  tenantId     String?  @db.Uuid
+  actorUserId  String?  @db.Uuid
+  action       String
+  resourceType String
+  resourceId   String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  occurredAt   DateTime @default(now())
+  prevHash     Bytes?
+  selfHash     Bytes
 
   @@index([tenantId, occurredAt(sort: Desc)])
   @@map("audit_events")
@@ -484,4 +487,58 @@ model ImportIdentityMap {
   @@unique([source, entity, sourceId])
   @@index([source, entity, panoramaId])
   @@map("import_identity_map")
+}
+
+// -----------------------------------------------------------------------------
+// Personal Access Tokens (ADR-0010) — per-user, tenant-scoped Bearer
+// tokens consumed by the Snipe-IT compatibility shim at /api/v1. Hashed
+// at rest; plaintext is returned exactly once at creation.
+// -----------------------------------------------------------------------------
+
+model PersonalAccessToken {
+  id                 String    @id @default(uuid()) @db.Uuid
+  /// Token belongs to this user — authentication attribution runs as them.
+  userId             String    @db.Uuid
+  /// Tenant scope — cross-tenant access requires a different token.
+  tenantId           String    @db.Uuid
+  /// Who minted the token. Usually equals userId; differs when a
+  /// super-admin mints on behalf of a user (bulk onboarding flow).
+  issuerUserId       String    @db.Uuid
+  /// Human-readable label shown in the admin UI ("fleet-cluster-prod").
+  name               String
+  /// sha256(plaintext) base64url-encoded. Plaintext is returned to the
+  /// caller once at creation and never persisted. Same pattern as
+  /// Invitation.tokenHash (ADR-0008).
+  tokenHash          String    @unique
+  /// Literal "pnrm_pat_" + first 8 chars of the base64url secret —
+  /// deterministic, non-secret prefix used for UI display without
+  /// plaintext access. 48 bits of prefix disclosure leaves 208 bits of
+  /// remaining entropy. See ADR-0010.
+  tokenPrefix        String
+  /// Scope list — endpoints under SnipeitCompatModule require
+  /// 'snipeit.compat.read' at 0.2. Future scopes are additive.
+  scopes             String[]
+  /// null = no expiration. UI defaults to now() + 1y.
+  expiresAt          DateTime?
+  /// Synchronous-first-use, async-batched afterwards. Source-of-truth
+  /// for security is rate-limiter metrics, not this column.
+  lastUsedAt         DateTime?
+  /// Soft revocation — middleware filters tokens where revokedAt IS NOT NULL.
+  /// A DB trigger emits `panorama.pat.resurrected` if this column ever
+  /// transitions non-NULL → NULL (tamper detection for direct SQL edits).
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  /// Audit-of-creation context. Not PII — IP + UA are already in the
+  /// session event metadata.
+  createdByIp        String?
+  createdByUserAgent String?
+
+  user   User   @relation("OwnedTokens", fields: [userId], references: [id], onDelete: Cascade)
+  issuer User   @relation("IssuedTokens", fields: [issuerUserId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, revokedAt])
+  @@index([userId, revokedAt])
+  @@map("personal_access_tokens")
 }
