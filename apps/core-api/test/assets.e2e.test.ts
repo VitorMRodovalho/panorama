@@ -45,6 +45,7 @@ describe('assets e2e', () => {
 
     // Seed fixtures via the super-admin role (bypass RLS).
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    await admin.invitation.deleteMany();
     await admin.reservation.deleteMany();
     await admin.asset.deleteMany();
     await admin.assetModel.deleteMany();

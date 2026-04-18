@@ -42,6 +42,7 @@ describe('auth e2e', () => {
     process.env.DATABASE_URL = APP_URL;
 
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    await admin.invitation.deleteMany();
     await admin.reservation.deleteMany();
     await admin.asset.deleteMany();
     await admin.assetModel.deleteMany();

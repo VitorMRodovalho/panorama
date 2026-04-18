@@ -173,6 +173,7 @@ describe('migrator → import-fixtures round-trip', () => {
 
     // Fresh DB state — super_admin wipes; BYPASSRLS handles cross-tenant reach.
     adminPrisma = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    await adminPrisma.invitation.deleteMany();
     await adminPrisma.importIdentityMap.deleteMany();
     await adminPrisma.reservation.deleteMany();
     await adminPrisma.asset.deleteMany();

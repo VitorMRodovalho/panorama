@@ -277,14 +277,7 @@ export class InvitationService {
         acceptUrl: this.buildAcceptUrl(result.plaintext),
       };
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002' &&
-        Array.isArray(err.meta?.['target']) &&
-        (err.meta['target'] as string[]).some((t) =>
-          t.includes('invitations_one_open_per_tenant_email'),
-        )
-      ) {
+      if (this.isOpenInvitationCollision(err)) {
         throw new ConflictException('open_invitation_exists');
       }
       // Refund rate limit slots on DB failure so a transient blip
@@ -723,6 +716,29 @@ export class InvitationService {
   private resolveTtl(requested: number | undefined): number {
     if (requested === undefined) return this.cfg.defaultTtlSeconds;
     return requested;
+  }
+
+  /**
+   * Prisma's P2002 for `invitations_one_open_per_tenant_email` surfaces
+   * as `meta.target = ['tenantId', 'email']` — the partial-unique index
+   * is invisible to Prisma's error-shaping. We infer the collision from
+   * the column tuple + the `invitations` model so other unique keys
+   * (e.g. a future secondary index) don't false-match.
+   */
+  private isOpenInvitationCollision(err: unknown): boolean {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (err.code !== 'P2002') return false;
+    const target = (err.meta as { target?: unknown } | undefined)?.target;
+    if (typeof target === 'string') {
+      return target.includes('invitations_one_open_per_tenant_email');
+    }
+    if (Array.isArray(target)) {
+      const cols = target.map((t) => String(t));
+      if (cols.some((c) => c.includes('invitations_one_open_per_tenant_email'))) return true;
+      const set = new Set(cols.map((c) => c.toLowerCase()));
+      return set.has('tenantid') && set.has('email');
+    }
+    return false;
   }
 
   private rejectIfLimited(decision: RateLimitDecision, label: string): void {
