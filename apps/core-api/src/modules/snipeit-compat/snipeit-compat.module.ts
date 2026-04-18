@@ -5,6 +5,7 @@ import { RedisModule } from '../redis/redis.module.js';
 import { PatAuthGuard } from './pat-auth.guard.js';
 import { ScopeGuard } from './scope.guard.js';
 import { SnipeitCompatController } from './snipeit-compat.controller.js';
+import { SnipeitCompatService } from './snipeit-compat.service.js';
 
 /**
  * Snipe-IT compat shim (ADR-0010).
@@ -23,6 +24,6 @@ import { SnipeitCompatController } from './snipeit-compat.controller.js';
 @Module({
   imports: [AuditModule, AuthModule, RedisModule],
   controllers: [SnipeitCompatController],
-  providers: [PatAuthGuard, ScopeGuard],
+  providers: [PatAuthGuard, ScopeGuard, SnipeitCompatService],
 })
 export class SnipeitCompatModule {}
