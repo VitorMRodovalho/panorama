@@ -323,15 +323,39 @@ actually think about a booking.
 ### Exclusion constraint via `btree_gist` + tstzrange
 
 Stronger double-booking defence (DB-level guarantee instead of
-service-level SERIALIZABLE transaction). Deferred to 0.3 because:
-- Requires the `btree_gist` extension (easy enough)
-- Requires a migration that adds a GENERATED column for the tstzrange
-  plus the exclusion constraint — more schema surface
-- Service-level check is good enough at 0.2 concurrency, and letting
-  it bake surfaces the UX for "your reservation conflicts with X"
-  that an exclusion constraint hides behind a raw error code.
+relying solely on service-level SERIALIZABLE transaction).
 
-Revisit when we see real contention in production.
+**Shipped 2026-04-18 as migration 0010** (`reservations_no_overlap`).
+A GENERATED ALWAYS STORED `bookingRange tsrange` column plus an
+`EXCLUDE USING gist` constraint on `(tenantId =, assetId =,
+bookingRange &&)` scoped by the same in-play predicate the service
+already uses (`approvalStatus IN (PENDING_APPROVAL, AUTO_APPROVED,
+APPROVED) AND lifecycleStatus IN (BOOKED, CHECKED_OUT) AND assetId IS
+NOT NULL`). Terminal-state rows fall out of the exclusion index
+automatically when they transition.
+
+Relationship to the earlier service-level approach:
+
+- **Service `assertNoOverlap` stays** — it's the fast path that
+  surfaces a nice `reservation_conflict` error BEFORE the INSERT
+  attempt. A user-facing UX improvement, unchanged.
+- **Serializable + P2034 retry stays** — handles multi-row basket
+  writes where the invariant crosses rows (not just a single
+  assetId). The exclusion constraint is per-row; baskets still need
+  serializable for "check all 3 assets before committing any of
+  them".
+- **The exclusion constraint is the backstop** — it fires on the
+  rare case where a concurrent INSERT slips past the service checks
+  (a future plugin, a raw psql session, a regression in
+  `assertNoOverlap`). Postgres surfaces SQLSTATE 23P01
+  (`exclusion_violation`); callers should catch it and return 409
+  `reservation_conflict` the same way the service path does.
+
+Earlier deferral reasoning (kept for history): the original worry
+was that a raw error-code-only guarantee would hide the
+"conflicts with reservation #X" UX. The resolution is to keep the
+service-level check that already produces that UX — the exclusion
+constraint is additive, not replacement.
 
 ### Blackouts as a Reservation with status=MAINTENANCE_REQUIRED
 

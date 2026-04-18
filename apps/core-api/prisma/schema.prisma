@@ -374,6 +374,12 @@ model Reservation {
   conditionIn        String?
   damageFlag         Boolean           @default(false)
   damageNote         String?
+  /// `tsrange('[startAt, endAt)')` — GENERATED ALWAYS STORED column
+  /// that backs the `reservations_no_overlap` exclusion constraint
+  /// (ADR-0009 §Alternatives, migration 0010). Read-only; set by
+  /// Postgres. Prisma exposes it as Unsupported so client writes
+  /// never touch it.
+  bookingRange       Unsupported("tsrange")?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 

@@ -331,11 +331,17 @@ describe('reservation basket batch e2e', () => {
     for (const r of cancelled) expect(r.lifecycleStatus).toBe('CANCELLED');
   });
 
-  it('approveBasket skips a row that picked up a sibling conflict, approves the rest', async () => {
+  it('approveBasket skips a row that picked up a blackout at approval time, approves the rest', async () => {
+    // The 0.3 migration 0010 exclusion constraint now makes concurrent
+    // overlapping PENDING rows on the same asset impossible at the DB
+    // layer — the "sibling conflict" race this test originally
+    // simulated via raw SQL can't happen any more. The analogous
+    // re-check path still matters for BLACKOUTS, which are a separate
+    // table not covered by the reservation exclusion index: an admin
+    // can carve out a maintenance window between basket creation and
+    // batch approval, and the per-row assertNoBlackout inside
+    // decideWithin must still catch it.
     const driverCookie = await loginCookie(driver.email, driver.password);
-    // Basket of 2. Row 0 will pick up a sibling conflict between
-    // create and approval; row 1 stays conflict-free and approves
-    // cleanly.
     const basket = await createBasketAs(
       driverCookie,
       [assetIds[3]!, assetIds[4]!],
@@ -343,27 +349,22 @@ describe('reservation basket batch e2e', () => {
       302,
     );
 
-    // Simulate the race: an AUTO_APPROVED reservation lands on
-    // assetIds[3] overlapping 300-302 AFTER the basket rows were
-    // created but BEFORE approveBasket runs. We insert it directly
-    // via the super-admin client to bypass the create-time overlap
-    // guard — mimicking a Serializable-retry outcome where the new
-    // row commits between our basket's create tx and approve tx.
-    // This is exactly what the per-row re-check at approval time
-    // is built for.
-    await adminDb.reservation.create({
-      data: {
-        tenantId,
-        assetId: assetIds[3]!,
-        requesterUserId: driverUserId,
-        startAt: new Date(isoAt(301)),
-        endAt: new Date(isoAt(303)),
-        approvalStatus: 'AUTO_APPROVED',
-        lifecycleStatus: 'BOOKED',
-      },
-    });
-
+    // Admin drops an asset-scoped blackout spanning 300-302 on
+    // assetIds[3]. Row 0 should get skipped as blackout_conflict;
+    // row 1 approves cleanly.
     const adminCookie = await loginCookie(admin.email, admin.password);
+    const blackout = await fetch(`${url}/blackouts`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        assetId: assetIds[3]!,
+        title: 'Brake inspection (mid-basket)',
+        startAt: isoAt(299),
+        endAt: isoAt(303),
+      }),
+    });
+    expect(blackout.status).toBe(201);
+
     const res = await fetch(`${url}/reservations/basket/${basket.basketId}/approve`, {
       method: 'POST',
       headers: { cookie: adminCookie, 'content-type': 'application/json' },
@@ -378,7 +379,7 @@ describe('reservation basket batch e2e', () => {
     expect(body.processed[0]!.reservationId).toBe(basket.items[1]!.id);
     expect(body.skipped).toHaveLength(1);
     expect(body.skipped[0]!.reservationId).toBe(basket.items[0]!.id);
-    expect(body.skipped[0]!.reason).toContain('reservation_conflict');
+    expect(body.skipped[0]!.reason).toContain('blackout_conflict');
   });
 
   // ---- authorization -------------------------------------------------
