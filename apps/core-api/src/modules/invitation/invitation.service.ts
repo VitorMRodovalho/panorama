@@ -253,15 +253,19 @@ export class InvitationService {
         { reason: `invitation:create:${params.tenantId}` },
       );
 
-      // Post-commit enqueue. A lost enqueue is fine — the cron sweep
-      // picks up invitations where emailQueuedAt is set but the email
-      // was never sent.
-      this.queue.enqueueDelivery(result.created.id).catch((err: unknown) => {
-        this.log.warn(
-          { invitationId: result.created.id, err: String(err) },
-          'enqueue_delivery_failed',
-        );
-      });
+      // Post-commit enqueue. Plaintext token travels in the payload —
+      // see InvitationQueuePort for the trust-zone rationale. A lost
+      // enqueue is fine: the maintenance cron rescues invitations
+      // where emailQueuedAt is set but the email was never sent by
+      // rotating the token + re-enqueuing.
+      this.queue
+        .enqueueDelivery(result.created.id, result.plaintext)
+        .catch((err: unknown) => {
+          this.log.warn(
+            { invitationId: result.created.id, err: String(err) },
+            'enqueue_delivery_failed',
+          );
+        });
 
       return {
         id: result.created.id,
@@ -334,12 +338,14 @@ export class InvitationService {
       { reason: `invitation:resend:${params.invitationId}` },
     );
 
-    this.queue.enqueueDelivery(result.updated.id).catch((err: unknown) => {
-      this.log.warn(
-        { invitationId: result.updated.id, err: String(err) },
-        'enqueue_resend_failed',
-      );
-    });
+    this.queue
+      .enqueueDelivery(result.updated.id, result.plaintext)
+      .catch((err: unknown) => {
+        this.log.warn(
+          { invitationId: result.updated.id, err: String(err) },
+          'enqueue_resend_failed',
+        );
+      });
 
     return {
       id: result.updated.id,
@@ -611,6 +617,50 @@ export class InvitationService {
         });
       },
       { reason: `invitation:markEmailFailed:${invitationId}` },
+    );
+  }
+
+  /**
+   * Rotate the token + reset email delivery state on an invitation the
+   * maintenance cron has identified as stuck (enqueue lost between tx
+   * commit and BullMQ). Returns the new plaintext token so the worker
+   * can re-enqueue the delivery job with a fresh payload.
+   *
+   * Unlike `resend`, this is system-initiated — no admin actor exists.
+   * The audit row uses `actorUserId=null` and `action=resent` with
+   * metadata reason=`rescue`.
+   */
+  async rotateTokenForRescue(invitationId: string): Promise<{ plaintext: string } | null> {
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
+        if (!existing) return null;
+        if (existing.acceptedAt || existing.revokedAt) return null;
+        if (existing.expiresAt.getTime() <= Date.now()) return null;
+
+        const { plaintext, tokenHash } = this.generateToken();
+        await tx.invitation.update({
+          where: { id: invitationId },
+          data: {
+            tokenHash,
+            emailQueuedAt: new Date(),
+            emailSentAt: null,
+            emailBouncedAt: null,
+            emailAttempts: 0,
+            emailLastError: null,
+          },
+        });
+        await this.audit.recordWithin(tx, {
+          action: 'panorama.invitation.resent',
+          resourceType: 'invitation',
+          resourceId: invitationId,
+          tenantId: existing.tenantId,
+          actorUserId: null,
+          metadata: { email: existing.email, reason: 'rescue' },
+        });
+        return { plaintext };
+      },
+      { reason: `invitation:rotateTokenForRescue:${invitationId}` },
     );
   }
 

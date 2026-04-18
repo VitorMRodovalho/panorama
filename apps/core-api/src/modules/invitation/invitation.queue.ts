@@ -9,9 +9,16 @@ import { Injectable, Logger } from '@nestjs/common';
  * `enqueueDelivery` is fire-and-forget from the caller's perspective:
  * the invitation row already has `emailQueuedAt` set inside the DB
  * transaction, so a lost enqueue gets rescued by the sweep cron.
+ *
+ * Plaintext token travels in the payload. Only `sha256(token)` is
+ * persisted in the DB (ADR-0008); the worker needs the plaintext to
+ * inline it into the accept URL that goes into the email. The
+ * attack surface — plaintext visible to anyone with Redis read
+ * access — is the same trust zone as the app itself, and the job
+ * is removed from Redis on completion (see `removeOnComplete`).
  */
 export interface InvitationQueuePort {
-  enqueueDelivery(invitationId: string): Promise<void>;
+  enqueueDelivery(invitationId: string, plaintextToken: string): Promise<void>;
 }
 
 export const INVITATION_QUEUE = Symbol('INVITATION_QUEUE');
@@ -25,7 +32,7 @@ export const INVITATION_QUEUE = Symbol('INVITATION_QUEUE');
 export class NoopInvitationQueue implements InvitationQueuePort {
   private readonly log = new Logger('NoopInvitationQueue');
 
-  async enqueueDelivery(invitationId: string): Promise<void> {
+  async enqueueDelivery(invitationId: string, _plaintextToken: string): Promise<void> {
     this.log.debug({ invitationId }, 'noop_enqueue');
   }
 }

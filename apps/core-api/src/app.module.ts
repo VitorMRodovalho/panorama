@@ -11,6 +11,7 @@ import { RedisModule } from './modules/redis/redis.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { EmailModule } from './modules/email/email.module.js';
 import { InvitationModule } from './modules/invitation/invitation.module.js';
+import { InvitationWorkerModule } from './modules/invitation/invitation-worker.module.js';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { InvitationModule } from './modules/invitation/invitation.module.js';
     EmailModule,
     AuthModule,
     InvitationModule,
+    InvitationWorkerModule,
     AssetModule,
     HealthModule,
     ImportModule,
