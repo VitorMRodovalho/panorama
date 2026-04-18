@@ -6,6 +6,7 @@ import { TenantModule } from './modules/tenant/tenant.module.js';
 import { AssetModule } from './modules/asset/asset.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ImportModule } from './modules/import/import.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
     AuthModule,
     AssetModule,
     HealthModule,
+    ImportModule,
     // 0.2: ReservationModule, AuditModule, NotificationModule, PluginHostModule,
     //      I18nModule.forRootAsync.
   ],

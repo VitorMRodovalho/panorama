@@ -27,35 +27,31 @@ export const SnipeItUserSchema = z.object({
 });
 export type SnipeItUser = z.infer<typeof SnipeItUserSchema>;
 
+// Nested reference schemas are permissive. Snipe-IT's payloads vary between
+// versions and custom builds — fields are sometimes missing, sometimes null,
+// sometimes present with a different type. We only require `id` for FK
+// resolution, and the `name` is optional because older installs omit it
+// on nested references.
+const NestedRefSchema = z
+  .object({
+    id: z.number().int().optional(),
+    name: z.string().nullable().optional(),
+  })
+  .passthrough()
+  .nullable()
+  .optional();
+
 export const SnipeItAssetSchema = z.object({
   id: z.number().int(),
   asset_tag: z.string(),
   name: z.string().nullable().optional(),
   serial: z.string().nullable().optional(),
-  status_label: z
-    .object({ id: z.number().int().nullable(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
-  model: z
-    .object({ id: z.number().int(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
-  category: z
-    .object({ id: z.number().int(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
-  manufacturer: z
-    .object({ id: z.number().int(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
-  company: z
-    .object({ id: z.number().int(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
-  rtd_location: z
-    .object({ id: z.number().int(), name: z.string().nullable() })
-    .nullable()
-    .optional(),
+  status_label: NestedRefSchema,
+  model: NestedRefSchema,
+  category: NestedRefSchema,
+  manufacturer: NestedRefSchema,
+  company: NestedRefSchema,
+  rtd_location: NestedRefSchema,
   assigned_to: z.unknown().nullable().optional(),
   custom_fields: z.record(z.unknown()).nullable().optional(),
 });

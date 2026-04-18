@@ -306,3 +306,21 @@ model SystemSetting {
 
   @@map("system_settings")
 }
+
+/// Tracks (source system, entity, source id) → Panorama UUID for migration
+/// idempotency. Populated by @panorama/migrator's `migrate` command output
+/// and consumed by the core-api's ImportService. Not tenant-scoped —
+/// migrations are super-admin operations.
+model ImportIdentityMap {
+  id         BigInt   @id @default(autoincrement())
+  source     String
+  entity     String
+  sourceId   String
+  panoramaId String   @db.Uuid
+  tenantId   String?  @db.Uuid
+  createdAt  DateTime @default(now())
+
+  @@unique([source, entity, sourceId])
+  @@index([source, entity, panoramaId])
+  @@map("import_identity_map")
+}

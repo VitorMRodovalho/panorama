@@ -17,3 +17,5 @@ export type ISODateString = z.infer<typeof ISODateStringSchema>;
 
 export const LocaleSchema = z.enum(['en', 'pt-br', 'es']);
 export type Locale = z.infer<typeof LocaleSchema>;
+
+export * from './migration-fixtures.js';

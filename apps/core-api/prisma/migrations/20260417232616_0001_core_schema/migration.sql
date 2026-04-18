@@ -1,3 +1,14 @@
+-- Extensions required by this migration.
+-- `CREATE EXTENSION IF NOT EXISTS` is idempotent. Keeping them inside the
+-- migration (instead of only in infra/docker/postgres-init.sql) means:
+--   * Prisma's shadow DB, which is a brand-new DB per `migrate dev` run,
+--     gets the extensions before running the CREATE TABLE statements.
+--   * Managed Postgres deployments that don't run our init script still
+--     end up with the extensions they need.
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- CreateEnum
 CREATE TYPE "user_status" AS ENUM ('ACTIVE', 'SUSPENDED', 'DEACTIVATED');
 

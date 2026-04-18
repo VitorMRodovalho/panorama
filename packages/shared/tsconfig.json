@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // Emit CommonJS so consumers (core-api, migrator) can `require` this
+    // package without needing `type: module`. The base tsconfig uses
+    // NodeNext which honours package.json `type` field — with type removed
+    // from this package's package.json, NodeNext → CJS.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
   },
   "include": ["src/**/*.ts"]
 }

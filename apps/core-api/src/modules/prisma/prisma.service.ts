@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { currentTenantId } from '../tenant/tenant.context.js';
 
@@ -21,16 +21,34 @@ import { currentTenantId } from '../tenant/tenant.context.js';
  * they go through `runInTenant` (or `runAsSuperAdmin`) so the RLS context
  * is always explicit.
  */
+export interface PrismaServiceOptions {
+  /** Override DATABASE_URL. Primarily useful in tests to connect as a
+   * specific role (panorama_super_admin for cross-tenant setup, etc.). */
+  datasourceUrl?: string;
+}
+
+export const PRISMA_SERVICE_OPTIONS = Symbol('PRISMA_SERVICE_OPTIONS');
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Prisma');
 
-  constructor() {
+  /**
+   * The `@Inject + @Optional` pair lets Nest's DI resolve this constructor
+   * without a concrete provider for `PrismaServiceOptions` (interfaces are
+   * erased at runtime, so Nest would otherwise try to inject the `Object`
+   * class). Under test, instantiate directly with
+   * `new PrismaService({ datasourceUrl: ... })`.
+   */
+  constructor(
+    @Inject(PRISMA_SERVICE_OPTIONS) @Optional() opts?: PrismaServiceOptions,
+  ) {
     super({
       log: [
         { emit: 'event', level: 'warn' },
         { emit: 'event', level: 'error' },
       ],
+      ...(opts?.datasourceUrl ? { datasources: { db: { url: opts.datasourceUrl } } } : {}),
     });
     this.$on('warn' as never, (e: Prisma.LogEvent) =>
       this.log.warn({ target: e.target, message: e.message }),
