@@ -5,8 +5,11 @@ import { AuthService } from './auth.service.js';
 import { DiscoveryService } from './discovery.service.js';
 import { OidcService } from './oidc.service.js';
 import { PasswordService } from './password.service.js';
+import { PersonalAccessTokenService } from './personal-access-token.service.js';
 import { SessionMiddleware } from './session.middleware.js';
 import { SessionService } from './session.service.js';
+import { AuditModule } from '../audit/audit.module.js';
+import { RedisModule } from '../redis/redis.module.js';
 
 /**
  * AuthModule — the 0.2 cut.
@@ -27,6 +30,7 @@ import { SessionService } from './session.service.js';
  *   * Policy-as-code authorisation (CASL is imported but not yet wired)
  */
 @Module({
+  imports: [AuditModule, RedisModule],
   controllers: [AuthController],
   providers: [
     AuthConfigService,
@@ -34,10 +38,17 @@ import { SessionService } from './session.service.js';
     DiscoveryService,
     OidcService,
     PasswordService,
+    PersonalAccessTokenService,
     SessionService,
     SessionMiddleware,
   ],
-  exports: [AuthConfigService, AuthService, PasswordService, SessionService],
+  exports: [
+    AuthConfigService,
+    AuthService,
+    PasswordService,
+    PersonalAccessTokenService,
+    SessionService,
+  ],
 })
 export class AuthModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

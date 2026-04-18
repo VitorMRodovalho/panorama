@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   Req,
@@ -19,6 +21,12 @@ import { SessionService } from './session.service.js';
 import { getRequestSession } from './session.middleware.js';
 import { AuthConfigService } from './auth.config.js';
 import type { PanoramaSession } from './session.types.js';
+import {
+  ListPatSchema,
+  MintPatSchema,
+  RevokePatSchema,
+} from './personal-access-token.dto.js';
+import { PersonalAccessTokenService } from './personal-access-token.service.js';
 
 const LoginSchema = z.object({
   email: z.string().email().transform((s) => s.toLowerCase().trim()),
@@ -43,6 +51,7 @@ export class AuthController {
     private readonly oidc: OidcService,
     private readonly sessions: SessionService,
     private readonly cfg: AuthConfigService,
+    private readonly pats: PersonalAccessTokenService,
   ) {}
 
   @Get('me')
@@ -115,6 +124,92 @@ export class AuthController {
     const next = this.auth.switchTenant(session, parsed.data.tenantId);
     await this.sessions.setSession(req, res, next);
     return this.publicSessionShape(next);
+  }
+
+  // --- Personal Access Tokens (ADR-0010) ---------------------------
+  //
+  // All three endpoints require the session cookie — NEVER a PAT, so a
+  // compromised PAT can't mint more PATs. The PatAuthGuard the step-5
+  // SnipeitCompatModule installs lives in its own module and doesn't
+  // reach /auth.
+
+  @Get('tokens')
+  async listTokens(
+    @Query('scope') scope: string | undefined,
+    @Query('includeRevoked') includeRevoked: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException();
+    const parsed = ListPatSchema.safeParse({ scope, includeRevoked, limit });
+    if (!parsed.success) throw new BadRequestException('invalid_query');
+
+    const rows = await this.pats.list({
+      actor: {
+        userId: session.userId,
+        tenantId: session.currentTenantId,
+        role: session.currentRole,
+      },
+      scope: parsed.data.scope,
+      includeRevoked: parsed.data.includeRevoked,
+      limit: parsed.data.limit,
+    });
+    return { items: rows.map((r) => this.pats.publicShape(r)) };
+  }
+
+  @Post('tokens')
+  @HttpCode(201)
+  async mintToken(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException();
+    const parsed = MintPatSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+
+    const result = await this.pats.mint({
+      actor: {
+        userId: session.userId,
+        tenantId: session.currentTenantId,
+      },
+      name: parsed.data.name,
+      scopes: parsed.data.scopes,
+      expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
+      createdByIp: extractIp(req) ?? null,
+      createdByUserAgent: req.headers['user-agent'] ?? null,
+    });
+    return {
+      // Plaintext is returned exactly ONCE — never again. Response-shape
+      // contract the docs + the FleetManager replay test both rely on.
+      plaintext: result.plaintext,
+      token: this.pats.publicShape(result.token),
+    };
+  }
+
+  @Delete('tokens/:id')
+  @HttpCode(200)
+  async revokeToken(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException();
+    const parsed = RevokePatSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const revokeParams: Parameters<PersonalAccessTokenService['revoke']>[0] = {
+      actor: {
+        userId: session.userId,
+        tenantId: session.currentTenantId,
+        role: session.currentRole,
+      },
+      tokenId: id,
+    };
+    if (parsed.data.reason) revokeParams.reason = parsed.data.reason;
+    const row = await this.pats.revoke(revokeParams);
+    return this.pats.publicShape(row);
   }
 
   // --- OIDC ---------------------------------------------------------
@@ -205,4 +300,19 @@ function safeRedirect(input: string | undefined): string {
   if (!input) return '/';
   if (input.startsWith('/') && !input.startsWith('//')) return input;
   return '/';
+}
+
+/**
+ * Best-effort client-IP extraction. Trusts the first X-Forwarded-For
+ * hop if the app is running behind a proxy; otherwise falls back to
+ * the raw socket. Result is stored verbatim on the PAT row — not used
+ * for any authorisation decision.
+ */
+function extractIp(req: Request): string | null {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.length > 0) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return req.ip ?? req.socket.remoteAddress ?? null;
 }
