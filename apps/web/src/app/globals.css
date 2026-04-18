@@ -138,6 +138,27 @@ a {
   color: #fef3c7;
 }
 
+.panorama-banner-success {
+  border: 1px solid #059669;
+  background: rgba(16, 185, 129, 0.08);
+  color: #a7f3d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.panorama-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .panorama-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .panorama-provider-btn {
   display: flex;
   align-items: center;
