@@ -46,8 +46,19 @@ Target versions and tenant-visible milestones. Living document — last updated 
         max-duration / max-concurrent rules, auto-approve by role;
         `/reservations/*` + `/blackouts/*` endpoints; web `/reservations`
         list + new form with admin approve/reject buttons.
-      - Part B pending: check-out / check-in with mileage / condition /
-        damage capture; basket multi-asset reservations; calendar view.
+      - Part B **partial (check-out/in + calendar)**: migration 0007
+        (capture fields); `POST /reservations/:id/checkout|checkin`
+        with mileage monotonicity + damageFlag → MAINTENANCE routing;
+        web check-out / check-in forms inline under each row;
+        `/reservations/calendar` 14-day timeline per asset.
+      - Basket multi-asset reservations: design decision pending (see
+        ADR-0009 §"Out of scope for Part A"). Options:
+        (A) new `reservation_items (reservation_id, model_id, quantity)`
+            — FleetManager's pattern; one Reservation "basket" holds
+            multiple model line items; assets are assigned at check-out.
+        (B) `basketId` UUID on Reservation — multiple Reservations
+            (one per asset) share a basketId when created together.
+        Awaiting decision before implementing.
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
 ## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)
