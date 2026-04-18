@@ -5,6 +5,7 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
+import { resetTestDb } from './_reset-db.js';
 
 /**
  * Auth module e2e — exercises the endpoints that don't need a full
@@ -42,15 +43,7 @@ describe('auth e2e', () => {
     process.env.DATABASE_URL = APP_URL;
 
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
-    await admin.invitation.deleteMany();
-    await admin.reservation.deleteMany();
-    await admin.asset.deleteMany();
-    await admin.assetModel.deleteMany();
-    await admin.category.deleteMany();
-    await admin.tenantMembership.deleteMany();
-    await admin.authIdentity.deleteMany();
-    await admin.user.deleteMany();
-    await admin.tenant.deleteMany();
+    await resetTestDb(admin);
 
     const acme = await admin.tenant.create({
       data: {

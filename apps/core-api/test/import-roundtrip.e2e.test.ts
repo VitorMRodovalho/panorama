@@ -9,6 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { runMigrate } from '@panorama/migrator';
 import { ImportService } from '../src/modules/import/import.service.js';
 import { PrismaService } from '../src/modules/prisma/prisma.service.js';
+import { resetTestDb } from './_reset-db.js';
 
 /**
  * End-to-end migrator → fixtures → importer → Panorama DB.
@@ -173,17 +174,7 @@ describe('migrator → import-fixtures round-trip', () => {
 
     // Fresh DB state — super_admin wipes; BYPASSRLS handles cross-tenant reach.
     adminPrisma = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
-    await adminPrisma.invitation.deleteMany();
-    await adminPrisma.importIdentityMap.deleteMany();
-    await adminPrisma.reservation.deleteMany();
-    await adminPrisma.asset.deleteMany();
-    await adminPrisma.assetModel.deleteMany();
-    await adminPrisma.manufacturer.deleteMany();
-    await adminPrisma.category.deleteMany();
-    await adminPrisma.tenantMembership.deleteMany();
-    await adminPrisma.authIdentity.deleteMany();
-    await adminPrisma.user.deleteMany();
-    await adminPrisma.tenant.deleteMany();
+    await resetTestDb(adminPrisma);
 
     mock = await startMock(buildMock());
     fixturesDir = await mkdtemp(join(tmpdir(), 'panorama-fixtures-'));
@@ -216,7 +207,15 @@ describe('migrator → import-fixtures round-trip', () => {
   it('imports the full fixture set end-to-end', async () => {
     const result = await importService.run({ dir: fixturesDir });
     expect(result.source).toBe('snipeit');
-    expect(result.errors).toEqual([]);
+    // ADR-0007: imports from Snipe-IT never auto-elect an Owner.
+    // Each tenant that lands without an `owner` membership shows up as
+    // a non-fatal `tenant_has_no_active_owner` warning, expected to
+    // be resolved post-import by the operator via the break-glass CLI
+    // (see tenant-nominate-owner.ts).
+    expect(result.errors.sort()).toEqual([
+      'tenant_has_no_active_owner:alpha-logistics',
+      'tenant_has_no_active_owner:bravo-transport',
+    ]);
 
     expect(result.counts.tenants).toEqual({ created: 2, matched: 0 });
     // 4 sourceId → userId mappings, but only 3 unique rows in the users

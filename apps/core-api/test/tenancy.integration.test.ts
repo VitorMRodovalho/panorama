@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { resetTestDb } from './_reset-db.js';
 
 /**
  * Integration test proving that Postgres RLS + Prisma enforce tenant
@@ -36,13 +37,7 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
 
   beforeAll(async () => {
     // Clean slate — admin bypasses RLS so we can purge cross-tenant safely.
-    await admin.reservation.deleteMany();
-    await admin.asset.deleteMany();
-    await admin.assetModel.deleteMany();
-    await admin.manufacturer.deleteMany();
-    await admin.category.deleteMany();
-    await admin.tenantMembership.deleteMany();
-    await admin.tenant.deleteMany();
+    await resetTestDb(admin);
 
     const a = await admin.tenant.create({
       data: { slug: 'tenant-a', name: 'Tenant A', displayName: 'A' },

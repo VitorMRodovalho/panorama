@@ -24,7 +24,20 @@ CREATE OR REPLACE FUNCTION enforce_at_least_one_owner()
 RETURNS trigger AS $$
 DECLARE
     remaining int;
+    bypass    text;
 BEGIN
+    -- Escape hatch for tooling that knowingly needs to wipe state
+    -- (test fixtures, backup/restore, break-glass DB maintenance).
+    -- The GUC lives in the `panorama.*` namespace so any role can
+    -- `SET LOCAL panorama.bypass_owner_check = 'on'` without needing
+    -- Postgres superuser. Production code paths MUST NOT set this —
+    -- it bypasses the ADR-0007 invariant the trigger exists to
+    -- defend.
+    bypass := current_setting('panorama.bypass_owner_check', true);
+    IF bypass = 'on' THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+
     SELECT COUNT(*) INTO remaining
       FROM tenant_memberships
      WHERE "tenantId" = COALESCE(OLD."tenantId", NEW."tenantId")

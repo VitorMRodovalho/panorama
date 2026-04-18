@@ -5,6 +5,7 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
+import { resetTestDb } from './_reset-db.js';
 
 /**
  * End-to-end: boots the full Nest application and hits /auth/login,
@@ -45,16 +46,7 @@ describe('assets e2e', () => {
 
     // Seed fixtures via the super-admin role (bypass RLS).
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
-    await admin.invitation.deleteMany();
-    await admin.reservation.deleteMany();
-    await admin.asset.deleteMany();
-    await admin.assetModel.deleteMany();
-    await admin.manufacturer.deleteMany();
-    await admin.category.deleteMany();
-    await admin.tenantMembership.deleteMany();
-    await admin.authIdentity.deleteMany();
-    await admin.user.deleteMany();
-    await admin.tenant.deleteMany();
+    await resetTestDb(admin);
 
     const a = await admin.tenant.create({
       data: { slug: 'alpha-e2e', name: 'Alpha e2e', displayName: 'Alpha e2e' },

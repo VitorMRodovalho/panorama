@@ -5,6 +5,7 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
+import { resetTestDb } from './_reset-db.js';
 
 /**
  * Invitation flow e2e (ADR-0008). Covers:
@@ -61,15 +62,7 @@ describe('invitation flow e2e', () => {
     process.env.INVITE_RATE_TENANT_DAY = '100000';
 
     const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
-    await adminDb.invitation.deleteMany();
-    await adminDb.reservation.deleteMany();
-    await adminDb.asset.deleteMany();
-    await adminDb.assetModel.deleteMany();
-    await adminDb.category.deleteMany();
-    await adminDb.tenantMembership.deleteMany();
-    await adminDb.authIdentity.deleteMany();
-    await adminDb.user.deleteMany();
-    await adminDb.tenant.deleteMany();
+    await resetTestDb(adminDb);
 
     const tenant = await adminDb.tenant.create({
       data: {
