@@ -145,8 +145,8 @@ When a request hits `/invitations/accept?t=<token>`:
       `acceptedByUserId=currentUser.id`.
 4. If not logged in:
    a. Redirect to `/login?invite_token=<token>`. Login UI shows:
-      "You're signing in to accept an invite from <inviter> to
-      join <tenant>." with the target email prefilled.
+      "You're signing in to accept an invite from *{inviter}* to
+      join *{tenant}*." with the target email prefilled.
    b. After successful login (password or OIDC), re-enter the
       acceptance path from step 1 with the now-authenticated session.
 
