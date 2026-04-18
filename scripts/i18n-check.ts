@@ -61,4 +61,8 @@ async function main(): Promise<void> {
   console.log('i18n coverage OK — EN/PT-BR/ES in sync across ' + LOCALES.length + ' locales.');
 }
 
-await main();
+main().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error(err);
+  process.exit(1);
+});
