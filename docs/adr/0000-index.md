@@ -14,6 +14,7 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0007 | [Tenant Owner role (designated admin)](./0007-tenant-owner-role.md) | Accepted | 2026-04-18 |
 | 0008 | [Invitation flow (email-token, TTL, one-time-use, audit)](./0008-invitation-flow.md) | Accepted | 2026-04-18 |
 | 0009 | [Reservation domain (two-axis state, conflicts, blackouts, approval)](./0009-reservation-domain.md) | Accepted | 2026-04-18 |
+| 0010 | [Snipe-IT compat shim — auth model (per-user PATs)](./0010-snipeit-compat-shim-auth.md) | Accepted | 2026-04-18 |
 
 ## Template
 
