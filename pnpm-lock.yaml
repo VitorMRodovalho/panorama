@@ -89,12 +89,18 @@ importers:
       helmet:
         specifier: ^8.0.0
         version: 8.1.0
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.10.1
       iron-session:
         specifier: ^8.0.4
         version: 8.0.4
       nestjs-i18n:
         specifier: ^10.5.1
         version: 10.6.5(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(class-validator@0.14.4)(rxjs@7.8.2)
+      nodemailer:
+        specifier: ^6.9.16
+        version: 6.10.1
       openid-client:
         specifier: ^5.7.1
         version: 5.7.1
@@ -126,6 +132,9 @@ importers:
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
+      '@types/nodemailer':
+        specifier: ^8.0.0
+        version: 8.0.0
       eslint:
         specifier: ^9.16.0
         version: 9.39.4
@@ -1482,6 +1491,9 @@ packages:
 
   '@types/node@20.19.39':
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
+
+  '@types/nodemailer@8.0.0':
+    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
@@ -2891,6 +2903,10 @@ packages:
 
   node-releases@2.0.37:
     resolution: {integrity: sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==}
+
+  nodemailer@6.10.1:
+    resolution: {integrity: sha512-Z+iLaBGVaSjbIzQ4pX6XV41HrooLsQ10ZWPUehGmuantvzWoDVBnmsdUcOIDM1t+yPor5pDhVlDESgOMEGxhHA==}
+    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -4795,6 +4811,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@8.0.0':
+    dependencies:
+      '@types/node': 20.19.39
+
   '@types/prop-types@15.7.15': {}
 
   '@types/qs@6.15.0': {}
@@ -6362,6 +6382,8 @@ snapshots:
   node-gyp-build@4.8.4: {}
 
   node-releases@2.0.37: {}
+
+  nodemailer@6.10.1: {}
 
   normalize-path@3.0.0: {}
 

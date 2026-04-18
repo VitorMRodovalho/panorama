@@ -7,6 +7,9 @@ import { AssetModule } from './modules/asset/asset.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ImportModule } from './modules/import/import.module.js';
+import { RedisModule } from './modules/redis/redis.module.js';
+import { AuditModule } from './modules/audit/audit.module.js';
+import { EmailModule } from './modules/email/email.module.js';
 
 @Module({
   imports: [
@@ -20,11 +23,14 @@ import { ImportModule } from './modules/import/import.module.js';
     ]),
     PrismaModule,
     TenantModule,
+    RedisModule,
+    AuditModule,
+    EmailModule,
     AuthModule,
     AssetModule,
     HealthModule,
     ImportModule,
-    // 0.2: ReservationModule, AuditModule, NotificationModule, PluginHostModule,
+    // 0.2: ReservationModule, NotificationModule, PluginHostModule,
     //      I18nModule.forRootAsync.
   ],
 })
