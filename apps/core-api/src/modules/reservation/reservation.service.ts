@@ -353,8 +353,32 @@ export class ReservationService {
             },
           });
           rows.push(row);
+
+          // Per-row audit event so queries by resourceType=reservation
+          // catch basket rows the same way they catch single-asset
+          // creates. The basket-level event below still fires for
+          // "what baskets exist" audit slices.
+          await this.audit.recordWithin(tx, {
+            action:
+              decision === 'AUTO_APPROVED'
+                ? 'panorama.reservation.auto_approved'
+                : 'panorama.reservation.created',
+            resourceType: 'reservation',
+            resourceId: row.id,
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            metadata: {
+              assetId,
+              basketId,
+              onBehalfUserId: params.onBehalfUserId ?? null,
+              startAt: params.startAt.toISOString(),
+              endAt: params.endAt.toISOString(),
+              approvalStatus: decision,
+            },
+          });
         }
 
+        // Basket-level event — one row summarising the whole creation.
         await this.audit.recordWithin(tx, {
           action: 'panorama.reservation.basket_created',
           resourceType: 'reservation_basket',
