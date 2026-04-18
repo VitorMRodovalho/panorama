@@ -60,6 +60,43 @@ export async function createReservationAction(formData: FormData): Promise<void>
   );
 }
 
+export async function createBasketAction(formData: FormData): Promise<void> {
+  const assetIds = formData
+    .getAll('basketAssetIds')
+    .map((v) => String(v).trim())
+    .filter((v) => v.length > 0);
+  const startAt = String(formData.get('startAt') ?? '').trim();
+  const endAt = String(formData.get('endAt') ?? '').trim();
+  const purpose = String(formData.get('purpose') ?? '').trim() || undefined;
+  if (assetIds.length === 0) {
+    redirect('/reservations?error=' + encodeURIComponent('Select at least one asset.'));
+  }
+  if (!startAt || !endAt) redirect('/reservations?error=missing_datetime');
+
+  const res = await fetch(`${CORE_API}/reservations/basket`, {
+    method: 'POST',
+    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      assetIds,
+      startAt: new Date(startAt).toISOString(),
+      endAt: new Date(endAt).toISOString(),
+      ...(purpose ? { purpose } : {}),
+    }),
+  });
+
+  if (res.status === 201) {
+    const body = (await res.json().catch(() => ({}))) as { basketId?: string };
+    redirect(
+      `/reservations?basket=1${body.basketId ? `&basketId=${encodeURIComponent(body.basketId)}` : ''}`,
+    );
+  }
+  const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
+  redirect(
+    `/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`,
+  );
+}
+
 export async function cancelReservationAction(formData: FormData): Promise<void> {
   const id = String(formData.get('id') ?? '').trim();
   const reason = String(formData.get('reason') ?? '').trim() || undefined;

@@ -229,7 +229,7 @@ describe('reservation basket e2e', () => {
     const rowsOnAsset0 = await adminDb.reservation.count({
       where: {
         tenantId,
-        assetId: assetIds[0],
+        assetId: assetIds[0]!,
         startAt: new Date(isoAt(101)),
       },
     });

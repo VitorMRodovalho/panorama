@@ -7,6 +7,7 @@ import {
   cancelReservationAction,
   checkinReservationAction,
   checkoutReservationAction,
+  createBasketAction,
   createReservationAction,
   rejectReservationAction,
 } from './actions';
@@ -14,6 +15,7 @@ import {
 interface ReservationView {
   id: string;
   assetId: string | null;
+  basketId: string | null;
   requesterUserId: string;
   onBehalfUserId: string | null;
   startAt: string;
@@ -59,6 +61,8 @@ interface ReservationsPageProps {
     rejected?: string;
     checkedout?: string;
     checkedin?: string;
+    basket?: string;
+    basketId?: string;
   };
 }
 
@@ -156,6 +160,11 @@ export default async function ReservationsPage({
         {searchParams.checkedin ? (
           <div className="panorama-banner-success">Reservation checked in.</div>
         ) : null}
+        {searchParams.basket ? (
+          <div className="panorama-banner-success">
+            Basket created{searchParams.basketId ? ` (basket ${searchParams.basketId.slice(0, 8)}…).` : '.'}
+          </div>
+        ) : null}
 
         <div className="panorama-card">
           <h2 style={{ margin: '0 0 12px' }}>New reservation</h2>
@@ -188,6 +197,48 @@ export default async function ReservationsPage({
             </button>
           </form>
         </div>
+
+        <details className="panorama-card" style={{ marginTop: 16 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 16 }}>
+            New basket (multiple assets, same window)
+          </summary>
+          <form action={createBasketAction} className="panorama-form-grid" style={{ marginTop: 12 }}>
+            <div className="panorama-field" style={{ gridColumn: '1 / -1' }}>
+              <label>Assets (pick up to 20)</label>
+              <div className="panorama-basket-assets">
+                {assets.length === 0 ? (
+                  <p className="panorama-empty" style={{ margin: 0 }}>
+                    No bookable assets in this tenant.
+                  </p>
+                ) : (
+                  assets.map((a) => (
+                    <label key={a.id} className="panorama-basket-asset">
+                      <input type="checkbox" name="basketAssetIds" value={a.id} />
+                      <span>
+                        {a.tag} <span style={{ color: 'var(--pan-muted)' }}>— {a.name}</span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="panorama-field">
+              <label htmlFor="basketStart">Start</label>
+              <input id="basketStart" name="startAt" type="datetime-local" required />
+            </div>
+            <div className="panorama-field">
+              <label htmlFor="basketEnd">End</label>
+              <input id="basketEnd" name="endAt" type="datetime-local" required />
+            </div>
+            <div className="panorama-field">
+              <label htmlFor="basketPurpose">Purpose (optional)</label>
+              <input id="basketPurpose" name="purpose" type="text" maxLength={2000} />
+            </div>
+            <button type="submit" className="panorama-button" style={{ gridColumn: '1 / -1' }}>
+              Create basket
+            </button>
+          </form>
+        </details>
 
         <div className="panorama-card" style={{ marginTop: 16 }}>
           <div
@@ -242,10 +293,22 @@ export default async function ReservationsPage({
               </thead>
               <tbody>
                 {items.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} data-basket={r.basketId ?? undefined}>
                     <td>{new Date(r.startAt).toLocaleString()}</td>
                     <td>{new Date(r.endAt).toLocaleString()}</td>
-                    <td>{r.assetId ? assets.find((a) => a.id === r.assetId)?.tag ?? r.assetId.slice(0, 8) : '—'}</td>
+                    <td>
+                      {r.assetId
+                        ? assets.find((a) => a.id === r.assetId)?.tag ?? r.assetId.slice(0, 8)
+                        : '—'}
+                      {r.basketId ? (
+                        <span
+                          className="panorama-pill panorama-basket-pill"
+                          title={`Part of basket ${r.basketId}`}
+                        >
+                          basket {r.basketId.slice(0, 6)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td>{r.approvalStatus}</td>
                     <td>{r.lifecycleStatus}</td>
                     <td>{r.purpose ?? '—'}</td>
