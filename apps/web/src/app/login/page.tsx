@@ -4,7 +4,7 @@ import { loginAction, discoveryAction } from './actions';
 import type { DiscoveryResult } from './actions';
 
 interface LoginPageProps {
-  searchParams: { next?: string; email?: string; error?: string };
+  searchParams: { next?: string; email?: string; error?: string; invite_token?: string };
 }
 
 /**
@@ -23,15 +23,23 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
     ? await discoveryAction(email)
     : { providers: ['password'], tenantHint: null };
 
-  const nextParam = searchParams.next ?? '';
+  const inviteToken = (searchParams.invite_token ?? '').trim();
+  // Default post-login destination: the invite-accept page if we're in
+  // the middle of an invitation flow, otherwise the explicit ?next, else
+  // /assets. Safe: the accept page itself re-validates the token.
+  const nextParam =
+    searchParams.next ??
+    (inviteToken ? `/invitations/accept?t=${encodeURIComponent(inviteToken)}` : '');
 
   return (
     <div className="panorama-login">
       <h1>Sign in to Panorama</h1>
       <p className="muted">
-        {discovery.tenantHint
-          ? `You'll sign in to ${discovery.tenantHint.displayName}.`
-          : 'Trilingual fleet + IT asset management.'}
+        {inviteToken
+          ? 'Sign in to accept your invitation.'
+          : discovery.tenantHint
+            ? `You'll sign in to ${discovery.tenantHint.displayName}.`
+            : 'Trilingual fleet + IT asset management.'}
       </p>
 
       <div className="panorama-card">
