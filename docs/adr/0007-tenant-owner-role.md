@@ -1,6 +1,6 @@
 # ADR-0007: Tenant Owner role (designated admin)
 
-- Status: Proposed
+- Status: Accepted (implemented in 0.2 step 3d, 2026-04-18)
 - Date: 2026-04-18
 - Deciders: Vitor Rodovalho
 - Related: [ADR-0008 Invitation flow](./0008-invitation-flow.md)
@@ -179,13 +179,50 @@ Rejected.
 
 ## Execution order
 
-Not implemented at the moment this ADR is written. Sequencing:
+1. ✅ 0.2 step 3b — web login + /assets.
+2. ✅ 0.2 step 3c — invitation flow (ADR-0008).
+3. ✅ **0.2 step 3d — owner enforcement** (shipped 2026-04-18):
+   - Migration 0005 — BEFORE UPDATE/DELETE trigger
+     `enforce_at_least_one_owner` on `tenant_memberships` that
+     refuses any operation which would drop the active-Owner count
+     to zero. Raises SQLSTATE 45000 /
+     `TENANT_MUST_HAVE_AT_LEAST_ONE_OWNER` for service-layer mapping.
+     Includes a `panorama.bypass_owner_check` session GUC as an
+     escape hatch for tooling that knowingly wipes state (tests,
+     backup/restore).
+   - `TenantAdminService.createTenantWithOwner` (atomic tenant +
+     Owner membership; ADR rule 2), `updateMembership` / `delete
+     Membership` with friendly `last_owner_must_remain_active`
+     errors (ADR rules 1, 4, 6, 8), and `nominateOwner` for the
+     break-glass path (ADR rule 7).
+   - Minimal admin surface: `PATCH /tenants/:tenantId/memberships/:id`
+     and `DELETE` under Owner-only authorisation.
+   - Member-visible read: `GET /tenants/:id/ownership-summary` for
+     the single-Owner banner on `/assets`.
+   - Break-glass CLI: `pnpm tsx src/scripts/tenant-nominate-owner.ts
+     --tenant=slug --email=... --operator=... --reason=...` —
+     audit event `panorama.tenant.ownership_restored` emitted with
+     operator identity + required reason.
+   - Seed + import flows: creator of a tenant is seeded as `owner`;
+     import surfaces `tenant_has_no_active_owner:<slug>` warnings
+     for every tenant that finishes import without an Owner (operator
+     runs the break-glass CLI to rescue).
+4. **0.3** — transfer-ownership UI (two-step promote-then-demote),
+   bounce-handling webhook integration, enterprise SCIM-driven Owner
+   provisioning.
 
-1. **0.2 step 3b (web login, next up)** — no owner enforcement required
-   since tenants are seeded via super-admin tooling only.
-2. **0.2 step 3c (invitation flow, ADR-0008)** — introduces the paths
-   where "make this member an owner" needs to be called.
-3. **0.2 step 3d (owner enforcement)** — Postgres trigger + service
-   guards + banner in admin UI. First commit to use the `role='owner'`
-   value in practice.
-4. **0.3** — break-glass CLI, audit events, admin transfer-ownership UI.
+### Implementation notes
+
+- The migrator does NOT auto-elect an Owner from Snipe-IT's
+  `fleet_admin` group in this pass. The ADR's migration hook is
+  implemented as a post-import invariant check (warning, not
+  fixture mutation) — the operator resolves each orphaned tenant
+  via the break-glass CLI. Moving to auto-election would require
+  changing `TenantMembershipFixtureSchema` to include `'owner'`
+  and touches the fixture contract; deferred to a follow-up if
+  operator friction shows up in practice.
+- The DB trigger excludes the row being modified from its Owner
+  count, so in-place updates on the last Owner (isVip, metadata)
+  still succeed. Only operations that change `role` away from
+  `'owner'`, change `status` away from `'active'`, or DELETE the
+  row itself can trip the trigger.

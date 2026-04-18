@@ -32,9 +32,12 @@ Target versions and tenant-visible milestones. Living document — last updated 
       endpoints, acceptance web page, trilingual templates (EN / PT-BR
       / ES), Redis-backed rate limits that fail CLOSED, and full audit
       trail (`panorama.invitation.*`).
-- [ ] **Step 3d** — Tenant Owner enforcement per ADR-0007: Postgres
-      trigger preventing last-owner removal, service guards, admin UI
-      single-Owner warning, super-admin break-glass CLI.
+- [x] **Step 3d** — Tenant Owner enforcement per ADR-0007: Postgres
+      trigger `enforce_at_least_one_owner`, `TenantAdminService` with
+      create-with-owner + promote/demote/suspend/delete guards,
+      admin `PATCH/DELETE /tenants/:id/memberships/:mid`, single-Owner
+      warning banner on `/assets`, and the super-admin
+      `tenant-nominate-owner` break-glass CLI.
 - [ ] **Step 4** — Reservation model, approval workflow, blackouts,
       basket booking; check-out / check-in primitives.
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
