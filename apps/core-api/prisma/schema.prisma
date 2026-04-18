@@ -48,6 +48,15 @@ model Tenant {
   /// seconds. Community caps between 3 600 (1 h) and 2 592 000 (30 d).
   /// See ADR-0008.
   invitationTtlSeconds Int      @default(604800)
+  /// Per-tenant reservation policy — see ADR-0009. Shape:
+  /// {
+  ///   "min_notice_hours": 0,
+  ///   "max_duration_hours": 0,
+  ///   "max_concurrent_per_user": 0,
+  ///   "auto_approve_roles": ["owner", "fleet_admin", "fleet_staff"]
+  /// }
+  /// Zero means "not enforced" for each numeric.
+  reservationRules Json @default("{}")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -56,6 +65,7 @@ model Tenant {
   assets      Asset[]
   categories  Category[]
   invitations Invitation[]
+  blackouts   BlackoutSlot[]
 
   @@map("tenants")
 }
@@ -78,6 +88,11 @@ model User {
   invitationsTargeted Invitation[] @relation("InvitationTarget")
   invitationsAccepted Invitation[] @relation("InvitationAcceptor")
   invitationsRevoked  Invitation[] @relation("InvitationRevoker")
+  reservationsRequested Reservation[] @relation("ReservationRequester")
+  reservationsOnBehalf  Reservation[] @relation("ReservationOnBehalf")
+  reservationsApproved  Reservation[] @relation("ReservationApprover")
+  reservationsCancelled Reservation[] @relation("ReservationCanceller")
+  blackoutsCreated      BlackoutSlot[]
 
   @@map("users")
 }
@@ -324,15 +339,51 @@ model Reservation {
   purpose         String?
   approvalStatus  ApprovalStatus @default(PENDING_APPROVAL)
   lifecycleStatus ReservationStatus @default(BOOKED)
+  /// Approval trail — populated when an admin approves or rejects.
+  approverUserId  String?  @db.Uuid
+  approvedAt      DateTime?
+  approvalNote    String?
+  /// Cancellation trail (applies whether requester or admin cancels).
+  cancelReason    String?
+  cancelledAt     DateTime?
+  cancelledByUserId String? @db.Uuid
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   asset           Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  requester       User     @relation("ReservationRequester", fields: [requesterUserId], references: [id])
+  onBehalf        User?    @relation("ReservationOnBehalf",  fields: [onBehalfUserId],  references: [id])
+  approver        User?    @relation("ReservationApprover",  fields: [approverUserId],  references: [id], onDelete: SetNull)
+  canceller       User?    @relation("ReservationCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, startAt])
   @@index([tenantId, approvalStatus])
   @@index([tenantId, assetId])
+  @@index([tenantId, requesterUserId])
+  @@index([tenantId, lifecycleStatus])
   @@map("reservations")
+}
+
+model BlackoutSlot {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  /// NULL = applies to all assets in the tenant (global maintenance
+  /// window, holiday, etc.). Non-null = scoped to that asset.
+  assetId         String?  @db.Uuid
+  title           String
+  startAt         DateTime
+  endAt           DateTime
+  reason          String?
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, assetId])
+  @@map("blackout_slots")
 }
 
 enum ApprovalStatus {
