@@ -38,27 +38,19 @@ Target versions and tenant-visible milestones. Living document — last updated 
       admin `PATCH/DELETE /tenants/:id/memberships/:mid`, single-Owner
       warning banner on `/assets`, and the super-admin
       `tenant-nominate-owner` break-glass CLI.
-- [~] **Step 4** — Reservation model, approval workflow, blackouts
-      (ADR-0009).
-      - Part A **shipped**: migration 0006 extensions + blackout_slots
-        table + per-tenant `reservationRules` JSON; ReservationService
-        with conflict detection, blackout check, min-notice /
-        max-duration / max-concurrent rules, auto-approve by role;
-        `/reservations/*` + `/blackouts/*` endpoints; web `/reservations`
-        list + new form with admin approve/reject buttons.
-      - Part B **partial (check-out/in + calendar)**: migration 0007
-        (capture fields); `POST /reservations/:id/checkout|checkin`
-        with mileage monotonicity + damageFlag → MAINTENANCE routing;
-        web check-out / check-in forms inline under each row;
-        `/reservations/calendar` 14-day timeline per asset.
-      - Basket multi-asset reservations: design decision pending (see
-        ADR-0009 §"Out of scope for Part A"). Options:
-        (A) new `reservation_items (reservation_id, model_id, quantity)`
-            — FleetManager's pattern; one Reservation "basket" holds
-            multiple model line items; assets are assigned at check-out.
-        (B) `basketId` UUID on Reservation — multiple Reservations
-            (one per asset) share a basketId when created together.
-        Awaiting decision before implementing.
+- [x] **Step 4** — Reservation domain (ADR-0009 Accepted).
+      - Part A: migration 0006 extensions + blackout_slots table +
+        per-tenant `reservationRules` JSON; ReservationService with
+        conflict detection, blackout check, min-notice / max-duration
+        / max-concurrent rules, auto-approve by role; `/reservations/*`
+        + `/blackouts/*` endpoints; web list + form with admin
+        approve/reject.
+      - Part B: migration 0007 capture fields +
+        `POST /reservations/:id/checkout|checkin` (mileage monotonicity
+        + damageFlag → MAINTENANCE routing); web check-out / check-in
+        inline forms; `/reservations/calendar` 14-day timeline per
+        asset; migration 0008 `basketId` + `POST /reservations/basket`
+        (option B — shared basketId, per-row independent lifecycle).
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
 ## 0.3 — Inspections, maintenance, enterprise prep (target Aug 2026)
