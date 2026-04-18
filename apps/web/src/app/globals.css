@@ -159,6 +159,27 @@ a {
   }
 }
 
+.panorama-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  margin-top: 6px;
+  background: var(--pan-bg);
+  border: 1px solid var(--pan-border);
+  border-radius: 6px;
+  min-width: 240px;
+}
+.panorama-inline-form input[type="text"],
+.panorama-inline-form input[type="number"] {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--pan-border);
+  background: var(--pan-surface);
+  color: var(--pan-text);
+  font-size: 13px;
+}
+
 .panorama-provider-btn {
   display: flex;
   align-items: center;

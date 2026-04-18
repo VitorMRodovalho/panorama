@@ -5,6 +5,8 @@ import { logoutAction, switchTenantAction } from '../login/actions';
 import {
   approveReservationAction,
   cancelReservationAction,
+  checkinReservationAction,
+  checkoutReservationAction,
   createReservationAction,
   rejectReservationAction,
 } from './actions';
@@ -20,6 +22,12 @@ interface ReservationView {
   approvalStatus: string;
   lifecycleStatus: string;
   approvalNote: string | null;
+  checkedOutAt: string | null;
+  mileageOut: number | null;
+  checkedInAt: string | null;
+  mileageIn: number | null;
+  damageFlag: boolean;
+  damageNote: string | null;
   createdAt: string;
 }
 
@@ -49,6 +57,8 @@ interface ReservationsPageProps {
     cancelled?: string;
     approved?: string;
     rejected?: string;
+    checkedout?: string;
+    checkedin?: string;
   };
 }
 
@@ -137,6 +147,12 @@ export default async function ReservationsPage({
         ) : null}
         {searchParams.rejected ? (
           <div className="panorama-banner-success">Reservation rejected.</div>
+        ) : null}
+        {searchParams.checkedout ? (
+          <div className="panorama-banner-success">Reservation checked out.</div>
+        ) : null}
+        {searchParams.checkedin ? (
+          <div className="panorama-banner-success">Reservation checked in.</div>
         ) : null}
 
         <div className="panorama-card">
@@ -256,6 +272,45 @@ export default async function ReservationsPage({
                           </form>
                         </>
                       ) : null}
+                      {canCheckout(r) ? (
+                        <details style={{ display: 'inline-block', marginLeft: 6 }}>
+                          <summary className="panorama-button" style={{ cursor: 'pointer' }}>
+                            Check out
+                          </summary>
+                          <form action={checkoutReservationAction} className="panorama-inline-form">
+                            <input type="hidden" name="id" value={r.id} />
+                            <input type="number" name="mileage" placeholder="Mileage out" min={0} />
+                            <input type="text" name="condition" placeholder="Condition" maxLength={200} />
+                            <button type="submit" className="panorama-button">
+                              Confirm
+                            </button>
+                          </form>
+                        </details>
+                      ) : null}
+                      {canCheckin(r) ? (
+                        <details style={{ display: 'inline-block', marginLeft: 6 }}>
+                          <summary className="panorama-button" style={{ cursor: 'pointer' }}>
+                            Check in
+                          </summary>
+                          <form action={checkinReservationAction} className="panorama-inline-form">
+                            <input type="hidden" name="id" value={r.id} />
+                            <input
+                              type="number"
+                              name="mileage"
+                              placeholder="Mileage in"
+                              min={r.mileageOut ?? 0}
+                            />
+                            <input type="text" name="condition" placeholder="Condition" maxLength={200} />
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <input type="checkbox" name="damageFlag" /> Damage?
+                            </label>
+                            <input type="text" name="damageNote" placeholder="Damage note (if any)" maxLength={500} />
+                            <button type="submit" className="panorama-button">
+                              Confirm
+                            </button>
+                          </form>
+                        </details>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -277,4 +332,13 @@ function canCancel(r: ReservationView, isAdmin: boolean): boolean {
   return true;
   // (isAdmin kept in signature for future row-scoped logic.)
   void isAdmin;
+}
+
+function canCheckout(r: ReservationView): boolean {
+  if (r.lifecycleStatus !== 'BOOKED') return false;
+  return r.approvalStatus === 'APPROVED' || r.approvalStatus === 'AUTO_APPROVED';
+}
+
+function canCheckin(r: ReservationView): boolean {
+  return r.lifecycleStatus === 'CHECKED_OUT';
 }
