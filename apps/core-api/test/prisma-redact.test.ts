@@ -52,6 +52,14 @@ describe('prisma redactSensitive', () => {
       'password',
       'secretHash',
       'emailHash',
+      'accessKeyId',
+      'secretAccessKey',
+      'AccessKeyId',
+      'SecretAccessKey',
+      'S3_ACCESS_KEY',
+      'S3_SECRET_KEY',
+      'authorization',
+      'Authorization',
     ]);
     for (const field of PRISMA_REDACT_FIELDS) {
       const msg = `{"${field}":"leaky-value"}`;

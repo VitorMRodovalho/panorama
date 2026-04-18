@@ -13,6 +13,7 @@ import { EmailModule } from './modules/email/email.module.js';
 import { InvitationModule } from './modules/invitation/invitation.module.js';
 import { InvitationWorkerModule } from './modules/invitation/invitation-worker.module.js';
 import { NotificationModule } from './modules/notification/notification.module.js';
+import { ObjectStorageModule } from './modules/object-storage/object-storage.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
 
@@ -31,6 +32,22 @@ function snipeitShimEnabled(): boolean {
 
 const conditionalCompatShim: DynamicModule[] = snipeitShimEnabled()
   ? [{ module: SnipeitCompatModule, global: false }]
+  : [];
+
+/**
+ * `FEATURE_INSPECTIONS` (ADR-0012 §12) gates InspectionModule — and
+ * for 0.3 the ObjectStorageModule too, since the latter exists only
+ * to back inspection photos. First-release default is `false`; flip
+ * per-tenant on canary; community default flips to `true` after two
+ * stable patch releases. Same shape as FEATURE_SNIPEIT_COMPAT_SHIM.
+ */
+function inspectionsEnabled(): boolean {
+  const raw = (process.env['FEATURE_INSPECTIONS'] ?? 'false').toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'no';
+}
+
+const conditionalInspections: DynamicModule[] = inspectionsEnabled()
+  ? [{ module: ObjectStorageModule, global: false }]
   : [];
 
 @Module({
@@ -57,6 +74,7 @@ const conditionalCompatShim: DynamicModule[] = snipeitShimEnabled()
     HealthModule,
     ImportModule,
     ...conditionalCompatShim,
+    ...conditionalInspections,
     // 0.2: NotificationModule, PluginHostModule, I18nModule.forRootAsync.
   ],
 })

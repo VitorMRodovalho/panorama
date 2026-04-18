@@ -30,6 +30,20 @@ export const PRISMA_REDACT_FIELDS = [
   'password',
   'secretHash',
   'emailHash',
+  // S3 / AWS SDK credential shapes — ObjectStorage errors (ADR-0012)
+  // can leak these in SDK error dumps if a log line isn't scrubbed.
+  // Field-name match catches both camelCase (SDK) and
+  // SCREAMING_SNAKE_CASE (env) variants.
+  'accessKeyId',
+  'secretAccessKey',
+  'AccessKeyId',
+  'SecretAccessKey',
+  'S3_ACCESS_KEY',
+  'S3_SECRET_KEY',
+  // Authorization header sometimes appears verbatim in SDK
+  // diagnostic dumps (signed-request trace) — scrub it.
+  'authorization',
+  'Authorization',
 ] as const;
 
 const REDACTED = '<redacted>';
