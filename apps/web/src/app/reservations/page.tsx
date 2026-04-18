@@ -309,8 +309,8 @@ export default async function ReservationsPage({
                         </span>
                       ) : null}
                     </td>
-                    <td>{r.approvalStatus}</td>
-                    <td>{r.lifecycleStatus}</td>
+                    <td>{humaniseApproval(r.approvalStatus)}</td>
+                    <td>{humaniseLifecycle(r.lifecycleStatus)}</td>
                     <td>{r.purpose ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {canCancel(r, isAdmin) ? (
@@ -406,4 +406,30 @@ function canCheckout(r: ReservationView): boolean {
 
 function canCheckin(r: ReservationView): boolean {
   return r.lifecycleStatus === 'CHECKED_OUT';
+}
+
+// TODO: migrate to packages/i18n when next-intl (or equivalent) is wired
+// on the web side. Until then, user-facing strings for reservation state
+// live here in one place so translation later is a mechanical move.
+const APPROVAL_LABELS: Record<string, string> = {
+  PENDING_APPROVAL: 'Awaiting approval',
+  AUTO_APPROVED: 'Approved (automatically)',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+};
+const LIFECYCLE_LABELS: Record<string, string> = {
+  BOOKED: 'Booked',
+  CHECKED_OUT: 'Out',
+  RETURNED: 'Returned',
+  CANCELLED: 'Cancelled',
+  MISSED: 'Missed',
+  MAINTENANCE_REQUIRED: 'Maintenance required',
+  REDIRECTED: 'Redirected',
+};
+
+function humaniseApproval(status: string): string {
+  return APPROVAL_LABELS[status] ?? status;
+}
+function humaniseLifecycle(status: string): string {
+  return LIFECYCLE_LABELS[status] ?? status;
 }
