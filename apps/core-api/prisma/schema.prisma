@@ -37,6 +37,13 @@ model Tenant {
   displayName String
   locale      String    @default("en")
   timezone    String    @default("UTC")
+  /// Email domains this tenant claims. A user signing in with an email
+  /// matching any domain here is auto-routed to this tenant during
+  /// home-realm discovery and eligible for just-in-time membership.
+  /// **Community edition does NOT verify domain ownership** — anyone can
+  /// claim a domain. Enterprise adds DNS TXT verification so a tenant
+  /// cannot intercept users from a domain it does not control.
+  allowedEmailDomains String[] @default([])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -77,9 +84,14 @@ enum UserStatus {
 model AuthIdentity {
   id           String   @id @default(uuid()) @db.Uuid
   userId       String   @db.Uuid
-  provider     String   // google, microsoft, saml, password
-  subject      String   // sub from IdP (or user.id for password)
+  /// 'password' | 'google' | 'microsoft' | 'saml' | 'webauthn'
+  provider     String
+  /// For password: userId (self-referential). For OIDC/SAML: the IdP's sub claim.
+  subject      String
   emailAtLink  String
+  /// Argon2id hash for the 'password' provider. NULL for every other provider.
+  /// Never exposed via the API surface.
+  secretHash   String?
   attributes   Json?
   createdAt    DateTime @default(now())
   lastUsedAt   DateTime?
@@ -96,21 +108,32 @@ model AuthIdentity {
 // -----------------------------------------------------------------------------
 
 model TenantMembership {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @db.Uuid
-  userId       String   @db.Uuid
-  role         String   // 'super_admin' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
-  isVip        Boolean  @default(false)
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @db.Uuid
+  userId             String   @db.Uuid
+  /// 'super_admin' | 'fleet_admin' | 'fleet_staff' | 'driver' | custom
+  role               String
+  /// 'active' — user can use this tenant. 'invited' — pending acceptance,
+  /// no access until first login with email match or explicit acceptance.
+  /// 'suspended' — access revoked, membership preserved for audit.
+  status             String   @default("active")
+  isVip              Boolean  @default(false)
   trainingValidUntil DateTime?
-  metadata     Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// Invitation trail — populated when a membership is created by an
+  /// admin before the target user has authenticated into Panorama.
+  invitedByUserId    String?  @db.Uuid
+  invitedAt          DateTime?
+  acceptedAt         DateTime?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId])
   @@index([userId])
+  @@index([tenantId, status])
   @@map("tenant_memberships")
 }
 

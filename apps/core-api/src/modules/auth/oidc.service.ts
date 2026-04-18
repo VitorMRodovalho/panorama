@@ -1,0 +1,129 @@
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { generators, Issuer, type Client } from 'openid-client';
+import { AuthConfigService, type OidcProviderConfig } from './auth.config.js';
+
+export interface OidcStartParams {
+  provider: 'google' | 'microsoft';
+  redirectTo: string;
+  tenantHint?: string;
+}
+
+export interface OidcStartResult {
+  url: string;
+  state: string;
+  codeVerifier: string;
+  nonce: string;
+}
+
+export interface OidcCallbackParams {
+  provider: 'google' | 'microsoft';
+  code: string;
+  state: string;
+  expectedState: string;
+  codeVerifier: string;
+  expectedNonce: string;
+}
+
+export interface OidcUserInfo {
+  subject: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  emailVerified: boolean;
+}
+
+/**
+ * Thin wrapper around `openid-client` (v5) that:
+ *   * Discovers the IdP's metadata from its issuer URL on first use
+ *   * Caches the resulting Client so subsequent calls don't re-discover
+ *   * Implements PKCE + nonce for every flow (no implicit grant, no plain)
+ *
+ * Controllers call `start()` to get an authorise URL + the state/verifier
+ * to stash in the OAuth-state cookie, then `callback()` with the code and
+ * the state the cookie preserved.
+ */
+@Injectable()
+export class OidcService {
+  private readonly log = new Logger('OidcService');
+  private readonly clientsCache = new Map<string, Promise<Client>>();
+
+  constructor(private readonly cfg: AuthConfigService) {}
+
+  private redirectUri(provider: string): string {
+    return `${this.cfg.config.baseUrl}/auth/oidc/${provider}/callback`;
+  }
+
+  private async client(provider: 'google' | 'microsoft'): Promise<Client> {
+    const cfg = this.cfg.config.providers[provider];
+    if (!cfg) throw new Error(`OIDC provider "${provider}" not configured`);
+    if (!this.clientsCache.has(provider)) {
+      this.clientsCache.set(provider, this.buildClient(provider, cfg));
+    }
+    return this.clientsCache.get(provider)!;
+  }
+
+  private async buildClient(
+    provider: 'google' | 'microsoft',
+    cfg: OidcProviderConfig,
+  ): Promise<Client> {
+    const issuer = await Issuer.discover(cfg.issuer);
+    this.log.log({ provider, issuer: issuer.metadata.issuer }, 'oidc_client_ready');
+    return new issuer.Client({
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uris: [this.redirectUri(provider)],
+      response_types: ['code'],
+    });
+  }
+
+  async start(params: OidcStartParams): Promise<OidcStartResult> {
+    const client = await this.client(params.provider);
+    const state = generators.state();
+    const nonce = generators.nonce();
+    const codeVerifier = generators.codeVerifier();
+    const codeChallenge = generators.codeChallenge(codeVerifier);
+    const providerCfg = this.cfg.config.providers[params.provider]!;
+
+    const scopes = ['openid', 'email', 'profile', ...(providerCfg.extraScopes ?? [])];
+
+    const url = client.authorizationUrl({
+      scope: scopes.join(' '),
+      state,
+      nonce,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      ...(providerCfg.hostedDomainHint ? { hd: providerCfg.hostedDomainHint } : {}),
+      ...(params.tenantHint ? { login_hint: params.tenantHint } : {}),
+    });
+
+    return { url, state, codeVerifier, nonce };
+  }
+
+  async callback(params: OidcCallbackParams): Promise<OidcUserInfo> {
+    const client = await this.client(params.provider);
+    let tokens;
+    try {
+      tokens = await client.callback(
+        this.redirectUri(params.provider),
+        { code: params.code, state: params.state },
+        { state: params.expectedState, nonce: params.expectedNonce, code_verifier: params.codeVerifier },
+      );
+    } catch (err) {
+      this.log.warn({ err: String(err), provider: params.provider }, 'oidc_callback_failed');
+      throw new UnauthorizedException('oidc_exchange_failed');
+    }
+
+    const claims = tokens.claims();
+    if (!claims.email) throw new UnauthorizedException('oidc_missing_email');
+
+    return {
+      subject: String(claims.sub),
+      email: String(claims.email).toLowerCase().trim(),
+      firstName: (claims['given_name'] as string | undefined) ?? null,
+      lastName: (claims['family_name'] as string | undefined) ?? null,
+      displayName: (claims['name'] as string | undefined) ?? null,
+      emailVerified: claims['email_verified'] === true,
+    };
+  }
+}

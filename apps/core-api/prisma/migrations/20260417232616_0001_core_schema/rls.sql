@@ -52,6 +52,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO panorama_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO panorama_super_admin;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO panorama_super_admin;
 
+-- Grant the app role membership in super_admin so PrismaService.runAsSuperAdmin
+-- can promote the session role inside a transaction via `SET LOCAL ROLE
+-- panorama_super_admin`. Required for auth's cross-tenant membership lookups,
+-- backups, and migrations that need to read/write across RLS boundaries.
+GRANT panorama_super_admin TO panorama_app;
+
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO panorama_app, panorama_super_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public

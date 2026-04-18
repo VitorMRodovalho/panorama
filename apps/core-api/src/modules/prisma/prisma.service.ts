@@ -95,14 +95,25 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   /**
-   * Explicit cross-tenant escape hatch. Logs a structured warning so the
-   * audit stream can spot unexpected usage.
+   * Explicit cross-tenant escape hatch. Opens a transaction and promotes
+   * the session role to `panorama_super_admin` for its duration via
+   * `SET LOCAL ROLE`. The app role must have been granted membership in
+   * `panorama_super_admin` (see migration 0003's rls.sql — grants are
+   * idempotent). At COMMIT/ROLLBACK the role reverts automatically.
+   *
+   * Logs a structured warning so the audit stream can spot unexpected usage.
    */
   async runAsSuperAdmin<T>(
     cb: (tx: Prisma.TransactionClient) => Promise<T>,
     opts: { reason: string },
   ): Promise<T> {
     this.log.warn({ reason: opts.reason }, 'runAsSuperAdmin');
-    return this.$transaction((tx) => cb(tx));
+    return this.$transaction(async (tx) => {
+      // Fails loudly if the connecting role doesn't have the grant.
+      // Under direct super-admin connections (test seed helpers) the SET
+      // is a no-op but still works.
+      await tx.$executeRawUnsafe('SET LOCAL ROLE panorama_super_admin');
+      return cb(tx);
+    });
   }
 }

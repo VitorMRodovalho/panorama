@@ -1,24 +1,53 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, RequestMethod, type NestModule } from '@nestjs/common';
+import { AuthConfigService } from './auth.config.js';
+import { AuthController } from './auth.controller.js';
+import { AuthService } from './auth.service.js';
+import { DiscoveryService } from './discovery.service.js';
+import { OidcService } from './oidc.service.js';
+import { PasswordService } from './password.service.js';
+import { SessionMiddleware } from './session.middleware.js';
+import { SessionService } from './session.service.js';
 
 /**
- * Auth module — scaffolded but empty at 0.1.
+ * AuthModule — the 0.2 cut.
  *
- * 0.2 brings:
- *   - Email/password registration + login with argon2id hashing
- *   - Iron-session encrypted cookies (per-tenant secret)
- *   - Google OIDC + Microsoft OIDC providers wired through `openid-client`
- *   - SessionMiddleware that replaces TenantMiddleware's temporary
- *     X-Tenant-Id / X-User-Id header path
+ * Provides:
+ *   * Email+password login with argon2id hashing
+ *   * Iron-session encrypted cookies (HttpOnly, SameSite=Lax)
+ *   * Google + Microsoft OIDC with PKCE and nonce validation
+ *   * Home-Realm Discovery by email domain
+ *   * Multi-tenant session with tenant switching
+ *   * SessionMiddleware that populates the AsyncLocalStorage context for
+ *     PrismaService / RLS isolation — replaces the 0.1 header-based stub
  *
- * 0.3 brings:
- *   - SAML via a verified node-saml version
- *   - WebAuthn passkeys via `@simplewebauthn/server`
- *   - 2FA TOTP
- *
- * Enterprise edition brings:
- *   - Okta advanced, PingFederate, JumpCloud SCIM push
- *   - FIDO2 AAL-2 attestation
- *   - Policy-as-code authorisation via Rego
+ * Lands in 0.3 and beyond:
+ *   * Invitation acceptance flow (the data model is already in place)
+ *   * SAML, WebAuthn, TOTP
+ *   * Enterprise IdP connectors (Okta, Ping, JumpCloud SCIM push)
+ *   * Policy-as-code authorisation (CASL is imported but not yet wired)
  */
-@Module({})
-export class AuthModule {}
+@Module({
+  controllers: [AuthController],
+  providers: [
+    AuthConfigService,
+    AuthService,
+    DiscoveryService,
+    OidcService,
+    PasswordService,
+    SessionService,
+    SessionMiddleware,
+  ],
+  exports: [AuthConfigService, AuthService, PasswordService, SessionService],
+})
+export class AuthModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    // Every request runs through the session middleware so downstream
+    // code never sees a request without a resolved tenant context.
+    // `{ path: '*', method: RequestMethod.ALL }` is the ESM-safe form —
+    // the bare-string `forRoutes('*')` short-circuits under Node's ESM
+    // resolver and leaves controller routes unregistered.
+    consumer
+      .apply(SessionMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}
