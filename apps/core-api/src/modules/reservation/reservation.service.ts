@@ -842,6 +842,20 @@ export class ReservationService {
           throw new ConflictException(`asset_not_ready:${asset.status}`);
         }
 
+        // ADR-0012 §8 — reservation tether. When the tenant flag is
+        // on, a recent COMPLETED+PASS inspection by THIS actor on
+        // THIS asset is required. Inline query (no InspectionService
+        // import) per the v3 cross-domain coupling fix.
+        // Flip-on with already-checked-out vehicles preserves them:
+        // gate runs ONLY in the BOOKED → CHECKED_OUT path here, never
+        // on already-CHECKED_OUT rows.
+        const preCheckoutInspectionId = await this.assertInspectionTether(
+          tx,
+          actor,
+          asset.id,
+          reservationId,
+        );
+
         const now = new Date();
         const updated = await tx.reservation.update({
           where: { id: reservationId },
@@ -867,12 +881,84 @@ export class ReservationService {
             assetId: asset.id,
             mileage: params.mileage ?? null,
             condition: params.condition ?? null,
+            ...(preCheckoutInspectionId
+              ? { preCheckoutInspectionId }
+              : {}),
           },
         });
         return updated;
       },
       { reason: `reservation:checkout:${reservationId}` },
     );
+  }
+
+  /**
+   * ADR-0012 §8 reservation tether — inline so no InspectionService
+   * import. Returns the pre-checkout inspection ID for the success
+   * audit row, or null when the tether is off (no audit decoration).
+   * Throws ConflictException('inspection_required') + audits
+   * `panorama.reservation.checkout_blocked` when the tether is on
+   * and no qualifying inspection exists in window.
+   */
+  private async assertInspectionTether(
+    tx: Prisma.TransactionClient,
+    actor: ReservationContext,
+    assetId: string,
+    reservationId: string,
+  ): Promise<string | null> {
+    const tenant = await tx.tenant.findUnique({
+      where: { id: actor.tenantId },
+      select: {
+        requireInspectionBeforeCheckout: true,
+        inspectionConfig: true,
+      },
+    });
+    if (!tenant?.requireInspectionBeforeCheckout) return null;
+
+    // Per-tenant window override; null falls back to the cluster
+    // default (240 min = 4 h). Inline parse so this method has no
+    // import on the inspection module.
+    const cfg = (tenant.inspectionConfig ?? {}) as Record<string, unknown>;
+    const rawWindow = cfg['preCheckoutInspectionMaxAgeMinutes'];
+    const windowMin =
+      typeof rawWindow === 'number' && Number.isFinite(rawWindow) && rawWindow >= 30 && rawWindow <= 1440
+        ? rawWindow
+        : 240;
+    const cutoff = new Date(Date.now() - windowMin * 60_000);
+
+    const passed = await tx.inspection.findFirst({
+      where: {
+        tenantId: actor.tenantId,
+        assetId,
+        startedByUserId: actor.userId,
+        status: 'COMPLETED',
+        outcome: 'PASS',
+        completedAt: { gte: cutoff },
+      },
+      orderBy: { completedAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!passed) {
+      // Audit must SURVIVE the rollback — `recordWithin` would commit
+      // with the outer tx, but the throw immediately below rolls it
+      // back. `record` opens its own tx (audit chain integrity stays
+      // because the chain is single-writer per ADR-0003).
+      await this.audit.record({
+        action: 'panorama.reservation.checkout_blocked',
+        resourceType: 'reservation',
+        resourceId: reservationId,
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        metadata: {
+          reason: 'inspection_required',
+          assetId,
+          windowMinutes: windowMin,
+        },
+      });
+      throw new ConflictException('inspection_required');
+    }
+    return passed.id;
   }
 
   async checkIn(params: CheckinParams): Promise<Reservation> {
