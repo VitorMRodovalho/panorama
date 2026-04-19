@@ -5,11 +5,11 @@
   "description": "Panorama core API server (NestJS).",
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/src/main.js",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "echo 'core-api lint — no ESLint config yet, gated by typecheck'",

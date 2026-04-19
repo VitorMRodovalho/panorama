@@ -43,9 +43,15 @@ RUN pnpm install --frozen-lockfile
 COPY apps/core-api/ apps/core-api/
 COPY packages/ packages/
 
-# Prisma generate first (writes the client into node_modules), then nest build.
+# Prisma generate first (writes the client into node_modules). Then
+# turbo-driven build with `--filter @panorama/core-api...` which
+# picks up the workspace package dependencies (`@panorama/shared`,
+# `@panorama/migrator`, `@panorama/plugin-sdk`) AND core-api in
+# topological order. Without this, core-api's tsc fails to resolve
+# `@panorama/shared` because shared/dist hasn't been emitted yet
+# (`.dockerignore` excludes `**/dist` from the build context).
 RUN pnpm --filter @panorama/core-api exec prisma generate
-RUN pnpm --filter @panorama/core-api build
+RUN pnpm exec turbo run build --filter='@panorama/core-api...'
 
 # Deploy self-contained prod-only tree. `pnpm deploy --prod` resolves workspace
 # deps (`workspace:*`) by inlining the actual package contents — no symlinks
@@ -77,6 +83,16 @@ COPY --from=builder /out/node_modules ./node_modules
 COPY --from=builder /out/prisma      ./prisma
 COPY --from=builder /out/package.json ./
 
+# `pnpm deploy --prod` doesn't copy the Prisma-generated client out
+# of the builder's `node_modules/.prisma/client/` directory (the
+# generated files live alongside @prisma/client but in a hidden
+# `.prisma` subdir that pnpm doesn't recognise as a real package).
+# Re-run `prisma generate` here so the runtime image has the
+# generated .prisma/client/default module @prisma/client expects.
+# Invoke via npx (ships with node) to avoid adding pnpm to the
+# runner image just for this step.
+RUN npx --no-install prisma generate
+
 # Run as the bookworm-slim image's pre-seeded `node` user (uid 1000).
 USER node
 
@@ -84,8 +100,13 @@ EXPOSE 4000
 
 # /health is implemented by HealthModule. Exit non-zero on non-200 / fetch
 # failure so the orchestrator (Fly, K8s, compose) can act on it.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=5 \
   CMD node -e "fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "dist/main.js"]
+# tsc with `rootDir: "."` (apps/core-api/tsconfig.json) preserves the
+# directory tree under `dist/`, so the compiled entry is
+# `dist/src/main.js`, NOT `dist/main.js`. The package.json `main` /
+# `start` fields are stale and shouldn't be relied on; the canonical
+# entry is here.
+CMD ["node", "dist/src/main.js"]
