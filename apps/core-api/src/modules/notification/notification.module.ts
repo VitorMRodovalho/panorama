@@ -5,6 +5,7 @@ import { ChannelRegistry } from './channel-registry.js';
 import { NotificationDispatcher } from './notification.dispatcher.js';
 import { NotificationService } from './notification.service.js';
 import { ReservationEmailChannel } from './email-channel.js';
+import { InspectionOutcomeEmailChannel } from './inspection-outcome-email-channel.js';
 
 /**
  * Notification event bus (ADR-0011).
@@ -16,11 +17,11 @@ import { ReservationEmailChannel } from './email-channel.js';
  *   * `NotificationDispatcher` — outbox worker. Runs except in
  *     NODE_ENV=test or when FEATURE_NOTIFICATION_BUS=false.
  *
- * First-party subscribers (ReservationEmailChannel at 0.3) register
- * during this module's OnModuleInit. Future channels can either land
- * here (for core handlers) or in their own module that imports
- * NotificationModule and calls `registry.register(...)` in their own
- * bootstrap hook.
+ * First-party subscribers register during this module's OnModuleInit.
+ * The InspectionOutcomeEmailChannel is registered unconditionally — the
+ * inspection feature is gated upstream (FEATURE_INSPECTIONS), so when
+ * the flag is off no `panorama.inspection.completed` events are
+ * published and the handler stays inert.
  */
 @Module({
   imports: [AuditModule, EmailModule],
@@ -29,6 +30,7 @@ import { ReservationEmailChannel } from './email-channel.js';
     NotificationDispatcher,
     NotificationService,
     ReservationEmailChannel,
+    InspectionOutcomeEmailChannel,
   ],
   exports: [ChannelRegistry, NotificationService],
 })
@@ -36,9 +38,11 @@ export class NotificationModule implements OnModuleInit {
   constructor(
     private readonly registry: ChannelRegistry,
     private readonly reservationEmail: ReservationEmailChannel,
+    private readonly inspectionOutcomeEmail: InspectionOutcomeEmailChannel,
   ) {}
 
   onModuleInit(): void {
     this.registry.register(this.reservationEmail);
+    this.registry.register(this.inspectionOutcomeEmail);
   }
 }

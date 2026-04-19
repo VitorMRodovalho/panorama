@@ -42,6 +42,23 @@ export const NOTIFICATION_PAYLOAD_SCHEMAS = {
       note: z.string().max(500).optional(),
     })
     .strict(),
+
+  // ADR-0012 §11. Emitted by InspectionService.complete; the
+  // InspectionOutcomeEmailChannel filters in-handler for FAIL /
+  // NEEDS_MAINTENANCE so PASS events still flow through the bus
+  // (audit + future subscribers) without firing email.
+  'panorama.inspection.completed': z
+    .object({
+      inspectionId: z.string().uuid(),
+      assetId: z.string().uuid(),
+      reservationId: z.string().uuid().nullable(),
+      startedByUserId: z.string().uuid(),
+      outcome: z.enum(['PASS', 'FAIL', 'NEEDS_MAINTENANCE']),
+      photoCount: z.number().int().min(0).max(50),
+      responseCount: z.number().int().min(0).max(100),
+      summaryNote: z.string().max(500).optional(),
+    })
+    .strict(),
 } as const;
 
 export type NotificationEventType = keyof typeof NOTIFICATION_PAYLOAD_SCHEMAS;
