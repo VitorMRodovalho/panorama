@@ -65,8 +65,13 @@ Target versions and tenant-visible milestones. Living document — last updated 
 
 ## 0.3 — Inspections, maintenance, enterprise prep (target Sept 2026)
 
-- [ ] Configurable checklists (per asset type), photo evidence, EXIF strip
-      — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md)
+- [~] Configurable checklists (per asset type), photo evidence, EXIF strip
+      — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md). Backend
+      feature-complete (steps 5–10: PhotoPipeline, notification subscriber,
+      Template + Inspection lifecycle, photo upload, reservation tether,
+      retention + stale sweeps, cross-cutting integration tests). Web UI
+      (step 11) and canary rollout (step 13) remain. See
+      [`docs/en/inspections.md`](./inspections.md) for the operator brief.
 - [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
 - [ ] Mileage + time-based alerts
 - [ ] CSV exports for every list view
