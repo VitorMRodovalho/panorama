@@ -1,0 +1,201 @@
+# Panorama production reference deploy — single host (Docker Compose).
+#
+# Audience: AGPL self-hosters running on their own VPS / on-prem box.
+# Consumed by the canary step 13 of ADR-0012 — a one-tenant pilot deploy.
+#
+# What this is NOT:
+#   * Not a multi-host orchestration (use K8s + the Helm chart in
+#     `infra/helm/` once it lands for that).
+#   * Not a managed-cloud profile (Fly + Supabase + R2 + Pages lives in
+#     the staging runbook, separate ADR-0013).
+#   * Not a TLS-terminating ingress — operator MUST front this with
+#     nginx / Caddy / Cloudflare Tunnel for any internet-facing deploy.
+#     The ports below bind to localhost only by default.
+#
+# Bring up:   docker compose -f infra/docker/compose.prod.yml up -d
+# Migrate:    docker compose -f infra/docker/compose.prod.yml run --rm migrator
+# Logs:       docker compose -f infra/docker/compose.prod.yml logs -f core-api
+# Health:     curl http://127.0.0.1:4000/health
+#
+# All env reads .env at the repo root (see /.env.example).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-panorama}
+      POSTGRES_USER: ${POSTGRES_USER:-panorama}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - panorama_pg:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/01-panorama-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER:-panorama} -d $${POSTGRES_DB:-panorama}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--save', '60', '1', '--loglevel', 'warning']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - panorama_redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?S3_ACCESS_KEY must be set}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set}
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - panorama_minio:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # One-shot bucket bootstrap. mc alias + mb is idempotent (mb fails harmlessly
+  # if bucket exists). Required so the core-api's bootstrap SSRF check can
+  # succeed and so InspectionPhotoService.upload doesn't 503 on first call.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb local/$${S3_BUCKET_PHOTOS:-panorama-photos} --ignore-existing &&
+      mc anonymous set none local/$${S3_BUCKET_PHOTOS:-panorama-photos} &&
+      mc encrypt set sse-s3 local/$${S3_BUCKET_PHOTOS:-panorama-photos} || true
+      "
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+      S3_BUCKET_PHOTOS: ${S3_BUCKET_PHOTOS:-panorama-photos}
+    restart: 'no'
+
+  # One-shot Prisma migrate + rls.sql apply. Re-run on every upgrade
+  # via `docker compose run --rm migrator`. Idempotent.
+  migrator:
+    build:
+      context: ../..
+      dockerfile: apps/core-api/Dockerfile
+    image: panorama-core-api:${PANORAMA_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_PRIVILEGED_URL: ${DATABASE_PRIVILEGED_URL:-${DATABASE_URL}}
+    entrypoint: ['/usr/bin/tini', '--', 'sh', '/app/scripts/apply-migrations.sh']
+    restart: 'no'
+    # Mount the script + migrations from the build context so an operator
+    # can re-run after pulling new migrations without rebuilding the image.
+    # The image already contains both, so this is purely a convenience for
+    # development cycles; production should re-pull the image and re-run.
+    # volumes:
+    #   - ../../apps/core-api/prisma:/app/prisma:ro
+    #   - ../../apps/core-api/scripts:/app/scripts:ro
+
+  core-api:
+    build:
+      context: ../..
+      dockerfile: apps/core-api/Dockerfile
+    image: panorama-core-api:${PANORAMA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_PRIVILEGED_URL: ${DATABASE_PRIVILEGED_URL:-${DATABASE_URL}}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET_PHOTOS: ${S3_BUCKET_PHOTOS:-panorama-photos}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_SIGNED_URL_TTL_SECONDS: ${S3_SIGNED_URL_TTL_SECONDS:-300}
+      S3_ALLOW_PRIVATE_ENDPOINT: ${S3_ALLOW_PRIVATE_ENDPOINT:-true}
+      FEATURE_INSPECTIONS: ${FEATURE_INSPECTIONS:-false}
+      FEATURE_SNIPEIT_COMPAT_SHIM: ${FEATURE_SNIPEIT_COMPAT_SHIM:-true}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set (32 random bytes base64url)}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-panorama_session}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_EHLO_HOST: ${SMTP_EHLO_HOST}
+      I18N_DEFAULT_LOCALE: ${I18N_DEFAULT_LOCALE:-en}
+      I18N_ENABLED_LOCALES: ${I18N_ENABLED_LOCALES:-en,pt-br,es}
+      PANORAMA_WEB_BASE_URL: ${PANORAMA_WEB_BASE_URL:-http://localhost:3000}
+      OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+      OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
+      OIDC_MICROSOFT_CLIENT_ID: ${OIDC_MICROSOFT_CLIENT_ID:-}
+      OIDC_MICROSOFT_CLIENT_SECRET: ${OIDC_MICROSOFT_CLIENT_SECRET:-}
+      OIDC_MICROSOFT_TENANT: ${OIDC_MICROSOFT_TENANT:-}
+    ports:
+      - '127.0.0.1:4000:4000'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Web app — Next.js 14 production server. Self-hosters who only need the
+  # API can drop this service entirely (the API is fully usable headless,
+  # e.g. for a custom integration via the OpenAPI surface).
+  # NOTE: a separate Dockerfile for apps/web/ is NOT in this batch — when
+  # it lands, the image tag below switches accordingly. For 0.3 self-hosters
+  # who want a UI, build apps/web/ locally and `next start -p 3000`, OR
+  # wait for step 11 + the web Dockerfile follow-up.
+  # web:
+  #   build:
+  #     context: ../..
+  #     dockerfile: apps/web/Dockerfile
+  #   image: panorama-web:${PANORAMA_IMAGE_TAG:-latest}
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     CORE_API_URL: ${CORE_API_URL:-http://core-api:4000}
+  #   depends_on:
+  #     core-api:
+  #       condition: service_healthy
+  #   ports:
+  #     - '127.0.0.1:3000:3000'
+
+volumes:
+  panorama_pg:
+  panorama_redis:
+  panorama_minio:

@@ -1,0 +1,50 @@
+# Build context hygiene for `apps/core-api/Dockerfile`.
+# Aggressively excludes the things Docker would otherwise re-hash on every
+# `docker build`, blowing the layer cache and bloating the daemon transfer.
+
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/.cache
+**/tsconfig.tsbuildinfo
+
+# Local-dev overrides — never want these inside an image.
+**/.env
+**/.env.local
+**/.env.*.local
+.env
+.env.local
+
+# Git + tooling
+.git
+.gitignore
+.github
+.husky
+
+# Editor + OS noise
+**/.vscode
+**/.idea
+**/.DS_Store
+**/Thumbs.db
+
+# Tests + fixtures (the runner doesn't need them; the builder uses the source
+# tree it already COPY'd in explicitly).
+**/*.test.ts
+**/*.spec.ts
+**/test
+**/tests
+**/__tests__
+**/__mocks__
+**/playwright-report
+**/playwright/.cache
+
+# Docs + examples — not part of the runtime
+docs
+**/*.md
+LICENSE*
+
+# Local dev artefacts
+infra/docker/postgres-init.sql
+infra/docker/compose.dev.yml
