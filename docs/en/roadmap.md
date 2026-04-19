@@ -67,10 +67,9 @@ Target versions and tenant-visible milestones. Living document — last updated 
 
 - [~] Configurable checklists (per asset type), photo evidence, EXIF strip
       — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md). Backend
-      feature-complete (steps 5–10: PhotoPipeline, notification subscriber,
-      Template + Inspection lifecycle, photo upload, reservation tether,
-      retention + stale sweeps, cross-cutting integration tests). Web UI
-      (step 11) and canary rollout (step 13) remain. See
+      and web UI feature-complete (steps 2–11). Canary rollout (step 13)
+      remains — feature stays dark behind `FEATURE_INSPECTIONS=false`
+      until a pilot tenant validates. See
       [`docs/en/inspections.md`](./inspections.md) for the operator brief.
 - [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
 - [ ] Mileage + time-based alerts

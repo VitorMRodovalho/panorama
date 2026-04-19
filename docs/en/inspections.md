@@ -5,9 +5,10 @@ strip — Panorama 0.3 (ADR-0012). This page is the operator reference for
 the feature: how it behaves, the contracts the API exposes, and the
 release-note caveats pilots need to know about before a flag flip.
 
-> Status: backend feature-complete (steps 5–10 of ADR-0012 §Execution
-> order). Web UI ships in step 11. The feature stays dark behind
-> `FEATURE_INSPECTIONS=false` until a canary tenant validates it.
+> Status: feature-complete on backend + web (steps 2–11 of ADR-0012
+> §Execution order shipped). The feature stays dark behind
+> `FEATURE_INSPECTIONS=false` until a canary tenant validates it
+> (step 13). Mobile is queued for 1.1.
 
 ## Contents
 
