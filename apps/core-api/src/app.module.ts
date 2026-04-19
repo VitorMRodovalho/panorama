@@ -15,6 +15,7 @@ import { InvitationWorkerModule } from './modules/invitation/invitation-worker.m
 import { NotificationModule } from './modules/notification/notification.module.js';
 import { ObjectStorageModule } from './modules/object-storage/object-storage.module.js';
 import { PhotoPipelineModule } from './modules/photo-pipeline/photo-pipeline.module.js';
+import { InspectionModule } from './modules/inspection/inspection.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
 
@@ -51,6 +52,7 @@ const conditionalInspections: DynamicModule[] = inspectionsEnabled()
   ? [
       { module: ObjectStorageModule, global: false },
       { module: PhotoPipelineModule, global: false },
+      { module: InspectionModule, global: false },
     ]
   : [];
 

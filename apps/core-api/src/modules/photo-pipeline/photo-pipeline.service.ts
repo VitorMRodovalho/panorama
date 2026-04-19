@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { fileTypeFromBuffer } from 'file-type';
@@ -83,7 +83,11 @@ export class PhotoPipeline {
   private readonly log = new Logger('PhotoPipeline');
   private readonly cfg: PhotoPipelineConfig;
 
-  constructor(cfg?: PhotoPipelineConfig) {
+  // `@Optional()` — under Nest DI no provider for `PhotoPipelineConfig`
+  // is registered, so the param resolves to `undefined` and the
+  // constructor falls back to env. Direct `new PhotoPipeline(cfg)` in
+  // unit tests passes a literal cfg (the env path is bypassed).
+  constructor(@Optional() cfg?: PhotoPipelineConfig) {
     this.cfg = cfg ?? loadPhotoPipelineConfig(process.env);
   }
 

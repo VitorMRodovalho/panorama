@@ -32,5 +32,9 @@ export default defineConfig({
         singleFork: true,
       },
     },
+    // Sets FEATURE_INSPECTIONS=true and other env defaults BEFORE
+    // any test file's static imports run. Required so AppModule's
+    // module-load-time conditional sees the flag on.
+    setupFiles: ['./test/_setup.ts'],
   },
 });

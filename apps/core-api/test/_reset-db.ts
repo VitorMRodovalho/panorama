@@ -21,6 +21,18 @@ export async function resetTestDb(admin: PrismaClient): Promise<void> {
     await tx.$executeRawUnsafe("SET LOCAL panorama.bypass_owner_check = 'on'");
     await tx.blackoutSlot.deleteMany();
     await tx.invitation.deleteMany();
+    // Inspection rows must clear before reservations / assets / users:
+    // - InspectionPhoto → Inspection; InspectionResponse → Inspection
+    // - Inspection FKs reference Asset (Restrict), User (Restrict),
+    //   Reservation (SetNull), Tenant (Cascade)
+    // - InspectionTemplate FKs reference User (createdByUserId,
+    //   Restrict) — wiping users without first dropping templates
+    //   trips the FK.
+    await tx.inspectionPhoto.deleteMany();
+    await tx.inspectionResponse.deleteMany();
+    await tx.inspection.deleteMany();
+    await tx.inspectionTemplateItem.deleteMany();
+    await tx.inspectionTemplate.deleteMany();
     await tx.reservation.deleteMany();
     await tx.asset.deleteMany();
     await tx.assetModel.deleteMany();
