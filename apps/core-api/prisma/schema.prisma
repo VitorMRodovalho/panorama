@@ -5,8 +5,9 @@
 //     middleware. The middleware adds `WHERE tenant_id = current` to every
 //     query unless the caller is in cross-tenant scope.
 //   * Postgres Row-Level Security policies duplicate the predicate at the DB
-//     layer, keyed on `app.current_tenant` session GUC. RLS policies are
-//     defined in SQL migrations (Prisma can't model them natively).
+//     layer, keyed on `panorama.current_tenant` session GUC (renamed from
+//     `app.current_tenant` in migration 0013 per ADR-0015 v2). RLS policies
+//     are defined in SQL migrations (Prisma can't model them natively).
 //   * `users` and `auth_identities` are global; per-tenant membership lives
 //     in `tenant_memberships`.
 

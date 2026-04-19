@@ -7,9 +7,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * when it opens a transaction so it can emit `SET LOCAL app.current_tenant`.
  *
  * `tenantId` may be null for cross-tenant service code paths (super admin
- * dashboards, migrations, backups). Those paths must explicitly connect as
- * the `panorama_super_admin` DB role so Postgres RLS is bypassed; the
- * application layer does not hide the fact that it's running cross-tenant.
+ * dashboards, migrations, backups). Those paths must go through
+ * `PrismaService.runAsSuperAdmin`, which uses the privilegedClient
+ * (DATABASE_PRIVILEGED_URL) and calls the SECURITY DEFINER bypass function
+ * `panorama_enable_bypass_rls()` per ADR-0015 v2.
  */
 export interface TenantContext {
   tenantId: string | null;

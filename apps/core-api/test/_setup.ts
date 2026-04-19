@@ -20,6 +20,19 @@ if (!process.env['FEATURE_INSPECTIONS']) {
 if (!process.env['SESSION_SECRET']) {
   process.env['SESSION_SECRET'] = 'a'.repeat(32);
 }
+// ADR-0015 v2 — PrismaService.runAsSuperAdmin needs the privileged
+// URL. e2e tests set DATABASE_URL to the panorama_app role; the
+// privileged URL points at panorama_super_admin (whose dev-stack
+// password is `panorama` per infra/docker/postgres-init.sql). The
+// PrismaService boot-time guard refuses identical URLs, so this
+// default differs from the app URL e2e files set.
+if (!process.env['DATABASE_PRIVILEGED_URL']) {
+  const host = process.env['PG_HOST'] ?? 'localhost';
+  const port = process.env['PG_PORT'] ?? '5432';
+  const db = process.env['PG_DB'] ?? 'panorama';
+  process.env['DATABASE_PRIVILEGED_URL'] =
+    `postgres://panorama_super_admin:panorama@${host}:${port}/${db}?schema=public`;
+}
 // MinIO dev defaults — ObjectStorageModule's loader requires these
 // at boot. Tests don't actually hit S3 at this layer, but the module
 // still parses the config eagerly.

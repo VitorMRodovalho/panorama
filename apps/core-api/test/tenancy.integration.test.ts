@@ -12,8 +12,8 @@ import { resetTestDb } from './_reset-db.js';
  *     exist and have the grants from rls.sql
  *
  * What we prove:
- *   1. With `app.current_tenant = A`, panorama_app sees only tenant-A rows
- *   2. Switching to `app.current_tenant = B`, panorama_app sees only tenant-B rows
+ *   1. With `panorama.current_tenant = A`, panorama_app sees only tenant-A rows
+ *   2. Switching to `panorama.current_tenant = B`, panorama_app sees only tenant-B rows
  *   3. With no GUC set, panorama_app sees zero rows (deny-by-default)
  *   4. panorama_super_admin bypasses RLS and sees everything
  *   5. A cross-tenant write attempt (GUC=A but data.tenantId=B) is rejected
@@ -77,9 +77,9 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
     await admin.$disconnect();
   });
 
-  it('app role sees only tenant A when app.current_tenant = A', async () => {
+  it('app role sees only tenant A when panorama.current_tenant = A', async () => {
     const rows = await app.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantA}'`);
+      await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantA}'`);
       return tx.asset.findMany({ select: { tag: true, tenantId: true } });
     });
     expect(rows).toHaveLength(1);
@@ -87,9 +87,9 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
     expect(rows[0]?.tenantId).toBe(tenantA);
   });
 
-  it('app role sees only tenant B when app.current_tenant = B', async () => {
+  it('app role sees only tenant B when panorama.current_tenant = B', async () => {
     const rows = await app.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantB}'`);
+      await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantB}'`);
       return tx.asset.findMany({ select: { tag: true, tenantId: true } });
     });
     expect(rows).toHaveLength(1);
@@ -97,7 +97,7 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
     expect(rows[0]?.tenantId).toBe(tenantB);
   });
 
-  it('app role sees zero rows when app.current_tenant is unset', async () => {
+  it('app role sees zero rows when panorama.current_tenant is unset', async () => {
     const rows = await app.$transaction(async (tx) => {
       return tx.asset.findMany();
     });
@@ -115,7 +115,7 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
     // RLS WITH CHECK must refuse the write.
     await expect(
       app.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantA}'`);
+        await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantA}'`);
         return tx.asset.create({
           data: {
             tenantId: tenantB,
@@ -130,7 +130,7 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
 
   it('tenants table is self-scoped — app sees only its own tenant', async () => {
     const rows = await app.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantA}'`);
+      await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantA}'`);
       return tx.tenant.findMany();
     });
     expect(rows).toHaveLength(1);

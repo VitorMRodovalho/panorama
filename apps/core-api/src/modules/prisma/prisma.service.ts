@@ -85,26 +85,41 @@ export function redactSensitive(text: string): string {
 /**
  * Injectable Prisma wrapper with two safety rails:
  *
- *   1. `runInTenant(tenantId, cb)` — opens a transaction, emits
- *      `SET LOCAL app.current_tenant = '<uuid>'`, and runs the callback on
- *      the transactional client. Postgres RLS policies read that GUC and
- *      enforce row-level isolation even if the application layer forgets
- *      to include a tenant filter.
+ *   1. `runInTenant(tenantId, cb)` — opens a transaction on the
+ *      **app client** (DATABASE_URL, role `panorama_app` NOBYPASSRLS),
+ *      emits `SET LOCAL panorama.current_tenant = '<uuid>'`, and runs
+ *      the callback. Postgres RLS policies read that GUC and enforce
+ *      row-level isolation even if the application layer forgets to
+ *      include a tenant filter.
  *
  *   2. `runAsSuperAdmin(cb)` — explicit escape hatch for cross-tenant
- *      flows (super admin dashboards, migrations, backups). The expectation
- *      is that this method is called from a PrismaService instance
- *      connected as the `panorama_super_admin` DB role, which has BYPASSRLS.
- *      Runtime still opens a transaction so we can audit what was done.
+ *      flows (audit writes, maintenance sweeps, owner-enforcement,
+ *      auth's membership lookups). Opens a transaction on the
+ *      **privileged client** (DATABASE_PRIVILEGED_URL, role
+ *      `panorama_super_admin`), calls the SECURITY DEFINER function
+ *      `panorama_enable_bypass_rls()` to set `panorama.bypass_rls = on`
+ *      (tx-local), and runs the callback. The privileged-bypass
+ *      policies on every tenant-scoped table read that GUC.
+ *
+ * Per ADR-0015 v2, the privileged role no longer carries the
+ * BYPASSRLS attribute — its capability lives in the EXECUTE grant on
+ * `panorama_enable_bypass_rls()`. SQL injection on the appClient
+ * cannot reach that function (no EXECUTE grant for `panorama_app`),
+ * which is the trust boundary that survived the data-architect +
+ * security-reviewer + tech-lead ADR review.
  *
  * Controllers should never call `this.prisma.asset.findMany()` directly —
  * they go through `runInTenant` (or `runAsSuperAdmin`) so the RLS context
  * is always explicit.
  */
 export interface PrismaServiceOptions {
-  /** Override DATABASE_URL. Primarily useful in tests to connect as a
-   * specific role (panorama_super_admin for cross-tenant setup, etc.). */
+  /** Override DATABASE_URL. Test-only — primarily for piping in a
+   * specific role's connection string from a TestingModule. */
   datasourceUrl?: string;
+  /** Override DATABASE_PRIVILEGED_URL. Test-only — same reasons.
+   * When unset, the privileged client falls back to the env var; if
+   * that's also unset, `runAsSuperAdmin` throws at first call. */
+  privilegedDatasourceUrl?: string;
 }
 
 export const PRISMA_SERVICE_OPTIONS = Symbol('PRISMA_SERVICE_OPTIONS');
@@ -114,11 +129,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly log = new Logger('Prisma');
 
   /**
+   * The privileged Prisma client (ADR-0015 v2). Connects under
+   * `DATABASE_PRIVILEGED_URL` as the role with the EXECUTE grant on
+   * `panorama_enable_bypass_rls()`. Lazily initialised on first use of
+   * `runAsSuperAdmin` so a deploy that doesn't need privileged writes
+   * (e.g. a read-only health check) never opens a second pool.
+   *
+   * **Forbidden**: passing the same URL as `DATABASE_URL`. The whole
+   * point of the two-client pattern is that the EXECUTE grant on the
+   * SECURITY DEFINER bypass function differs between roles. Same URL
+   * → same role → SQL injection on the app surface can call the
+   * function. Boot-time check enforces inequality.
+   */
+  private privilegedClient: PrismaClient | null = null;
+  private readonly privilegedUrl: string | undefined;
+
+  /**
    * The `@Inject + @Optional` pair lets Nest's DI resolve this constructor
    * without a concrete provider for `PrismaServiceOptions` (interfaces are
    * erased at runtime, so Nest would otherwise try to inject the `Object`
    * class). Under test, instantiate directly with
-   * `new PrismaService({ datasourceUrl: ... })`.
+   * `new PrismaService({ datasourceUrl: ..., privilegedDatasourceUrl: ... })`.
    */
   constructor(
     @Inject(PRISMA_SERVICE_OPTIONS) @Optional() opts?: PrismaServiceOptions,
@@ -131,6 +162,32 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       ],
       ...(opts?.datasourceUrl ? { datasources: { db: { url: opts.datasourceUrl } } } : {}),
     });
+    this.privilegedUrl =
+      opts?.privilegedDatasourceUrl ?? process.env['DATABASE_PRIVILEGED_URL'];
+
+    // Boot-time guard (production only): same URL for both clients
+    // defeats the whole EXECUTE-grant trust boundary. Refuse loudly.
+    // In dev / test we tolerate equal URLs because some e2e tests
+    // instantiate a single super-admin-URL PrismaService for fixture
+    // setup; the v2 trust boundary is a production posture, not a
+    // dev one.
+    const appUrl = opts?.datasourceUrl ?? process.env['DATABASE_URL'];
+    if (
+      process.env['NODE_ENV'] === 'production' &&
+      this.privilegedUrl &&
+      appUrl &&
+      this.privilegedUrl === appUrl
+    ) {
+      throw new Error(
+        'PrismaService: DATABASE_URL and DATABASE_PRIVILEGED_URL MUST differ ' +
+          'in production. They identify the appClient (panorama_app, ' +
+          'NOBYPASSRLS) and the privilegedClient (panorama_super_admin with ' +
+          'EXECUTE grant on panorama_enable_bypass_rls). Same URL = same ' +
+          'role = the bypass function is callable from the appClient = ' +
+          'SQL-injection bypasses RLS.',
+      );
+    }
+
     // Redact plaintext + pre-image pairs (tokenHash, password, etc.)
     // from every Prisma-emitted log before it reaches the Nest logger.
     // Defence in depth — we don't enable `log: ['query']` in prod, but
@@ -162,12 +219,45 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
+    if (this.privilegedClient) {
+      await this.privilegedClient.$disconnect();
+      this.privilegedClient = null;
+    }
   }
 
   /**
-   * Run `cb` inside a transaction that has `app.current_tenant` set to
-   * `tenantId`. The tenant UUID is validated before being interpolated into
-   * the SET LOCAL — we do not trust a caller-supplied string here.
+   * Lazy accessor for the privileged Prisma client (ADR-0015 v2). First
+   * call connects + caches; subsequent calls reuse. Throws if no
+   * `DATABASE_PRIVILEGED_URL` is configured — `runAsSuperAdmin` cannot
+   * proceed without it. Exposed at protected scope so test doubles can
+   * inject a mock; production code goes via `runAsSuperAdmin` only.
+   */
+  protected getPrivilegedClient(): PrismaClient {
+    if (this.privilegedClient) return this.privilegedClient;
+    if (!this.privilegedUrl) {
+      throw new Error(
+        'runAsSuperAdmin requires DATABASE_PRIVILEGED_URL. Per ADR-0015 v2 ' +
+          'the privileged path uses a separate Prisma client connected as ' +
+          'panorama_super_admin (NOBYPASSRLS, with EXECUTE grant on ' +
+          'panorama_enable_bypass_rls()). Configure the env var or pass ' +
+          'PrismaServiceOptions.privilegedDatasourceUrl in tests.',
+      );
+    }
+    this.privilegedClient = new PrismaClient({
+      datasources: { db: { url: this.privilegedUrl } },
+      log: [
+        { emit: 'event', level: 'warn' },
+        { emit: 'event', level: 'error' },
+      ],
+    });
+    return this.privilegedClient;
+  }
+
+  /**
+   * Run `cb` inside an appClient transaction that has
+   * `panorama.current_tenant` set to `tenantId`. The tenant UUID is
+   * validated before being interpolated into the `SET LOCAL` — caller-
+   * supplied strings are NOT trusted.
    *
    * If `tenantId` is falsy, the current context is consulted via
    * AsyncLocalStorage (typical path for HTTP handlers). A null context
@@ -194,21 +284,27 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     }
 
     return this.runTxWithRetry(
-      (tx) => tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantId}'`).then(() => cb(tx)),
+      this,
+      (tx) => tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantId}'`).then(() => cb(tx)),
       opts,
     );
   }
 
   /**
-   * Explicit cross-tenant escape hatch. Opens a transaction and promotes
-   * the session role to `panorama_super_admin` for its duration via
-   * `SET LOCAL ROLE`. The app role must have been granted membership in
-   * `panorama_super_admin` (see migration 0003's rls.sql — grants are
-   * idempotent). At COMMIT/ROLLBACK the role reverts automatically.
+   * Explicit cross-tenant escape hatch (ADR-0015 v2). Opens a
+   * transaction on the **privileged client**, calls
+   * `panorama_enable_bypass_rls()` (a SECURITY DEFINER function whose
+   * EXECUTE grant is restricted to `panorama_super_admin`), and runs
+   * the callback. The privileged-bypass policies on every tenant-scoped
+   * table read `panorama.bypass_rls` and let the privileged tx through.
    *
-   * Logs a structured warning so the audit stream can spot unexpected usage.
+   * No role-switching via `SET LOCAL ROLE` (that path is gone). The
+   * trust boundary is now (a) the EXECUTE grant on the bypass function
+   * + (b) the connection identity of the privileged client. SQL
+   * injection on the appClient surface can do neither.
    *
-   * Same `isolationLevel` + retry semantics as `runInTenant`.
+   * Logs a structured warning so the audit stream can spot unexpected
+   * usage. Same `isolationLevel` + retry semantics as `runInTenant`.
    */
   async runAsSuperAdmin<T>(
     cb: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -216,19 +312,21 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   ): Promise<T> {
     this.log.warn({ reason: opts.reason }, 'runAsSuperAdmin');
     return this.runTxWithRetry(
-      (tx) => tx.$executeRawUnsafe('SET LOCAL ROLE panorama_super_admin').then(() => cb(tx)),
+      this.getPrivilegedClient(),
+      (tx) => tx.$executeRawUnsafe('SELECT panorama_enable_bypass_rls()').then(() => cb(tx)),
       opts,
     );
   }
 
   /**
-   * Internal helper: opens a $transaction at the requested isolation
-   * level, retries on Postgres serialization failure (P2034) with
-   * modest jittered backoff. Callers who didn't ask for Serializable
-   * get no retry — serialization failure at ReadCommitted is a bug
-   * somewhere else.
+   * Internal helper: opens a $transaction on the given client at the
+   * requested isolation level, retries on Postgres serialization
+   * failure (P2034) with modest jittered backoff. Callers who didn't
+   * ask for Serializable get no retry — serialization failure at
+   * ReadCommitted is a bug somewhere else.
    */
   private async runTxWithRetry<T>(
+    client: PrismaClient,
     inner: (tx: Prisma.TransactionClient) => Promise<T>,
     opts: TxIsolationOptions,
   ): Promise<T> {
@@ -243,7 +341,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        return await this.$transaction(inner, txOptions);
+        return await client.$transaction(inner, txOptions);
       } catch (err) {
         if (!this.isSerializationFailure(err) || attempt === maxAttempts) {
           throw err;

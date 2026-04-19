@@ -216,7 +216,7 @@ describe('inspection cross-cutting integration e2e (step 10)', () => {
   // 1. Cross-tenant via bogus tenant GUC blocked by RLS
   // ----------------------------------------------------------------
 
-  it('RLS blocks reading another tenant\'s inspection_photos under a bogus app.current_tenant', async () => {
+  it('RLS blocks reading another tenant\'s inspection_photos under a bogus panorama.current_tenant', async () => {
     // Seed: upload a photo in tenant A via the HTTP path so the row
     // truly lives there.
     const cookie = await login(url, driverEmail, password);
@@ -226,7 +226,7 @@ describe('inspection cross-cutting integration e2e (step 10)', () => {
     // Now pretend to be a buggy / hostile caller running as the app
     // role with tenantB's id in the GUC. RLS should fold the rows.
     const visible = await asApp.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantB}'`);
+      await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantB}'`);
       return tx.inspectionPhoto.findMany({ where: { id: photo.id } });
     });
     expect(visible).toEqual([]);
@@ -234,7 +234,7 @@ describe('inspection cross-cutting integration e2e (step 10)', () => {
     // And under tenantA the row is visible (sanity that the test
     // setup itself isn't broken some other way).
     const visibleA = await asApp.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.current_tenant = '${tenantA}'`);
+      await tx.$executeRawUnsafe(`SET LOCAL panorama.current_tenant = '${tenantA}'`);
       return tx.inspectionPhoto.findMany({ where: { id: photo.id } });
     });
     expect(visibleA.length).toBe(1);
