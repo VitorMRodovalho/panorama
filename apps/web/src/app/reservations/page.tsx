@@ -483,6 +483,16 @@ export default async function ReservationsPage({
                           </form>
                         </>
                       ) : null}
+                      {canCheckout(r) && r.assetId ? (
+                        <a
+                          href={`/inspections/new?asset=${r.assetId}&reservation=${r.id}`}
+                          className="panorama-button secondary"
+                          style={{ marginLeft: 6, textDecoration: 'none' }}
+                          title={messages.t('inspection.tether.required')}
+                        >
+                          {messages.t('inspection.tether.start_pre_trip')}
+                        </a>
+                      ) : null}
                       {canCheckout(r) ? (
                         <details style={{ display: 'inline-block', marginLeft: 6 }}>
                           <summary className="panorama-button" style={{ cursor: 'pointer' }}>
