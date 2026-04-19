@@ -1,6 +1,14 @@
 # ADR-0015: BYPASSRLS removal refactor + GUC namespace migration
 
-- Status: Accepted (design, 2026-04-19). Implementation in a separate PR.
+- Status: Accepted v2 (design, 2026-04-19). Implementation in a separate PR.
+  - v1 path A was incorrect: assumed Supabase `postgres` user bypasses
+    FORCE RLS. It does not. ADR-0012 v3 added FORCE on every
+    tenant-scoped table specifically so SECURITY DEFINER and
+    table-owner queries also get policy-checked. Path A v2 below
+    replaces "two roles, role attribute as the gate" with "two roles
+    + a SECURITY DEFINER bypass function whose EXECUTE grant is the
+    gate". Both kernel-enforced; the function-grant model survives
+    Supabase, the role-attribute model does not.
 - Date: 2026-04-19
 - Deciders: Vitor Rodovalho
 - Reviewers (directional pre-draft pass via ADR-0013):
@@ -81,10 +89,18 @@ later.
 
 ## Decision
 
-### 1. Two Prisma clients, role-separated (path A)
+### 1. Two Prisma clients + SECURITY DEFINER bypass function (path A v2)
 
-Drop `panorama_super_admin` Postgres role from the contract. Instead,
-maintain **two Prisma client instances** in the app process:
+**v1 was wrong**: relied on the Postgres `BYPASSRLS` attribute (or
+table-owner status) on the privileged role. ADR-0012 v3's `FORCE ROW
+LEVEL SECURITY` on every tenant-scoped table neutralises both —
+table-owners + non-superusers all get policy-checked. On Supabase,
+`postgres` has neither true superuser nor BYPASSRLS-grantable
+capability. There is no role-attribute-only path that works.
+
+**v2 design**: keep two Prisma clients, but the privileged path
+bypasses RLS by **calling a SECURITY DEFINER function whose EXECUTE
+grant is the trust boundary**.
 
 ```typescript
 class PrismaService {
@@ -93,28 +109,70 @@ class PrismaService {
 }
 ```
 
-- **`appClient`** — connects as `panorama_app` (NOBYPASSRLS, on
-  self-hosted) or `panorama_app`-equivalent custom role we create
-  on Supabase. Used by `runInTenant`. Sets
-  `panorama.current_tenant` per transaction. **Every HTTP request
-  goes through this client.**
-- **`privilegedClient`** — connects as the privileged role for the
-  target Postgres:
-  - **Self-hosted**: as `panorama_super_admin` (existing role,
-    BYPASSRLS — the role survives, we just stop *forcing* a runtime
-    flip).
-  - **Supabase**: as `postgres` (the platform's quasi-superuser,
-    which has BYPASSRLS by default on Supabase by virtue of being
-    DB owner). **NEVER as `service_role`** — security-reviewer hard
-    block; `service_role` is account-root for the whole Supabase
-    project and would be visible in Fly secrets, an unacceptable
-    blast radius.
-  - Used by `runAsSuperAdmin`. Same API surface; different connection.
+- **`appClient`** — connects as `panorama_app` (NOBYPASSRLS). Used
+  by `runInTenant`. Sets `panorama.current_tenant` per transaction.
+  **Every HTTP request goes through this client.** EXECUTE grant on
+  `panorama_enable_bypass_rls()` is **revoked** for this role.
+- **`privilegedClient`** — connects as `panorama_privileged_app`
+  (NOLOGIN role granted to the runtime user via membership). Same
+  on self-hosted and on Supabase. The role itself has no special
+  attributes; the only thing that distinguishes it is the EXECUTE
+  grant on `panorama_enable_bypass_rls()`.
+- **`runAsSuperAdmin`** opens a tx on the privilegedClient and calls
+  `SELECT panorama_enable_bypass_rls()` first. The function (owned
+  by a role with the right ownership chain — `postgres` on Supabase,
+  `panorama` on self-hosted) sets `panorama.bypass_rls = 'on'` for
+  the transaction. RLS policies have an additional clause
+  `OR current_setting('panorama.bypass_rls', true) = 'on'` that
+  lets the privileged tx through.
 
-This preserves the role-based trust boundary (each connection's
-identity tells you everything about its capabilities) and avoids the
-GUC-based-bypass alternative that data-architect explicitly called
-"security-reviewer-hostile."
+**SQL shape (conceptual; actual migration in implementation PR)**:
+
+```sql
+-- 1. Roles
+CREATE ROLE panorama_privileged_app NOLOGIN;
+GRANT panorama_privileged_app TO panorama_runtime; -- runtime login user
+
+-- 2. Bypass function
+CREATE FUNCTION panorama_enable_bypass_rls() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  PERFORM set_config('panorama.bypass_rls', 'on', true);  -- third arg: tx-local
+END;
+$$;
+REVOKE ALL ON FUNCTION panorama_enable_bypass_rls() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION panorama_enable_bypass_rls() TO panorama_privileged_app;
+
+-- 3. Existing policies extended
+ALTER POLICY tenants_isolation ON tenants
+  USING (
+    id = panorama_current_tenant()
+    OR current_setting('panorama.bypass_rls', true) = 'on'
+  );
+-- … repeat for every tenant-scoped table
+```
+
+**Why this is materially safer than raw `SET LOCAL`**:
+
+| Attack | Raw `SET LOCAL` | SECURITY DEFINER + EXECUTE grant |
+|---|---|---|
+| SQL injection in appClient query | Sets the GUC, bypasses RLS. RLS becomes advisory. | `SELECT panorama_enable_bypass_rls()` returns `permission denied` — appClient role has no EXECUTE grant. |
+| Compromised app code (logic bug, not injection) | Same — anything that emits SQL can flip the GUC. | Same — but the call site is concentrated in one method (`runAsSuperAdmin`), much easier to audit + grep-gate than "every place we touch SQL". |
+| Compromised privilegedClient password | Full bypass (role attribute would be the same). | Full bypass (function grant achieves the same). **No worse than the v1 model.** |
+
+The trust boundary moves from "Postgres role attribute"
+(kernel-enforced) to "EXECUTE grant on a function" (also
+kernel-enforced, just at a finer-grained layer). Both are
+catalog-checked on every relevant operation.
+
+**Why not just do `SET LOCAL panorama.bypass_rls = 'on'` directly
+from `runAsSuperAdmin`?** Because the appClient could do the same
+thing — the GUC is namespaced (`panorama.*`) but unrestricted at
+the SET level. Wrapping the SET in a SECURITY DEFINER function +
+restricting EXECUTE moves the gate from "which connection are you
+on?" (which would be the same connection if both clients shared a
+URL) to "which Postgres role are you, and do you have the grant?"
+The two-client pattern is what makes this gate meaningful.
 
 ### 2. GUC namespace migration `app.*` → `panorama.*`
 
@@ -190,25 +248,22 @@ preservation of the audit boundary.
 
 ## Alternatives considered
 
-### Path B — per-policy GUC carve-out
+### Path B — raw `SET LOCAL panorama.bypass_rls = 'on'` from a single client
 
-```sql
-ALTER POLICY xxx ON inspections
-  USING (
-    "tenantId" = panorama_current_tenant()
-    OR current_setting('panorama.bypass_rls', true) = 'on'
-  );
-```
+App opens a tx and calls `SET LOCAL panorama.bypass_rls = 'on'`
+directly to bypass the RLS policy carve-out (same `OR` clause as
+v2, but no SECURITY DEFINER gate). **Rejected** because:
 
-App calls `SET LOCAL panorama.bypass_rls = 'on'` instead of switching
-roles. **Rejected** because:
+- Trust boundary lives only in app code: anything that can emit SQL
+  via the single client can flip the GUC. SQL injection becomes RLS
+  bypass.
+- data-architect explicitly tagged the bare-GUC variant as
+  "security-reviewer-hostile."
 
-- Trust boundary moves from "Postgres role attribute" (kernel-enforced)
-  to "session GUC the app sets" (a SQL-level setting that any
-  injection that includes `SET LOCAL …` defeats).
-- Easy to forget a policy carve-out — every new RLS policy needs the
-  `OR` clause repeated, which is a footgun for the next contributor.
-- data-architect explicitly tagged this as "security-reviewer-hostile."
+Path A v2 keeps the policy carve-out (it's how the gate technically
+works on FORCE-RLS'd tables) but **only the privilegedClient with
+the right EXECUTE grant can flip the GUC** — closing the
+SQL-injection-bypass class.
 
 ### Path C — Supabase `service_role` JWT for the privileged path
 
