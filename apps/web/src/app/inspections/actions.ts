@@ -167,6 +167,73 @@ export async function cancelInspectionAction(formData: FormData): Promise<void> 
 }
 
 // ---------------------------------------------------------------------
+// uploadPhoto — multipart POST to /inspections/:id/photos.
+//
+// `clientUploadKey` is generated server-side (per-render) by the
+// detail page and forwarded as a hidden field. Refreshing the page
+// regenerates the key, so the backend treats a refresh-then-resubmit
+// as a new upload — that's intentional for the 0.3 web flow
+// (mobile-first idempotency comes in 1.1 with direct-to-S3 uploads,
+// ADR-0012 §Future-facing commitments).
+//
+// Note: cannot set `content-type` ourselves — fetch needs to set the
+// multipart boundary string. Just forward the cookie + the FormData.
+// ---------------------------------------------------------------------
+
+export async function uploadPhotoAction(formData: FormData): Promise<void> {
+  const inspectionId = String(formData.get('inspectionId') ?? '').trim();
+  const clientUploadKey = String(formData.get('clientUploadKey') ?? '').trim();
+  const responseId = String(formData.get('responseId') ?? '').trim() || undefined;
+  const file = formData.get('photo');
+  if (!inspectionId || !clientUploadKey || !(file instanceof File) || file.size === 0) {
+    redirect(`/inspections/${inspectionId}?error=${encodeURIComponent('Pick a photo first.')}`);
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    redirect(`/inspections/${inspectionId}?error=${encodeURIComponent('Photo too large (max 10 MB).')}`);
+  }
+
+  // Forward to the API as multipart. Don't set content-type — let
+  // fetch derive the multipart boundary from the FormData body.
+  const apiForm = new FormData();
+  apiForm.append('photo', file as File);
+  apiForm.append('clientUploadKey', clientUploadKey);
+  if (responseId) apiForm.append('responseId', responseId);
+
+  const res = await fetch(`${CORE_API}/inspections/${inspectionId}/photos`, {
+    method: 'POST',
+    headers: { cookie: cookieHeader() },
+    cache: 'no-store',
+    body: apiForm,
+  });
+
+  if (res.status === 201) {
+    redirect(`/inspections/${inspectionId}?photo=ok`);
+  }
+  const body = (await res.json().catch(() => ({ message: 'photo_upload_failed' }))) as {
+    message?: string;
+    retryAfterSeconds?: number;
+  };
+  let msg = String(body.message ?? 'photo_upload_failed').toLowerCase();
+  let pretty = body.message ?? 'photo_upload_failed';
+  if (msg.includes('rate_limited')) {
+    pretty = `Upload rate-limited. Try again in ${body.retryAfterSeconds ?? '?'}s.`;
+  } else if (msg.includes('photo_too_large_pixels')) {
+    pretty = 'Photo dimensions exceed the safe limit.';
+  } else if (msg.includes('unsupported_media_type')) {
+    pretty = 'File type not supported. Use JPEG / PNG / WebP / HEIC.';
+  } else if (msg.includes('photo_processing_failed')) {
+    pretty = 'Could not process the photo. Try a different file.';
+  } else if (msg.includes('inspection_photo_cap_reached')) {
+    pretty = 'This inspection has reached its photo limit.';
+  } else if (msg.includes('upload_key_collision')) {
+    pretty = 'Upload key collision (rare). Refresh the page and try again.';
+  } else if (msg.includes('photo_too_large')) {
+    pretty = 'Photo too large (max 10 MB).';
+  }
+  redirect(`/inspections/${inspectionId}?error=${encodeURIComponent(pretty)}`);
+}
+
+// ---------------------------------------------------------------------
 // review — admin closes out a completed FAIL / NEEDS_MAINTENANCE.
 // ---------------------------------------------------------------------
 

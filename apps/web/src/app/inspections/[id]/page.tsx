@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
 import { apiGet } from '../../../lib/api';
 import { loadMessages } from '../../../lib/i18n';
@@ -9,6 +10,7 @@ import {
   completeInspectionAction,
   respondInspectionAction,
   reviewInspectionAction,
+  uploadPhotoAction,
 } from '../actions';
 
 interface SnapshotItem {
@@ -66,6 +68,7 @@ interface InspectionDetailPageProps {
     saved?: string;
     resumed?: string;
     reviewed?: string;
+    photo?: string;
   };
 }
 
@@ -189,6 +192,9 @@ export default async function InspectionDetailPage({
         {searchParams.reviewed ? (
           <div className="panorama-banner-success">Inspection reviewed.</div>
         ) : null}
+        {searchParams.photo === 'ok' ? (
+          <div className="panorama-banner-success">Photo uploaded.</div>
+        ) : null}
 
         {snapshotDiverged ? (
           <div className="panorama-banner-warning">
@@ -205,6 +211,11 @@ export default async function InspectionDetailPage({
             canEdit={canEdit}
             messages={messages}
             justSaved={searchParams.saved === item.id}
+            // Per-render UUID — re-rendering generates a new key so a
+            // refresh-then-resubmit doesn't accidentally trigger
+            // upload_key_collision against the prior submit. The
+            // intent is "this render = this upload attempt".
+            uploadKey={randomUUID()}
           />
         ))}
 
@@ -285,13 +296,17 @@ function ItemCard({
   canEdit,
   messages,
   justSaved,
+  uploadKey,
 }: {
   item: SnapshotItem;
   inspectionId: string;
   canEdit: boolean;
   messages: { t: (key: string) => string };
   justSaved: boolean;
+  uploadKey: string;
 }): JSX.Element {
+  const showsPhotoUpload =
+    canEdit && (item.itemType === 'PHOTO' || item.photoRequired);
   return (
     <div className="panorama-card" style={{ marginBottom: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
@@ -352,33 +367,62 @@ function ItemCard({
             </label>
           ) : null}
 
-          {item.itemType === 'PHOTO' ? (
-            <p style={{ gridColumn: '1 / -1', color: '#94a3b8', fontSize: 13 }}>
-              Photo upload UI lands in step 11b (this page wires the read-side; the writer is queued).
-            </p>
+          {item.itemType !== 'PHOTO' ? (
+            <label style={{ gridColumn: '1 / -1' }}>
+              <input
+                type="text"
+                name="note"
+                maxLength={2000}
+                className="panorama-input"
+                placeholder={messages.t('inspection.item.note_optional')}
+              />
+            </label>
           ) : null}
 
-          <label style={{ gridColumn: '1 / -1' }}>
-            <input
-              type="text"
-              name="note"
-              maxLength={2000}
-              className="panorama-input"
-              placeholder={messages.t('inspection.item.note_optional')}
-            />
-          </label>
-
-          <div style={{ gridColumn: '1 / -1' }}>
-            <button type="submit" className="panorama-button secondary">
-              Save
-            </button>
-          </div>
+          {item.itemType !== 'PHOTO' ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="panorama-button secondary">
+                Save
+              </button>
+            </div>
+          ) : null}
         </form>
       ) : (
         <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
-          {item.itemType === 'PHOTO' ? '(photo)' : '(read-only — inspection is not in progress)'}
+          (read-only — inspection is not in progress)
         </p>
       )}
+
+      {showsPhotoUpload ? (
+        <form
+          action={uploadPhotoAction}
+          encType="multipart/form-data"
+          className="panorama-form-grid"
+          style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #334155' }}
+        >
+          <input type="hidden" name="inspectionId" value={inspectionId} />
+          <input type="hidden" name="clientUploadKey" value={uploadKey} />
+          <label style={{ gridColumn: '1 / -1' }}>
+            {messages.t('inspection.photo.upload')}
+            <input
+              type="file"
+              name="photo"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              required
+              className="panorama-input"
+            />
+          </label>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <button type="submit" className="panorama-button">
+              {messages.t('inspection.photo.upload')}
+            </button>
+            <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 8 }}>
+              JPEG/PNG/WebP/HEIC, max 10 MB. Server strips EXIF +
+              re-encodes before storing.
+            </span>
+          </div>
+        </form>
+      ) : null}
     </div>
   );
 }
