@@ -1,8 +1,14 @@
 # Dockerfile smoke-test report — 2026-04-19
 
+> **Status update 2026-04-19**: blockers RESOLVED in commit
+> `b858c31 fix(deploy): unblock prod boot — drop type:module +
+> dynamic-import file-type`. Image now boots cleanly; /health returns
+> 200. The fix path was different from Options A/B documented below
+> — see "What actually fixed it" at the bottom.
+
 Phase 2 of the deploy series (per ADR-0013) was a local smoke-test of
-`apps/core-api/Dockerfile`. **The image builds; the container does
-NOT boot to a passing /health.** Two ESM/CJS-interop blockers
+`apps/core-api/Dockerfile`. The image builds. The container originally
+did NOT boot to a passing /health. Two ESM/CJS-interop blockers
 discovered:
 
 ## What works
@@ -108,3 +114,34 @@ sanity check. The discovered blockers turn it into a multi-hour
 import-refactor PR that's its own thing. Documenting + moving on
 keeps phase 3 unblocked. Self-hosters who want a deployable image
 TODAY can follow option A or B from this runbook.
+
+## What actually fixed it (post-mortem)
+
+Both Options A and B were attempted and abandoned — both kept
+`type: "module"` and tried to wrap the CJS-only `@prisma/client`,
+which hit TypeScript's namespace-vs-type-alias issue with `Prisma`
+(a value namespace + typing surface that doesn't merge cleanly via
+`export const Prisma + export type *`).
+
+The flipped approach in commit `b858c31` is a 2-line diff and works:
+
+- `apps/core-api/package.json`: drop `"type": "module"`. tsc with
+  `module: "NodeNext"` now emits CJS (NodeNext picks the effective
+  module style from package.json). All 20 `@prisma/client` imports
+  stay verbatim and compile to `require()`.
+- `photo-pipeline.service.ts`: `import { fileTypeFromBuffer } from
+  'file-type'` becomes a lazy `await import('file-type')` (cached
+  after first call). file-type is the only ESM-only dep we use; if
+  more land later, each gets the same lazy-import treatment in its
+  single consumer file.
+
+**Lesson**: when most deps are CJS and a small minority are ESM-only,
+flip the build to CJS and lazy-import the ESM minority. The reverse
+(ESM build + wrap CJS deps) is what intuition suggests but it's the
+harder path under TypeScript's typing rules for value+namespace
+exports.
+
+Smoke verified: `docker run … panorama-core-api` boots, all modules
+init, `/health` returns `{"ok":true,"db":"up"}` HTTP 200. Production-
+mode HTTPS guard correctly refuses http:// S3_ENDPOINT (by design —
+the SSRF DNS-resolve guard at object-storage.config.ts:60-65).
