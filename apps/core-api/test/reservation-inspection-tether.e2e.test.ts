@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Reservation tether — ADR-0012 §8 + step 8 of execution order.
@@ -53,11 +54,15 @@ describe('reservation inspection tether e2e', () => {
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-tether', name: 'Alpha Tether', displayName: 'Alpha Tether' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-tether',
+      name: 'Alpha Tether',
+      displayName: 'Alpha Tether',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-tether', name: 'Bravo Tether', displayName: 'Bravo Tether' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-tether',
+      name: 'Bravo Tether',
+      displayName: 'Bravo Tether',
     });
     tenantA = a.id;
     tenantB = b.id;

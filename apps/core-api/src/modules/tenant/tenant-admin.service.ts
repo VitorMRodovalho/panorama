@@ -94,6 +94,18 @@ export class TenantAdminService {
         });
         if (!user) throw new NotFoundException('owner_user_not_found');
 
+        // ADR-0016 §1 — every tenant carries a system user used as
+        // the audit actor for auto-suggested maintenance tickets.
+        // No AuthIdentity row, never logs in. The slug is salted with
+        // a random suffix so two tenants with conflicting slugs (rare
+        // but possible across re-creates) don't collide on email.
+        const systemUser = await tx.user.create({
+          data: {
+            email: `system+${params.slug}-${Date.now()}@panorama.invalid`,
+            displayName: `${params.slug} System`,
+            status: 'ACTIVE',
+          },
+        });
         const tenantData: Prisma.TenantUncheckedCreateInput = {
           slug: params.slug,
           name: params.name,
@@ -101,8 +113,17 @@ export class TenantAdminService {
           locale: params.locale ?? 'en',
           timezone: params.timezone ?? 'UTC',
           allowedEmailDomains: params.allowedEmailDomains ?? [],
+          systemActorUserId: systemUser.id,
         };
         const tenant = await tx.tenant.create({ data: tenantData });
+        await tx.tenantMembership.create({
+          data: {
+            tenantId: tenant.id,
+            userId: systemUser.id,
+            role: 'system',
+            status: 'active',
+          },
+        });
 
         const ownerMembership = await tx.tenantMembership.create({
           data: {

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Migration 0009 sanity — structural invariants the service layer
@@ -34,8 +35,10 @@ describe('migration 0009 — personal_access_tokens', () => {
     db = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(db);
 
-    const tenant = await db.tenant.create({
-      data: { slug: 'pat-mig-test', name: 'PAT Mig Test', displayName: 'PAT Mig Test' },
+    const tenant = await createTenantForTest(db, {
+      slug: 'pat-mig-test',
+      name: 'PAT Mig Test',
+      displayName: 'PAT Mig Test',
     });
     tenantId = tenant.id;
     const user = await db.user.create({
@@ -148,8 +151,10 @@ describe('migration 0009 — personal_access_tokens', () => {
     // Separate tenant so we can delete it without nuking the outer
     // setup's (owner + cascade invariant 0007 requires >0 active owner
     // on the tenant being modified, not on unrelated tenants).
-    const t2 = await db.tenant.create({
-      data: { slug: 'pat-cascade', name: 'PAT Cascade', displayName: 'PAT Cascade' },
+    const t2 = await createTenantForTest(db, {
+      slug: 'pat-cascade',
+      name: 'PAT Cascade',
+      displayName: 'PAT Cascade',
     });
     const u2 = await db.user.create({
       data: { email: 'pat-cascade@example.com', displayName: 'PAT Cascade User' },

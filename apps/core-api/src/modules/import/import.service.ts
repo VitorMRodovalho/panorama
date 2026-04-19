@@ -164,6 +164,15 @@ export class ImportService {
         created++;
         continue;
       }
+      // ADR-0016 §1 — system user per tenant for auto-suggested
+      // maintenance audit attribution.
+      const systemUser = await tx.user.create({
+        data: {
+          email: `system+${fixture.slug}-${Date.now()}@panorama.invalid`,
+          displayName: `${fixture.slug} System`,
+          status: 'ACTIVE',
+        },
+      });
       const tenant = await tx.tenant.create({
         data: {
           slug: fixture.slug,
@@ -171,6 +180,15 @@ export class ImportService {
           displayName: fixture.displayName,
           locale: fixture.locale,
           timezone: fixture.timezone,
+          systemActorUserId: systemUser.id,
+        },
+      });
+      await tx.tenantMembership.create({
+        data: {
+          tenantId: tenant.id,
+          userId: systemUser.id,
+          role: 'system',
+          status: 'active',
         },
       });
       await this.recordMapping(

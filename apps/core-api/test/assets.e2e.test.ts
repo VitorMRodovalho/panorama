@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * End-to-end: boots the full Nest application and hits /auth/login,
@@ -48,11 +49,15 @@ describe('assets e2e', () => {
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-e2e', name: 'Alpha e2e', displayName: 'Alpha e2e' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-e2e',
+      name: 'Alpha e2e',
+      displayName: 'Alpha e2e',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-e2e', name: 'Bravo e2e', displayName: 'Bravo e2e' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-e2e',
+      name: 'Bravo e2e',
+      displayName: 'Bravo e2e',
     });
     tenantAlpha = a.id;
     tenantBravo = b.id;

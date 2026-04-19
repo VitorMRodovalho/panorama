@@ -16,6 +16,7 @@ import {
 } from '../src/modules/notification/notification.service.js';
 import { ReservationService } from '../src/modules/reservation/reservation.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Notification event bus (ADR-0011 steps 2-4) — integration coverage
@@ -104,8 +105,10 @@ describe('notification bus integration', () => {
     registry = app.get(ChannelRegistry);
     dispatcher = app.get(NotificationDispatcher);
 
-    const tenant = await adminDb.tenant.create({
-      data: { slug: 'notif', name: 'Notif', displayName: 'Notif' },
+    const tenant = await createTenantForTest(adminDb, {
+      slug: 'notif',
+      name: 'Notif',
+      displayName: 'Notif',
     });
     tenantId = tenant.id;
     const user = await adminDb.user.create({

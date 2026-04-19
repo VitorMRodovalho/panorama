@@ -74,6 +74,34 @@ model Tenant {
   /// 409 `inspection_required` unless a COMPLETED+PASS inspection
   /// exists for (asset, user) within the config window. Default off.
   requireInspectionBeforeCheckout Boolean   @default(false)
+  /// System user (no AuthIdentity, never logs in) used as
+  /// `createdByUserId` for auto-suggested maintenance tickets
+  /// emitted by MaintenanceTicketSubscriber (ADR-0016 §5).
+  /// Seeded at tenant creation. Migration 0014 backfills existing
+  /// tenants then SETs NOT NULL.
+  systemActorUserId               String    @db.Uuid
+  /// ADR-0016 §5 toggle: when true, FAIL/NEEDS_MAINTENANCE
+  /// inspection outcomes AND damageFlag check-in events auto-open
+  /// a draft maintenance ticket. Defaults FALSE per security +
+  /// product + persona convergent v2 review (avoids surprise
+  /// ticket-flood on flag flip; pilot tenants opt in after
+  /// signal:noise calibration).
+  autoOpenMaintenanceFromInspection Boolean @default(false)
+  /// ADR-0016 §7 (security-reviewer C5): when true,
+  /// panorama.maintenance.opened email fans out to the asset's
+  /// last requester. Defaults FALSE — info-disclosure to former
+  /// renters is opt-in per tenant.
+  notifyLastRequesterOnMaintenanceOpen Boolean @default(false)
+  /// ADR-0016 §1 / §9 — per-tenant defaults for the PM-due cron.
+  /// `mileageInterval` + `dayInterval` drive the `nextServiceMileage`
+  /// / `nextServiceDate` UI suggestion when a ticket completes.
+  /// `staleWarningDays` triggers the hourly stale-OPEN sweep.
+  /// `reopenWindowDays` gates the COMPLETED → OPEN re-open admin
+  /// action.
+  maintenanceMileageInterval      Int       @default(7500)
+  maintenanceDayInterval          Int       @default(180)
+  maintenanceStaleWarningDays     Int       @default(60)
+  maintenanceReopenWindowDays     Int       @default(14)
   createdAt                       DateTime  @default(now())
   updatedAt                       DateTime  @updatedAt
   deletedAt                       DateTime?
@@ -90,6 +118,8 @@ model Tenant {
   inspections             Inspection[]
   inspectionResponses     InspectionResponse[]
   inspectionPhotos        InspectionPhoto[]
+  assetMaintenances       AssetMaintenance[]
+  maintenancePhotos       MaintenancePhoto[]
 
   @@map("tenants")
 }
@@ -126,6 +156,10 @@ model User {
   inspectionsCompleted       Inspection[]          @relation("InspectionCompleter")
   inspectionsReviewed        Inspection[]          @relation("InspectionReviewer")
   inspectionPhotosUploaded   InspectionPhoto[]     @relation("InspectionPhotoUploader")
+  maintenancesCreated        AssetMaintenance[]    @relation("MaintenanceCreatedBy")
+  maintenancesAssigned       AssetMaintenance[]    @relation("MaintenanceAssignee")
+  maintenancesCompleted      AssetMaintenance[]    @relation("MaintenanceCompletedBy")
+  maintenancePhotosUploaded  MaintenancePhoto[]    @relation("MaintenancePhotoUploader")
 
   @@map("users")
 }
@@ -334,14 +368,20 @@ model Asset {
   locationId     String?     @db.Uuid
   assignedUserId String?     @db.Uuid
   customFields   Json        @default("{}")
+  /// Last mileage observed at check-in (Reservation.mileageIn).
+  /// Updated by the reservation check-in flow. Drives the
+  /// PM-due cron's distance-threshold predicate (ADR-0016 §9).
+  /// Migration 0014 backfills from MAX(reservations.mileageIn).
+  lastReadMileage Int?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   archivedAt     DateTime?
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  model        AssetModel    @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  model        AssetModel         @relation(fields: [modelId], references: [id], onDelete: Restrict)
   reservations Reservation[]
   inspections  Inspection[]
+  maintenances AssetMaintenance[]
 
   @@unique([tenantId, tag])
   @@index([tenantId, status])
@@ -404,6 +444,12 @@ model Reservation {
   conditionIn        String?
   damageFlag         Boolean                 @default(false)
   damageNote         String?
+  /// ADR-0016 §4 — flag for the killer scenario (mid-shift
+  /// breakdown). Reservation stays CHECKED_OUT (operationally
+  /// true: keys are out, asset IN_USE) but isStranded=true is
+  /// the discriminator. Cleared when ops "Recovers stranded
+  /// asset" or marks the reservation RETURNED/CANCELLED.
+  isStranded         Boolean                 @default(false)
   /// `tsrange('[startAt, endAt)')` — GENERATED ALWAYS STORED column
   /// that backs the `reservations_no_overlap` exclusion constraint
   /// (ADR-0009 §Alternatives, migration 0010). Read-only; set by
@@ -421,6 +467,7 @@ model Reservation {
   checkedOutBy User?        @relation("ReservationCheckedOutBy", fields: [checkedOutByUserId], references: [id], onDelete: SetNull)
   checkedInBy  User?        @relation("ReservationCheckedInBy", fields: [checkedInByUserId], references: [id], onDelete: SetNull)
   inspections  Inspection[]
+  triggeredMaintenances AssetMaintenance[] @relation("MaintenanceTriggeringReservation")
 
   @@index([tenantId, startAt])
   @@index([tenantId, approvalStatus])
@@ -763,6 +810,7 @@ model Inspection {
   reviewedBy  User?                @relation("InspectionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   responses   InspectionResponse[]
   photos      InspectionPhoto[]
+  triggeredMaintenances AssetMaintenance[] @relation("MaintenanceTriggeringInspection")
 
   @@map("inspections")
 }
@@ -865,4 +913,113 @@ enum InspectionPhotoStatus {
   REJECTED
 
   @@map("inspection_photo_status")
+}
+
+// -----------------------------------------------------------------------------
+// Maintenance domain (ADR-0016)
+// -----------------------------------------------------------------------------
+
+model AssetMaintenance {
+  id                       String                @id @default(uuid()) @db.Uuid
+  tenantId                 String                @db.Uuid
+  assetId                  String                @db.Uuid
+  /// Snipe-IT-compat enum value as string (allows extension types
+  /// 'Inspection' / 'Tire' / 'Calibration' without a migration).
+  /// Daily audit query flags drift outside the controller's allow-list.
+  maintenanceType          String                @db.VarChar(64)
+  title                    String                @db.VarChar(200)
+  status                   MaintenanceStatus     @default(OPEN)
+  /// Free-text severity (LOW/MEDIUM/HIGH/CRITICAL is 0.4 follow-up).
+  severity                 String?               @db.VarChar(40)
+  /// Persona ask: link back to the reservation that flagged this.
+  /// Cross-tenant FK protected by trigger
+  /// `assert_maintenance_triggers_same_tenant` (security-reviewer
+  /// blocker #2).
+  triggeringReservationId  String?               @db.Uuid
+  /// Closes ADR-0012 dead-end. Subscriber populates this when
+  /// auto-suggested from inspection FAIL. Same trigger.
+  triggeringInspectionId   String?               @db.Uuid
+  /// Distinct from createdBy. Nullable until ops decides who owns
+  /// this ticket.
+  assigneeUserId           String?               @db.Uuid
+  startedAt                DateTime              @default(now())
+  /// Free-text supplier name. Real Supplier model is 0.4.
+  supplierName             String?               @db.VarChar(200)
+  mileageAtService         Int?
+  expectedReturnAt         DateTime?
+  nextServiceMileage       Int?
+  nextServiceDate          DateTime?
+  cost                     Decimal?              @db.Decimal(10, 2)
+  isWarranty               Boolean               @default(false)
+  /// HTML-escaped at write to neutralise XSS surface (security-
+  /// reviewer blocker #3). PII-bearing — redacted from logs via
+  /// PRISMA_REDACT_FIELDS extension.
+  notes                    String?               @db.Text
+  /// Set when transitioning to COMPLETED. CHECK constraint pairs
+  /// with `completedByUserId`; service layer does pre-validation
+  /// for user-facing error messages.
+  completedAt              DateTime?
+  completedByUserId        String?               @db.Uuid
+  completionNote           String?               @db.Text
+  createdAt                DateTime              @default(now())
+  /// For auto-suggested tickets, this is `tenant.systemActorUserId`.
+  /// Audit metadata carries `originalActorUserId` (the human who
+  /// triggered upstream).
+  createdByUserId          String                @db.Uuid
+  updatedAt                DateTime              @updatedAt
+
+  tenant                   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  asset                    Asset                 @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  triggeringReservation    Reservation?          @relation("MaintenanceTriggeringReservation", fields: [triggeringReservationId], references: [id], onDelete: SetNull)
+  triggeringInspection     Inspection?           @relation("MaintenanceTriggeringInspection", fields: [triggeringInspectionId], references: [id], onDelete: SetNull)
+  assignee                 User?                 @relation("MaintenanceAssignee", fields: [assigneeUserId], references: [id])
+  createdBy                User                  @relation("MaintenanceCreatedBy", fields: [createdByUserId], references: [id])
+  completedBy              User?                 @relation("MaintenanceCompletedBy", fields: [completedByUserId], references: [id])
+  photos                   MaintenancePhoto[]
+
+  @@index([tenantId, status, startedAt(sort: Desc)])
+  @@index([tenantId, assetId, startedAt(sort: Desc)])
+  @@index([tenantId, assigneeUserId])
+  @@index([tenantId, triggeringInspectionId])
+  @@index([tenantId, triggeringReservationId])
+  @@map("asset_maintenances")
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@map("maintenance_status")
+}
+
+model MaintenancePhoto {
+  id                       String                @id @default(uuid()) @db.Uuid
+  tenantId                 String                @db.Uuid
+  maintenanceId            String                @db.Uuid
+  /// KeyShape registry pattern (ADR-0016 §6). Subject discriminator
+  /// 'maintenance'. Key shape:
+  /// tenants/<tenantId>/maintenance/<maintenanceId>/<uuid>.<ext>
+  /// (plural `tenants/` matches ADR-0012 §3 convention).
+  /// CHECK constraint enforces tenant + maintenance prefix via
+  /// regex+LIKE.
+  storageKey               String                @db.VarChar(512)
+  contentType              String                @db.VarChar(80)
+  bytes                    Int
+  /// Mirror of ADR-0012 photo pipeline: idempotency key, sha256
+  /// dedupe, capturedAt from EXIF.
+  clientUploadKey          String                @db.VarChar(80)
+  sha256                   Bytes
+  capturedAt               DateTime?
+  createdAt                DateTime              @default(now())
+  uploadedByUserId         String                @db.Uuid
+
+  tenant                   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  maintenance              AssetMaintenance      @relation(fields: [maintenanceId], references: [id], onDelete: Cascade)
+  uploadedBy               User                  @relation("MaintenancePhotoUploader", fields: [uploadedByUserId], references: [id])
+
+  @@unique([maintenanceId, clientUploadKey])
+  @@index([tenantId, maintenanceId])
+  @@map("maintenance_photos")
 }

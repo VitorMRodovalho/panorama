@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { InspectionMaintenanceService } from '../src/modules/inspection/inspection-maintenance.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * InspectionMaintenanceService e2e (ADR-0012 §9 + §10).
@@ -56,8 +57,10 @@ describe('inspection maintenance e2e', () => {
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const t = await admin.tenant.create({
-      data: { slug: 'maint-test', name: 'Maint Test', displayName: 'Maint Test' },
+    const t = await createTenantForTest(admin, {
+      slug: 'maint-test',
+      name: 'Maint Test',
+      displayName: 'Maint Test',
     });
     tenantId = t.id;
     const cat = await admin.category.create({

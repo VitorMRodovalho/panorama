@@ -221,8 +221,14 @@ describe('migrator → import-fixtures round-trip', () => {
     // 4 sourceId → userId mappings, but only 3 unique rows in the users
     // table (carol's two source records reference the same User).
     expect(result.counts.users).toEqual({ created: 4, matched: 0 });
+    // 3 imported users + 2 system actors (one per tenant per ADR-0016
+    // §1 — required for auto-suggested maintenance audit attribution).
     const uniqueUsers = await adminPrisma.user.count();
-    expect(uniqueUsers).toBe(3);
+    expect(uniqueUsers).toBe(5);
+    const importedUsers = await adminPrisma.user.count({
+      where: { email: { not: { startsWith: 'system+' } } },
+    });
+    expect(importedUsers).toBe(3);
     expect(result.counts.tenantMemberships).toEqual({ created: 4, matched: 0 });
     expect(result.counts.categories).toEqual({ created: 2, matched: 0 });
     expect(result.counts.manufacturers).toEqual({ created: 1, matched: 0 });

@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Inspection lifecycle e2e (ADR-0012 §Execution-order step 7b).
@@ -53,11 +54,15 @@ describe('inspections lifecycle e2e', () => {
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-lc', name: 'Alpha LC', displayName: 'Alpha LC' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-lc',
+      name: 'Alpha LC',
+      displayName: 'Alpha LC',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-lc', name: 'Bravo LC', displayName: 'Bravo LC' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-lc',
+      name: 'Bravo LC',
+      displayName: 'Bravo LC',
     });
     tenantAlpha = a.id;
     tenantBravo = b.id;

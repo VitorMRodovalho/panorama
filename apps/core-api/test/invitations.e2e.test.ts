@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Invitation flow e2e (ADR-0008). Covers:
@@ -64,13 +65,11 @@ describe('invitation flow e2e', () => {
     const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(adminDb);
 
-    const tenant = await adminDb.tenant.create({
-      data: {
-        slug: 'invitation-test',
-        name: 'Invitation Test',
-        displayName: 'Invitation Test Tenant',
-        allowedEmailDomains: ['invitation-test.example'],
-      },
+    const tenant = await createTenantForTest(adminDb, {
+      slug: 'invitation-test',
+      name: 'Invitation Test',
+      displayName: 'Invitation Test Tenant',
+      allowedEmailDomains: ['invitation-test.example'],
     });
     tenantAcme = tenant.id;
 
@@ -99,8 +98,10 @@ describe('invitation flow e2e', () => {
     // real invitation flow, their first tenant is seeded by accepting
     // an invite; we pre-seed a placeholder here to exercise the
     // email-mismatch path without needing OIDC wiring.
-    const otherTenant = await adminDb.tenant.create({
-      data: { slug: 'other-test', name: 'Other Test', displayName: 'Other Tenant' },
+    const otherTenant = await createTenantForTest(adminDb, {
+      slug: 'other-test',
+      name: 'Other Test',
+      displayName: 'Other Tenant',
     });
     await adminDb.tenantMembership.create({
       data: { tenantId: otherTenant.id, userId: other.id, role: 'driver' },
@@ -121,8 +122,10 @@ describe('invitation flow e2e', () => {
     const target = await adminDb.user.create({
       data: { email: targetEmail, displayName: 'Newbie' },
     });
-    const targetTenant = await adminDb.tenant.create({
-      data: { slug: 'target-seed', name: 'Target Seed', displayName: 'Target Seed' },
+    const targetTenant = await createTenantForTest(adminDb, {
+      slug: 'target-seed',
+      name: 'Target Seed',
+      displayName: 'Target Seed',
     });
     await adminDb.tenantMembership.create({
       data: { tenantId: targetTenant.id, userId: target.id, role: 'driver' },
@@ -364,8 +367,10 @@ describe('invitation flow e2e', () => {
     const user = await adminDb.user.create({
       data: { email: 'double@invitation-test.example', displayName: 'Double Click' },
     });
-    const stageTenant = await adminDb.tenant.create({
-      data: { slug: 'double-seed', name: 'Double Seed', displayName: 'Double Seed' },
+    const stageTenant = await createTenantForTest(adminDb, {
+      slug: 'double-seed',
+      name: 'Double Seed',
+      displayName: 'Double Seed',
     });
     await adminDb.tenantMembership.create({
       data: { tenantId: stageTenant.id, userId: user.id, role: 'driver' },
@@ -453,8 +458,10 @@ describe('invitation flow e2e', () => {
     const user = await adminDb.user.create({
       data: { email: 'race@invitation-test.example', displayName: 'Race Target' },
     });
-    const raceTenant = await adminDb.tenant.create({
-      data: { slug: 'race-seed', name: 'Race Seed', displayName: 'Race Seed' },
+    const raceTenant = await createTenantForTest(adminDb, {
+      slug: 'race-seed',
+      name: 'Race Seed',
+      displayName: 'Race Seed',
     });
     await adminDb.tenantMembership.create({
       data: { tenantId: raceTenant.id, userId: user.id, role: 'driver' },

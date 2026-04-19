@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Migration 0010 invariants — the DB-layer `reservations_no_overlap`
@@ -73,12 +74,10 @@ describe('migration 0010 — reservations_no_overlap exclusion constraint', () =
     db = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(db);
 
-    const tenant = await db.tenant.create({
-      data: {
-        slug: 'exclusion-test',
-        name: 'Exclusion Test',
-        displayName: 'Exclusion Test',
-      },
+    const tenant = await createTenantForTest(db, {
+      slug: 'exclusion-test',
+      name: 'Exclusion Test',
+      displayName: 'Exclusion Test',
     });
     tenantId = tenant.id;
     const user = await db.user.create({

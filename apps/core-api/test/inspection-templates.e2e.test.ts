@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Inspection-template surface (ADR-0012 §Execution-order step 7a).
@@ -48,11 +49,15 @@ describe('inspection templates e2e', () => {
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-insp', name: 'Alpha Insp', displayName: 'Alpha Insp' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-insp',
+      name: 'Alpha Insp',
+      displayName: 'Alpha Insp',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-insp', name: 'Bravo Insp', displayName: 'Bravo Insp' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-insp',
+      name: 'Bravo Insp',
+      displayName: 'Bravo Insp',
     });
     tenantAlpha = a.id;
     tenantBravo = b.id;

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Integration test proving that Postgres RLS + Prisma enforce tenant
@@ -39,11 +40,15 @@ describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
     // Clean slate — admin bypasses RLS so we can purge cross-tenant safely.
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'tenant-a', name: 'Tenant A', displayName: 'A' },
+    const a = await createTenantForTest(admin, {
+      slug: 'tenant-a',
+      name: 'Tenant A',
+      displayName: 'A',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'tenant-b', name: 'Tenant B', displayName: 'B' },
+    const b = await createTenantForTest(admin, {
+      slug: 'tenant-b',
+      name: 'Tenant B',
+      displayName: 'B',
     });
     tenantA = a.id;
     tenantB = b.id;

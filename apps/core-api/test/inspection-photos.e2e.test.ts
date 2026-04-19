@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Photo upload + GET-redirect e2e (ADR-0012 §Execution-order step 7c).
@@ -65,11 +66,15 @@ describe('inspection photos e2e', () => {
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-ph', name: 'Alpha PH', displayName: 'Alpha PH' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-ph',
+      name: 'Alpha PH',
+      displayName: 'Alpha PH',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-ph', name: 'Bravo PH', displayName: 'Bravo PH' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-ph',
+      name: 'Bravo PH',
+      displayName: 'Bravo PH',
     });
 
     const aCat = await admin.category.create({

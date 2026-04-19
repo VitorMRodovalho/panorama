@@ -195,6 +195,11 @@ export class SnipeitCompatService {
       const base: Prisma.TenantMembershipWhereInput = {
         tenantId: params.tenantId,
         status: 'active',
+        // ADR-0016 §1 — system actors are audit-attribution accounts
+        // (no AuthIdentity, never log in). They MUST NOT appear in
+        // any tenant-roster surface, since they're an implementation
+        // detail not a real user.
+        role: { not: 'system' },
       };
       if (params.search) {
         base.user = {

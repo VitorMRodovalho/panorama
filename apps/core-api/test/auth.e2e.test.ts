@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Auth module e2e — exercises the endpoints that don't need a full
@@ -45,16 +46,16 @@ describe('auth e2e', () => {
     const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
 
-    const acme = await admin.tenant.create({
-      data: {
-        slug: 'acme-auth',
-        name: 'Acme Auth',
-        displayName: 'Acme Auth',
-        allowedEmailDomains: ['acme-auth.example'],
-      },
+    const acme = await createTenantForTest(admin, {
+      slug: 'acme-auth',
+      name: 'Acme Auth',
+      displayName: 'Acme Auth',
+      allowedEmailDomains: ['acme-auth.example'],
     });
-    const other = await admin.tenant.create({
-      data: { slug: 'other-auth', name: 'Other Auth', displayName: 'Other Auth' },
+    const other = await createTenantForTest(admin, {
+      slug: 'other-auth',
+      name: 'Other Auth',
+      displayName: 'Other Auth',
     });
     tenantAcme = acme.id;
     tenantOther = other.id;

@@ -10,6 +10,7 @@ import { PasswordService } from '../src/modules/auth/password.service.js';
 import { InspectionMaintenanceService } from '../src/modules/inspection/inspection-maintenance.service.js';
 import { ObjectStorageService } from '../src/modules/object-storage/object-storage.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Cross-cutting integration tests — ADR-0012 §Execution-order step 10.
@@ -86,11 +87,15 @@ describe('inspection cross-cutting integration e2e (step 10)', () => {
     asApp = new PrismaClient({ datasources: { db: { url: APP_URL } } });
     await resetTestDb(admin);
 
-    const a = await admin.tenant.create({
-      data: { slug: 'alpha-int', name: 'Alpha Int', displayName: 'Alpha Int' },
+    const a = await createTenantForTest(admin, {
+      slug: 'alpha-int',
+      name: 'Alpha Int',
+      displayName: 'Alpha Int',
     });
-    const b = await admin.tenant.create({
-      data: { slug: 'bravo-int', name: 'Bravo Int', displayName: 'Bravo Int' },
+    const b = await createTenantForTest(admin, {
+      slug: 'bravo-int',
+      name: 'Bravo Int',
+      displayName: 'Bravo Int',
     });
     tenantA = a.id;
     tenantB = b.id;

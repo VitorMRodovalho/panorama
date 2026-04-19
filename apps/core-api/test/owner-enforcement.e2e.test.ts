@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { TenantAdminService } from '../src/modules/tenant/tenant-admin.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
  * Owner enforcement e2e (ADR-0007). Covers:
@@ -250,12 +251,10 @@ describe('owner enforcement e2e', () => {
   });
 
   it('nominateOwner creates a fresh owner membership when none existed', async () => {
-    const rescuedTenant = await adminDb.tenant.create({
-      data: {
-        slug: 'orphaned-tenant',
-        name: 'Orphaned Tenant',
-        displayName: 'Orphaned Tenant',
-      },
+    const rescuedTenant = await createTenantForTest(adminDb, {
+      slug: 'orphaned-tenant',
+      name: 'Orphaned Tenant',
+      displayName: 'Orphaned Tenant',
     });
     const rescueUser = await adminDb.user.create({
       data: { email: 'rescuer@enforcement.example', displayName: 'Rescuer' },

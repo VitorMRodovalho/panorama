@@ -39,11 +39,25 @@ async function main(): Promise<void> {
   await prisma.user.deleteMany();
   await prisma.tenant.deleteMany();
 
+  // ADR-0016 §1 — every tenant carries a NOT NULL system actor user
+  // for auto-suggested maintenance attribution. Seed both atomically.
+  const alphaSystem = await prisma.user.create({
+    data: { email: 'system+alpha@panorama.invalid', displayName: 'alpha System', status: 'ACTIVE' },
+  });
   const alpha = await prisma.tenant.create({
-    data: { slug: 'alpha', name: 'Alpha Logistics', displayName: 'Alpha Logistics', locale: 'en' },
+    data: { slug: 'alpha', name: 'Alpha Logistics', displayName: 'Alpha Logistics', locale: 'en', systemActorUserId: alphaSystem.id },
+  });
+  await prisma.tenantMembership.create({
+    data: { tenantId: alpha.id, userId: alphaSystem.id, role: 'system', status: 'active' },
+  });
+  const bravoSystem = await prisma.user.create({
+    data: { email: 'system+bravo@panorama.invalid', displayName: 'bravo System', status: 'ACTIVE' },
   });
   const bravo = await prisma.tenant.create({
-    data: { slug: 'bravo', name: 'Bravo Transport', displayName: 'Bravo Transport', locale: 'pt-br' },
+    data: { slug: 'bravo', name: 'Bravo Transport', displayName: 'Bravo Transport', locale: 'pt-br', systemActorUserId: bravoSystem.id },
+  });
+  await prisma.tenantMembership.create({
+    data: { tenantId: bravo.id, userId: bravoSystem.id, role: 'system', status: 'active' },
   });
 
   for (const [tenant, tag] of [
