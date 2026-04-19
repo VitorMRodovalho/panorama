@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
+import { ObjectStorageModule } from '../object-storage/object-storage.module.js';
+import { PhotoPipelineModule } from '../photo-pipeline/photo-pipeline.module.js';
 import { InspectionTemplateService } from './inspection-template.service.js';
 import { InspectionTemplateController } from './inspection-template.controller.js';
 import { InspectionService } from './inspection.service.js';
 import { InspectionController } from './inspection.controller.js';
+import { InspectionPhotoService } from './inspection-photo.service.js';
+import { InspectionPhotoController } from './inspection-photo.controller.js';
 
 /**
  * InspectionModule (ADR-0012 §Execution-order step 7+).
@@ -25,9 +29,13 @@ import { InspectionController } from './inspection.controller.js';
  * the full invariant.
  */
 @Module({
-  imports: [AuditModule, NotificationModule],
-  controllers: [InspectionTemplateController, InspectionController],
-  providers: [InspectionTemplateService, InspectionService],
-  exports: [InspectionTemplateService, InspectionService],
+  imports: [AuditModule, NotificationModule, ObjectStorageModule, PhotoPipelineModule],
+  controllers: [
+    InspectionTemplateController,
+    InspectionController,
+    InspectionPhotoController,
+  ],
+  providers: [InspectionTemplateService, InspectionService, InspectionPhotoService],
+  exports: [InspectionTemplateService, InspectionService, InspectionPhotoService],
 })
 export class InspectionModule {}

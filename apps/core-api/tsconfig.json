@@ -10,7 +10,7 @@
     "target": "ES2022",
     "noUncheckedIndexedAccess": true,
     "strict": true,
-    "types": ["node"]
+    "types": ["node", "multer"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "prisma/seed.ts"],
   "exclude": ["node_modules", "dist"]
