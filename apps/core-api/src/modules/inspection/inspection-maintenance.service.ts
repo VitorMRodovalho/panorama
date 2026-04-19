@@ -24,6 +24,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { Queue, Worker } from 'bullmq';
+import { Redis } from 'ioredis';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -38,11 +40,23 @@ const STALE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const PHOTO_BATCH_SIZE = 500;
 const STALE_BATCH_SIZE = 500;
 
+// ADR-0015 v2 — durable scheduling for the photo retention sweep.
+// `setInterval` resets on Fly machine restart; the 24 h cadence on a
+// DOT 49 CFR §396.3 compliance signal can drift by days under
+// restart-heavy days. BullMQ's repeatable-job dedupes on jobId so a
+// restart re-attaches to the existing schedule. Stale-IN_PROGRESS
+// (1 h) stays on setInterval — losing a poll cycle there is fine.
+const PHOTO_SWEEP_QUEUE = 'inspection-photo-retention';
+const PHOTO_SWEEP_JOB_NAME = 'sweep';
+const PHOTO_SWEEP_REPEATABLE_KEY = 'photo-retention-daily';
+
 @Injectable()
 export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('InspectionMaintenanceService');
-  private photoTimer: NodeJS.Timeout | null = null;
   private staleTimer: NodeJS.Timeout | null = null;
+  private photoSweepQueue: Queue | null = null;
+  private photoSweepWorker: Worker | null = null;
+  private redisConnections: Redis[] = [];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -50,38 +64,97 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
     private readonly storage: ObjectStorageService,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     if (process.env['NODE_ENV'] === 'test') {
       this.log.log('maintenance_idle_in_tests');
       return;
     }
-    this.start();
+    await this.start();
   }
 
-  onModuleDestroy(): void {
-    this.stop();
+  async onModuleDestroy(): Promise<void> {
+    await this.stop();
   }
 
-  start(): void {
-    if (this.photoTimer || this.staleTimer) return;
-    this.photoTimer = setInterval(() => {
-      this.runPhotoRetentionSweep().catch((err) =>
-        this.log.warn({ err: String(err) }, 'photo_sweep_unhandled'),
+  async start(): Promise<void> {
+    // Stale sweep stays on setInterval — losing a poll cycle on restart
+    // is fine for a 1 h cadence.
+    if (!this.staleTimer) {
+      this.staleTimer = setInterval(() => {
+        this.runStaleInProgressSweep().catch((err) =>
+          this.log.warn({ err: String(err) }, 'stale_sweep_unhandled'),
+        );
+      }, STALE_SWEEP_INTERVAL_MS);
+    }
+
+    // Photo retention sweep — durable BullMQ repeatable job. The
+    // jobId-based dedupe means a Fly machine restart re-attaches
+    // to the existing schedule rather than spawning a duplicate or
+    // skipping a run.
+    if (!this.photoSweepQueue) {
+      this.photoSweepQueue = new Queue(PHOTO_SWEEP_QUEUE, {
+        connection: this.makeRedis(),
+      });
+      this.photoSweepWorker = new Worker(
+        PHOTO_SWEEP_QUEUE,
+        async () => {
+          const swept = await this.runPhotoRetentionSweep();
+          return { swept };
+        },
+        { connection: this.makeRedis(), concurrency: 1 },
       );
-    }, PHOTO_SWEEP_INTERVAL_MS);
-    this.staleTimer = setInterval(() => {
-      this.runStaleInProgressSweep().catch((err) =>
-        this.log.warn({ err: String(err) }, 'stale_sweep_unhandled'),
+      this.photoSweepWorker.on('failed', (_job, err) =>
+        this.log.warn({ err: String(err) }, 'photo_sweep_job_failed'),
       );
-    }, STALE_SWEEP_INTERVAL_MS);
+      await this.photoSweepQueue.add(
+        PHOTO_SWEEP_JOB_NAME,
+        {},
+        {
+          jobId: PHOTO_SWEEP_REPEATABLE_KEY,
+          repeat: { every: PHOTO_SWEEP_INTERVAL_MS },
+          removeOnComplete: { age: 7 * 24 * 60 * 60, count: 30 },
+          removeOnFail: { age: 30 * 24 * 60 * 60, count: 30 },
+        },
+      );
+    }
+
     this.log.log('maintenance_started');
   }
 
-  stop(): void {
-    if (this.photoTimer) clearInterval(this.photoTimer);
+  async stop(): Promise<void> {
     if (this.staleTimer) clearInterval(this.staleTimer);
-    this.photoTimer = null;
     this.staleTimer = null;
+    const closers: Array<Promise<unknown>> = [];
+    if (this.photoSweepWorker) closers.push(this.photoSweepWorker.close());
+    if (this.photoSweepQueue) closers.push(this.photoSweepQueue.close());
+    await Promise.allSettled(closers);
+    this.photoSweepWorker = null;
+    this.photoSweepQueue = null;
+    for (const conn of this.redisConnections) {
+      try {
+        await conn.quit();
+      } catch (err) {
+        this.log.debug({ err: String(err) }, 'redis_quit_error');
+      }
+    }
+    this.redisConnections = [];
+  }
+
+  /**
+   * BullMQ requires the same `lazyConnect: false` /
+   * `enableReadyCheck: false` / `maxRetriesPerRequest: null` shape on
+   * every connection — mirrors the invitation queue pattern at
+   * `invitation-email.queue.ts:230-239`.
+   */
+  private makeRedis(): Redis {
+    const url = process.env['REDIS_URL'] ?? 'redis://localhost:6379/0';
+    const conn = new Redis(url, {
+      lazyConnect: false,
+      enableReadyCheck: false,
+      maxRetriesPerRequest: null,
+    });
+    this.redisConnections.push(conn);
+    return conn;
   }
 
   // ----------------------------------------------------------------
