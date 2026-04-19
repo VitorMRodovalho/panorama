@@ -9,6 +9,7 @@ import { InspectionService } from './inspection.service.js';
 import { InspectionController } from './inspection.controller.js';
 import { InspectionPhotoService } from './inspection-photo.service.js';
 import { InspectionPhotoController } from './inspection-photo.controller.js';
+import { InspectionMaintenanceService } from './inspection-maintenance.service.js';
 
 /**
  * InspectionModule (ADR-0012 §Execution-order step 7+).
@@ -35,7 +36,17 @@ import { InspectionPhotoController } from './inspection-photo.controller.js';
     InspectionController,
     InspectionPhotoController,
   ],
-  providers: [InspectionTemplateService, InspectionService, InspectionPhotoService],
-  exports: [InspectionTemplateService, InspectionService, InspectionPhotoService],
+  providers: [
+    InspectionTemplateService,
+    InspectionService,
+    InspectionPhotoService,
+    InspectionMaintenanceService,
+  ],
+  exports: [
+    InspectionTemplateService,
+    InspectionService,
+    InspectionPhotoService,
+    InspectionMaintenanceService,
+  ],
 })
 export class InspectionModule {}
