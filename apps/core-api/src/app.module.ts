@@ -18,6 +18,7 @@ import { PhotoPipelineModule } from './modules/photo-pipeline/photo-pipeline.mod
 import { InspectionModule } from './modules/inspection/inspection.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
+import { BootAuditModule } from './modules/boot-audit/boot-audit.module.js';
 
 /**
  * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
@@ -81,7 +82,10 @@ const conditionalInspections: DynamicModule[] = inspectionsEnabled()
     ImportModule,
     ...conditionalCompatShim,
     ...conditionalInspections,
-    // 0.2: NotificationModule, PluginHostModule, I18nModule.forRootAsync.
+    // BootAuditModule LAST — its OnModuleInit fires after Prisma +
+    // Audit + Redis are wired so the boot audits commit cleanly.
+    BootAuditModule,
+    // 0.2: PluginHostModule, I18nModule.forRootAsync.
   ],
 })
 export class AppModule {}
