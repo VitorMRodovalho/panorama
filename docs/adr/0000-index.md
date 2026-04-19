@@ -17,6 +17,10 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0010 | [Snipe-IT compat shim — auth model (per-user PATs)](./0010-snipeit-compat-shim-auth.md) | Accepted | 2026-04-18 |
 | 0011 | [Notification event bus — architecture](./0011-notification-event-bus.md) | Accepted | 2026-04-18 |
 | 0012 | [Inspection checklists + photo evidence pipeline](./0012-inspection-photo-pipeline.md) | Accepted | 2026-04-18 |
+| 0013 | [Staging deploy architecture (internal only)](./0013-staging-deploy-architecture.md) | Accepted | 2026-04-19 |
+| 0014 | _(reserved — Cloud SKU + edition placement; unwritten by intent until customer signal)_ | — | — |
+| 0015 | [BYPASSRLS removal refactor (SECURITY DEFINER bypass function)](./0015-bypassrls-removal-refactor.md) | Accepted | 2026-04-19 |
+| 0016 | [Asset maintenance flow (Snipe-IT-compatible)](./0016-asset-maintenance-flow.md) | Accepted | 2026-04-19 |
 
 ## Template
 
