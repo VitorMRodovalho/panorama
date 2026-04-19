@@ -1,7 +1,21 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-import { fileTypeFromBuffer } from 'file-type';
+// `file-type` 19 is ESM-only (no CJS export). Static `import` from
+// our compiled CJS module would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`
+// at runtime. Dynamic import works in CJS via Node's interop and
+// resolves to the ESM exports lazily. The cost is one async hop on
+// the first call inside `process()`; the import is cached after.
+// The static type-only import below preserves the type signature.
+import type { fileTypeFromBuffer as fileTypeFromBufferType } from 'file-type';
+let fileTypeFromBuffer: typeof fileTypeFromBufferType | undefined;
+async function loadFileType(): Promise<typeof fileTypeFromBufferType> {
+  if (!fileTypeFromBuffer) {
+    const mod = await import('file-type');
+    fileTypeFromBuffer = mod.fileTypeFromBuffer;
+  }
+  return fileTypeFromBuffer;
+}
 import exifr from 'exifr';
 import {
   ACCEPTED_INPUT_MIME,
@@ -110,7 +124,8 @@ export class PhotoPipeline {
       throw new PhotoUnsupportedTypeError('empty_buffer');
     }
 
-    const sniff = await fileTypeFromBuffer(buffer);
+    const sniffFn = await loadFileType();
+    const sniff = await sniffFn(buffer);
     if (!sniff) {
       throw new PhotoUnsupportedTypeError('unknown');
     }

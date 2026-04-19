@@ -4,7 +4,6 @@
   "private": true,
   "description": "Panorama core API server (NestJS).",
   "license": "AGPL-3.0-or-later",
-  "type": "module",
   "main": "dist/src/main.js",
   "scripts": {
     "build": "nest build",
