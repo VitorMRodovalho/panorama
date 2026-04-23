@@ -6,6 +6,7 @@ Durable record of QA/QC audit passes over the Panorama codebase. Each wave is a 
 
 - [2026-04-23 — Wave 1](./2026-04-23-wave-1.md) — pre-alpha full-repo baseline. Security, architecture, data, UX, ops, product. ~68 distinct findings; top 25 filed as individual issues.
 - [2026-04-23 — Wave 2](./2026-04-23-wave-2.md) — four follow-up deep-dives. RLS compliance sweep (53 call sites classified), notification bus trace (76 events catalogued), query perf baseline (10 queries analysed, runnable `perf/baseline.sql` delivered), CI hardening (8 concrete diffs + 6-PR rollout plan). 38 new findings.
+- [2026-04-23 — Wave 3](./2026-04-23-wave-3.md) — pilot readiness gap (MVP cut for first real pilot tenant) + supply-chain advisory triage + MCP CVE family exposure analysis. 20 findings. Produced ADR-0017 (draft, AI/LLM integration principles) and `docs/runbooks/dev-environment-ai-tooling.md`. Triggered in part by the 2026-04-20 OX Security disclosure of design-level RCE in Anthropic's MCP SDK.
 
 ## Conventions
 
