@@ -34,6 +34,16 @@ features into a single domain model, a single data plane, and a single admin sur
 🚧 **Pre-alpha — greenfield.** Bootstrapped 2026-04-17. Architecture and name open to review.
 See [`docs/adr/`](./docs/adr/) for the decisions recorded so far.
 
+## Project health & audit trail
+
+A three-wave QA/QC audit was completed on 2026-04-23 covering security, architecture, data,
+UX, ops, product strategy, supply-chain, and AI/MCP exposure. 126 findings documented, 61 open
+as labelled GitHub issues. **Start at [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md)**
+for the prioritised action list. Wave reports under [`docs/audits/`](./docs/audits/); filter
+issues by [`audit:wave-1`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-1),
+[`audit:wave-2`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-2),
+or [`audit:wave-3`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-3).
+
 ## Editions
 
 | Edition       | License       | Source     | Use case                                                             |

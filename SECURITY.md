@@ -34,11 +34,27 @@ Panorama ships with sane defaults (see `apps/core-api/src/config/security.ts`):
 - Secure/HttpOnly/SameSite=Lax session cookies, with `Secure` enforced when the
   deployment has `NODE_ENV=production`
 - CSRF tokens rotated per session, with double-submit support for APIs
+  _(NOTE: audit-flagged as not yet implemented — see issue [#34](https://github.com/VitorMRodovalho/panorama/issues/34))_
 - HSTS + CSP + X-Content-Type-Options + Referrer-Policy set via middleware
 - Argon2id password hashing (with bcrypt fallback for Snipe-IT migrations)
 - All outbound fetches disable follow-redirects unless the caller opts in
 - Rate limiting on auth endpoints (configurable per-tenant)
 - Audit log appended to every write operation (tamper-evident hash chain)
+  _(NOTE: audit-flagged that the notification tamper trigger breaks the chain —
+  see issue [#41](https://github.com/VitorMRodovalho/panorama/issues/41))_
+
+## Audit trail
+
+Three QA/QC audit waves were completed on 2026-04-23. Findings with security
+implications are filed under [`type: security`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3A%22type%3A+security%22)
+and organised by wave under [`audit:wave-1`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-1) /
+[`audit:wave-2`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-2) /
+[`audit:wave-3`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-3).
+See [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md) for
+the master entry point. ADR-0017 (Draft) at
+[`docs/adr/0017-ai-llm-integration-principles.md`](./docs/adr/0017-ai-llm-integration-principles.md)
+establishes governance for future AI/LLM integrations, drafted in response to the
+2026-04-20 MCP CVE family.
 
 ## Threat model summary
 
@@ -54,8 +70,11 @@ Primary threats we defend against:
    from user input goes through an allowlist + redirect-disabled fetcher.
    The object-storage `S3_ENDPOINT` is DNS-resolved at boot and rejected if
    any A/AAAA answer hits a private/metadata range.
-4. **Supply chain** — dependency updates are gated by `renovate` + SCA scanning
-   in CI (trivy, osv-scanner).
+4. **Supply chain** — dependency updates are gated by Dependabot + SCA scanning
+   in CI (Trivy). Contributor workstations using AI coding tools with MCP servers
+   are covered by [`docs/runbooks/dev-environment-ai-tooling.md`](./docs/runbooks/dev-environment-ai-tooling.md)
+   (allowlist, forbidden patterns, incident response — added in response to the
+   2026-04-20 MCP CVE family).
 5. **Data at rest** — we do not implement file-level encryption; documented
    expectation is encrypted volumes (EBS, LUKS, managed-Postgres encryption,
    S3/R2 SSE-AES256).

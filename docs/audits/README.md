@@ -2,6 +2,10 @@
 
 Durable record of QA/QC audit passes over the Panorama codebase. Each wave is a snapshot-in-time review; findings are also filed as GitHub issues with the `audit:wave-N` label so they can be triaged, owned, and closed individually.
 
+## Start here
+
+**→ [`HANDOFF-2026-04-23.md`](./HANDOFF-2026-04-23.md)** — master entry point after the 3-wave baseline audit. Prioritised action list across 5 tiers, sprint-split scenarios, decisions needing maintainer input, scope disclosure, and the full map of everything produced. If you're picking this up cold, start there.
+
 ## Waves
 
 - [2026-04-23 — Wave 1](./2026-04-23-wave-1.md) — pre-alpha full-repo baseline. Security, architecture, data, UX, ops, product. ~68 distinct findings; top 25 filed as individual issues.

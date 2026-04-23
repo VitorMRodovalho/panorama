@@ -28,6 +28,18 @@ getting changes into Panorama.
 
 See [README.md § Getting started](./README.md#getting-started-dev).
 
+## Developer workstation security (MCP / AI tooling)
+
+If you use Cursor, Claude Desktop, or any other AI coding tool with MCP servers
+configured against this repo, **read
+[`docs/runbooks/dev-environment-ai-tooling.md`](./docs/runbooks/dev-environment-ai-tooling.md)
+before running anything.** The runbook lists the verified MCP server allowlist, the
+forbidden patterns, and the incident-response path if you suspect workstation
+compromise. Context: the [2026-04-20 OX Security disclosure](https://thehackernews.com/2026/04/anthropic-mcp-design-vulnerability.html)
+of a design-level RCE family in Anthropic's MCP SDK affects developer workstations,
+not Panorama's product surface — but contributor `.env` files, local DB, and Git
+credentials are real targets.
+
 ## Branches
 
 - `main` — always deployable, protected, requires 1 review + passing CI
