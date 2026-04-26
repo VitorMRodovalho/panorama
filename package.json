@@ -42,7 +42,8 @@
   },
   "pnpm": {
     "overrides": {
-      "multer": ">=2.1.1"
+      "multer": ">=2.1.1",
+      "file-type": ">=21.3.2"
     }
   }
 }
