@@ -24,6 +24,7 @@
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "i18n:check": "tsx scripts/i18n-check.ts",
     "license:check": "tsx scripts/license-check.ts",
+    "migrations:check": "tsx scripts/check-migration-conventions.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

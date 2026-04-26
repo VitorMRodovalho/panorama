@@ -28,6 +28,10 @@ jobs:
       - run: pnpm --filter @panorama/core-api prisma:generate
       - run: pnpm lint
       - run: pnpm typecheck
+      # Closes Wave 1 ARCH-11 / #71 — every Prisma migration folder
+      # must contain migration.sql + ROLLBACK.md + exactly one of
+      # rls.sql / NO_RLS.md. Fails CI on any drift.
+      - run: pnpm migrations:check
 
   test:
     name: Unit tests
