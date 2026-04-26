@@ -213,7 +213,7 @@ export async function uploadPhotoAction(formData: FormData): Promise<void> {
     message?: string;
     retryAfterSeconds?: number;
   };
-  let msg = String(body.message ?? 'photo_upload_failed').toLowerCase();
+  const msg = String(body.message ?? 'photo_upload_failed').toLowerCase();
   let pretty = body.message ?? 'photo_upload_failed';
   if (msg.includes('rate_limited')) {
     pretty = `Upload rate-limited. Try again in ${body.retryAfterSeconds ?? '?'}s.`;
