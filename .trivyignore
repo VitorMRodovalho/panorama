@@ -1,0 +1,63 @@
+# .trivyignore — Panorama supply-chain advisory triage
+# Generated: 2026-04-23, commit 33ef07a (Wave 3b audit)
+# Reviewer: security-reviewer subagent
+# Policy: re-triage on each quarterly dependency refresh or when
+#         a classified-unreachable advisory becomes reachable.
+#
+# Mandatory header per .trivyignore entry (Wave 2d CI-C / #68):
+#   # CVE-YYYY-NNNN  (package@version)
+#   # Classification: TRANSITIVE_UNREACHABLE | DIRECT_UNREACHABLE
+#   # Justification: why tolerated; blast radius; compensating control
+#   # (optional) Expiry: YYYY-MM-DD  ← forced re-triage at this date
+#
+# PRs adding entries without complete headers must be rejected.
+
+# ── lodash (transitive via @nestjs/config, @nestjs/swagger) ──────────
+# CVE-2025-13465 — prototype pollution in _.unset/_.omit
+# Classification: TRANSITIVE_UNREACHABLE
+# Justification: Panorama has zero direct lodash imports. NestJS
+# internals use _.get/_.set on developer-controlled config objects;
+# _.unset/_.omit with attacker-controlled paths is not called.
+CVE-2025-13465
+
+# CVE-2026-2950 — prototype pollution bypass in _.unset/_.omit (array path)
+# Classification: TRANSITIVE_UNREACHABLE
+# Justification: Same as CVE-2025-13465 — no attacker-reachable path.
+CVE-2026-2950
+
+# CVE-2026-4800 — lodash _.template code injection via imports keys
+# Classification: TRANSITIVE_UNREACHABLE (TEMPORARY — HIGH generic severity)
+# Justification: NestJS internals do not pass untrusted input to
+# _.template options.imports. No direct lodash usage in Panorama.
+# MANDATORY RE-TRIAGE: when @nestjs/config ships lodash >=4.18.0,
+# remove this entry and verify the transitive is resolved.
+# Expiry: 2026-07-23 (90 days)
+CVE-2026-4800
+
+# ── js-yaml (transitive via @nestjs/swagger) ─────────────────────────
+# CVE-2025-64718 — prototype pollution in yaml merge (<<)
+# Classification: TRANSITIVE_UNREACHABLE
+# Justification: @nestjs/swagger uses js-yaml to parse developer-
+# authored OpenAPI spec at build/boot time. No untrusted YAML.
+CVE-2025-64718
+
+# ── @nestjs/core ─────────────────────────────────────────────────────
+# CVE-2026-35515 — SSE stream injection via unsanitised type/id fields
+# Classification: DIRECT_UNREACHABLE
+# Justification: Panorama has zero @Sse decorators or SseStream usage.
+# If SSE is added, this must be re-triaged.
+CVE-2026-35515
+
+# ── fast-xml-parser (transitive via @aws-sdk/client-s3) ──────────────
+# CVE-2026-41650 — XML comment/CDATA injection in XMLBuilder
+# Classification: TRANSITIVE_UNREACHABLE
+# Justification: AWS SDK uses fast-xml-parser only to PARSE S3 XML
+# responses, not to build XML. XMLBuilder.buildTextValNode not called.
+CVE-2026-41650
+
+# ── uuid (transitive via bullmq) ─────────────────────────────────────
+# GHSA-w5hq-g745-h8pq — missing bounds check in v3/v5/v6 with buf arg
+# Classification: TRANSITIVE_UNREACHABLE
+# Justification: BullMQ uses uuid.v4() for job IDs. v3/v5/v6 with custom
+# buffer are not called.
+GHSA-w5hq-g745-h8pq
