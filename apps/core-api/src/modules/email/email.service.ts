@@ -12,6 +12,18 @@ export interface SendEmailInput {
 }
 
 /**
+ * Recipient address shape gate (#80 / SUPPLY-02).
+ *
+ * Defends against malicious group-list shapes (`g0: g1: ... gN:`)
+ * that historically crashed nodemailer's address parser via
+ * unbounded recursion (CVE-2025-14874). Even after the upstream
+ * fix, the gate is a cheap belt-and-suspenders — colon and
+ * semicolon are not legal in the local-part or domain of any
+ * normal email anyway.
+ */
+const SAFE_RECIPIENT = /^[^:;]+@[^:;]+$/;
+
+/**
  * Minimal transactional email wrapper over nodemailer. In dev the SMTP
  * target is MailHog (`localhost:1025`); in prod swap envs to SES / a
  * provider with DKIM configured. Retries and bounce handling belong
@@ -25,6 +37,9 @@ export class EmailService implements OnModuleDestroy {
   constructor(private readonly cfg: EmailConfigService) {}
 
   async send(input: SendEmailInput): Promise<{ messageId: string }> {
+    if (!SAFE_RECIPIENT.test(input.to)) {
+      throw new Error(`email_recipient_rejected: malformed shape`);
+    }
     const transporter = this.transporter();
     const info = await transporter.sendMail({
       from: `"${this.cfg.config.fromName}" <${this.cfg.config.fromAddress}>`,
