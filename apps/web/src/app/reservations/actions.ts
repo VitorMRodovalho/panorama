@@ -28,6 +28,7 @@ function fmtError(raw: string): string {
   if (e.includes('cannot_checkout_when_lifecycle')) return 'Reservation is not in a bookable state.';
   if (e.includes('asset_not_ready')) return "Asset isn't ready (in use, maintenance, or retired).";
   if (e.includes('cannot_checkin_when_lifecycle')) return 'Reservation must be checked-out before check-in.';
+  if (e.includes('mileage_required')) return 'Mileage is required (DOT 49 CFR + maintenance scheduling).';
   if (e.includes('mileage_not_monotonic')) return 'Check-in mileage must be ≥ check-out mileage.';
   if (e.includes('not_allowed')) return "You aren't allowed to perform this action.";
   if (e.includes('basket_not_found')) return 'Basket not found (it may have been fully cancelled or deleted).';

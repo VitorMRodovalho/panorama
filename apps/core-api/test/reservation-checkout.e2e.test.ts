@@ -223,6 +223,117 @@ describe('reservation check-out / check-in e2e', () => {
 
     const assetAfter = await adminDb.asset.findUnique({ where: { id: assetId } });
     expect(assetAfter?.status).toBe('READY');
+    // DATA-01 / ARCH-03 (#31): the asset's lastReadMileage must track the
+    // most recent check-in mileage so the ADR-0016 PM-due cron has real
+    // data to compare. Pre-fix the column was frozen at the migration
+    // backfill value.
+    expect(assetAfter?.lastReadMileage).toBe(12_400);
+  });
+
+  // OPS-02 (#32): mileage is REQUIRED on both checkout and checkin —
+  // DOT 49 CFR + ADR-0016 PM-due cron both depend on it. Pre-fix the
+  // DTO had `optional()` and the column stayed NULL silently.
+  it('checkout without mileage → 400 mileage_required', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    const id = await createApproved({
+      cookie: adminCookie,
+      assetId: otherAssetId,
+      startHours: 700,
+      endHours: 702,
+    });
+    const noBody = await fetch(`${url}/reservations/${id}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(noBody.status).toBe(400);
+    expect(((await noBody.json()) as { message: string }).message).toContain('mileage_required');
+  });
+
+  it('checkin without mileage → 400 mileage_required', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    const id = await createApproved({
+      cookie: adminCookie,
+      assetId: otherAssetId,
+      startHours: 720,
+      endHours: 722,
+    });
+    const out = await fetch(`${url}/reservations/${id}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 30_000 }),
+    });
+    expect(out.status).toBe(200);
+    const noBody = await fetch(`${url}/reservations/${id}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(noBody.status).toBe(400);
+    expect(((await noBody.json()) as { message: string }).message).toContain('mileage_required');
+
+    // Leave the asset in READY for the next test — without this, the
+    // subsequent createApproved on otherAssetId can race against a
+    // still-CHECKED_OUT lifecycle.
+    const recover = await fetch(`${url}/reservations/${id}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 30_010 }),
+    });
+    expect(recover.status).toBe(200);
+  });
+
+  // DATA-01 / ARCH-03 (#31): the asset's lastReadMileage must move
+  // forward with check-ins, but never backward — a stale check-in or
+  // an out-of-order admin correction shouldn't move the column down.
+  it('check-in updates Asset.lastReadMileage forward but never backward', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+
+    const id1 = await createApproved({
+      cookie: adminCookie,
+      assetId: otherAssetId,
+      startHours: 740,
+      endHours: 742,
+    });
+    const out1 = await fetch(`${url}/reservations/${id1}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 50_000 }),
+    });
+    expect(out1.status).toBe(200);
+    const in1 = await fetch(`${url}/reservations/${id1}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 50_120 }),
+    });
+    expect(in1.status).toBe(200);
+    const a1 = await adminDb.asset.findUnique({ where: { id: otherAssetId } });
+    expect(a1?.lastReadMileage).toBe(50_120);
+
+    // A second reservation lands on the same asset with the *same*
+    // reading (no further travel) — lastReadMileage must not regress
+    // and must not move sideways pointlessly. Reservation-level
+    // monotonic check still passes since 50_120 == 50_120.
+    const id2 = await createApproved({
+      cookie: adminCookie,
+      assetId: otherAssetId,
+      startHours: 760,
+      endHours: 762,
+    });
+    const out2 = await fetch(`${url}/reservations/${id2}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 50_120 }),
+    });
+    expect(out2.status).toBe(200);
+    const in2 = await fetch(`${url}/reservations/${id2}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 50_120 }),
+    });
+    expect(in2.status).toBe(200);
+    const a2 = await adminDb.asset.findUnique({ where: { id: otherAssetId } });
+    expect(a2?.lastReadMileage).toBe(50_120); // unchanged, not regressed
   });
 
   it('damageFlag on checkin routes asset → MAINTENANCE', async () => {
@@ -281,7 +392,7 @@ describe('reservation check-out / check-in e2e', () => {
     const out = await fetch(`${url}/reservations/${id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ mileage: 100 }),
     });
     expect(out.status).toBe(400);
     const body = (await out.json()) as { message: string };
@@ -302,7 +413,7 @@ describe('reservation check-out / check-in e2e', () => {
     const out = await fetch(`${url}/reservations/${id}/checkout`, {
       method: 'POST',
       headers: { cookie: adminCookie, 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ mileage: 100 }),
     });
     expect(out.status).toBe(409);
     expect(((await out.json()) as { message: string }).message).toContain('asset_not_ready');

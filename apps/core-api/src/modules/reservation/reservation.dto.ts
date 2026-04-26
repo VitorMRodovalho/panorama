@@ -82,14 +82,28 @@ export const BasketBatchRejectionSchema = z.object({
     .max(500),
 });
 
+// Mileage is REQUIRED on checkout. OPS-02 (#32): DOT 49 CFR requires
+// odometer readings on every trip, and ADR-0016's PM-due cron depends
+// on Asset.lastReadMileage, which is populated from these fields. An
+// optional mileage column was the silent bug that broke the entire
+// maintenance scheduling chain.
 export const CheckoutSchema = z.object({
-  mileage: z.number().int().nonnegative().optional(),
+  mileage: z
+    .number({ required_error: 'mileage_required', invalid_type_error: 'mileage_required' })
+    .int()
+    .nonnegative('mileage_required'),
   condition: z.string().max(2000).optional(),
 });
 export type CheckoutInput = z.infer<typeof CheckoutSchema>;
 
+// Mileage is REQUIRED on check-in too. The check-in mileage is what
+// gets written to Asset.lastReadMileage (per OPS-02 / DATA-01) — the
+// PM-due cron depends on it being a real number, not NULL.
 export const CheckinSchema = z.object({
-  mileage: z.number().int().nonnegative().optional(),
+  mileage: z
+    .number({ required_error: 'mileage_required', invalid_type_error: 'mileage_required' })
+    .int()
+    .nonnegative('mileage_required'),
   condition: z.string().max(2000).optional(),
   damageFlag: z.boolean().optional(),
   damageNote: z.string().max(2000).optional(),

@@ -98,14 +98,16 @@ export interface BasketBatchResult {
 export interface CheckoutParams {
   actor: ReservationContext;
   reservationId: string;
-  mileage?: number;
+  // Required at the API boundary (OPS-02 / #32) — DOT 49 CFR + ADR-0016
+  // PM-due cron both depend on real numbers.
+  mileage: number;
   condition?: string;
 }
 
 export interface CheckinParams {
   actor: ReservationContext;
   reservationId: string;
-  mileage?: number;
+  mileage: number;
   condition?: string;
   damageFlag?: boolean;
   damageNote?: string;
@@ -862,7 +864,7 @@ export class ReservationService {
             lifecycleStatus: 'CHECKED_OUT',
             checkedOutAt: now,
             checkedOutByUserId: actor.userId,
-            mileageOut: params.mileage ?? null,
+            mileageOut: params.mileage,
             conditionOut: params.condition ?? null,
           },
         });
@@ -878,7 +880,7 @@ export class ReservationService {
           actorUserId: actor.userId,
           metadata: {
             assetId: asset.id,
-            mileage: params.mileage ?? null,
+            mileage: params.mileage,
             condition: params.condition ?? null,
             ...(preCheckoutInspectionId
               ? { preCheckoutInspectionId }
@@ -980,7 +982,6 @@ export class ReservationService {
           throw new BadRequestException('no_asset_to_checkin');
         }
         if (
-          params.mileage !== undefined &&
           existing.mileageOut !== null &&
           existing.mileageOut !== undefined &&
           params.mileage < existing.mileageOut
@@ -992,13 +993,31 @@ export class ReservationService {
         const nextAssetStatus = damageFlag ? 'MAINTENANCE' : 'READY';
         const now = new Date();
 
+        // DATA-01 / ARCH-03 (#31): write Asset.lastReadMileage so the
+        // ADR-0016 §9 PM-due cron has a real number to compare against
+        // nextServiceMileage. Monotonic guard so a stale check-in (or
+        // an out-of-order admin correction) doesn't move the column
+        // backwards. The reservation-level monotonic check above
+        // already guarantees `params.mileage >= mileageOut`, but we
+        // re-check against the asset row separately because two
+        // concurrent reservations on the same asset could race —
+        // we want the higher reading to win.
+        const existingAsset = await tx.asset.findUnique({
+          where: { id: existing.assetId },
+          select: { lastReadMileage: true },
+        });
+        const shouldUpdateMileage =
+          existingAsset === null ||
+          existingAsset.lastReadMileage === null ||
+          params.mileage > existingAsset.lastReadMileage;
+
         const updated = await tx.reservation.update({
           where: { id: reservationId },
           data: {
             lifecycleStatus: 'RETURNED',
             checkedInAt: now,
             checkedInByUserId: actor.userId,
-            mileageIn: params.mileage ?? null,
+            mileageIn: params.mileage,
             conditionIn: params.condition ?? null,
             damageFlag,
             damageNote: params.damageNote ?? null,
@@ -1006,7 +1025,10 @@ export class ReservationService {
         });
         await tx.asset.update({
           where: { id: existing.assetId },
-          data: { status: nextAssetStatus },
+          data: {
+            status: nextAssetStatus,
+            ...(shouldUpdateMileage ? { lastReadMileage: params.mileage } : {}),
+          },
         });
         await this.audit.recordWithin(tx, {
           action: 'panorama.reservation.checked_in',
@@ -1016,11 +1038,12 @@ export class ReservationService {
           actorUserId: actor.userId,
           metadata: {
             assetId: existing.assetId,
-            mileage: params.mileage ?? null,
+            mileage: params.mileage,
             condition: params.condition ?? null,
             damageFlag,
             damageNote: params.damageNote ?? null,
             assetNextStatus: nextAssetStatus,
+            lastReadMileageUpdated: shouldUpdateMileage,
           },
         });
         return updated;

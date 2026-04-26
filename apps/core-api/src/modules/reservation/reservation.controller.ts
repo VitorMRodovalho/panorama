@@ -238,12 +238,15 @@ export class ReservationController {
   ): Promise<unknown> {
     const actor = this.actorFromSession(req);
     const parsed = CheckoutSchema.safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException('invalid_body');
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'invalid_body';
+      throw new BadRequestException(message);
+    }
     const checkoutParams: Parameters<ReservationService['checkOut']>[0] = {
       actor,
       reservationId: id,
+      mileage: parsed.data.mileage,
     };
-    if (parsed.data.mileage !== undefined) checkoutParams.mileage = parsed.data.mileage;
     if (parsed.data.condition !== undefined) checkoutParams.condition = parsed.data.condition;
     const updated = await this.reservations.checkOut(checkoutParams);
     return this.shape(updated);
@@ -258,12 +261,15 @@ export class ReservationController {
   ): Promise<unknown> {
     const actor = this.actorFromSession(req);
     const parsed = CheckinSchema.safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException('invalid_body');
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'invalid_body';
+      throw new BadRequestException(message);
+    }
     const checkinParams: Parameters<ReservationService['checkIn']>[0] = {
       actor,
       reservationId: id,
+      mileage: parsed.data.mileage,
     };
-    if (parsed.data.mileage !== undefined) checkinParams.mileage = parsed.data.mileage;
     if (parsed.data.condition !== undefined) checkinParams.condition = parsed.data.condition;
     if (parsed.data.damageFlag !== undefined) checkinParams.damageFlag = parsed.data.damageFlag;
     if (parsed.data.damageNote !== undefined) checkinParams.damageNote = parsed.data.damageNote;
