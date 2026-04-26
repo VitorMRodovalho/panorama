@@ -59,7 +59,8 @@ export class BlackoutService {
     if (params.startAt >= params.endAt) {
       throw new BadRequestException('start_must_be_before_end');
     }
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         if (params.assetId) {
           const asset = await tx.asset.findUnique({
@@ -96,7 +97,6 @@ export class BlackoutService {
         });
         return created;
       },
-      { reason: `blackout:create:${actor.tenantId}` },
     );
   }
 
@@ -106,20 +106,21 @@ export class BlackoutService {
     if (assetId) where.OR = [{ assetId }, { assetId: null }];
     if (to) where.startAt = { lte: to };
     if (from) where.endAt = { gte: from };
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       (tx) =>
         tx.blackoutSlot.findMany({
           where,
           orderBy: { startAt: 'asc' },
           take: limit,
         }),
-      { reason: `blackout:list:${actor.tenantId}` },
     );
   }
 
   async delete(params: { actor: BlackoutContext; blackoutId: string }): Promise<void> {
     this.assertAdmin(params.actor);
-    await this.prisma.runAsSuperAdmin(
+    await this.prisma.runInTenant(
+      params.actor.tenantId,
       async (tx) => {
         const existing = await tx.blackoutSlot.findUnique({
           where: { id: params.blackoutId },
@@ -142,7 +143,6 @@ export class BlackoutService {
           },
         });
       },
-      { reason: `blackout:delete:${params.blackoutId}` },
     );
   }
 

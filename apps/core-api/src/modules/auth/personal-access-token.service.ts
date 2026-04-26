@@ -138,7 +138,8 @@ export class PersonalAccessTokenService {
     const tokenPrefix = `${PAT_PLAINTEXT_PREFIX}${secret.slice(0, 8)}`;
 
     try {
-      const token = await this.prisma.runAsSuperAdmin(
+      const token = await this.prisma.runInTenant(
+        params.actor.tenantId,
         async (tx) => {
           const created = await tx.personalAccessToken.create({
             data: {
@@ -170,7 +171,6 @@ export class PersonalAccessTokenService {
           });
           return created;
         },
-        { reason: `pat:mint:${params.actor.userId}` },
       );
       return { token, plaintext };
     } catch (err) {
@@ -187,7 +187,8 @@ export class PersonalAccessTokenService {
   // ---------------------------------------------------------------------
 
   async revoke(params: RevokePatParams): Promise<PersonalAccessToken> {
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      params.actor.tenantId,
       async (tx) => {
         const existing = await tx.personalAccessToken.findUnique({
           where: { id: params.tokenId },
@@ -222,7 +223,6 @@ export class PersonalAccessTokenService {
         });
         return updated;
       },
-      { reason: `pat:revoke:${params.tokenId}` },
     );
   }
 
@@ -243,14 +243,14 @@ export class PersonalAccessTokenService {
     if (!params.includeRevoked) {
       where.revokedAt = null;
     }
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      params.actor.tenantId,
       (tx) =>
         tx.personalAccessToken.findMany({
           where,
           orderBy: [{ createdAt: 'desc' }],
           take: params.limit ?? 50,
         }),
-      { reason: `pat:list:${params.actor.userId}` },
     );
   }
 

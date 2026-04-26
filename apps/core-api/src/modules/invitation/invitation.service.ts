@@ -190,7 +190,8 @@ export class InvitationService {
     const normalizedEmail = params.email.toLowerCase().trim();
 
     try {
-      const result = await this.prisma.runAsSuperAdmin(
+      const result = await this.prisma.runInTenant(
+        params.tenantId,
         async (tx) => {
           const tenant = await tx.tenant.findUnique({
             where: { id: params.tenantId },
@@ -210,6 +211,35 @@ export class InvitationService {
             );
           }
           const expiresAt = new Date(Date.now() + finalTtl * 1000);
+
+          // Open-invitation pre-check. The DB has a partial unique
+          // index `invitations_one_open_per_tenant_email` with the
+          // predicate `acceptedAt IS NULL AND revokedAt IS NULL`
+          // (no expiry clause — expired-but-not-swept rows still
+          // occupy the slot until the hourly sweep runs). Under
+          // runInTenant + FORCE RLS Prisma's P2002 error loses the
+          // constraint name (`meta.target = '(not available)'`),
+          // so the post-fail catch can't translate the violation
+          // to a clean 409. Explicit pre-check makes the conflict
+          // detection deterministic. The predicate must match the
+          // index EXACTLY — including the absence of the expiry
+          // clause — so an expired row also surfaces as 409, not 500.
+          // There remains a millisecond-race window where two
+          // concurrent creates both pass the pre-check and the
+          // second one's INSERT raises P2002 — that path is still
+          // translated by isOpenInvitationCollision.
+          const openMatch = await tx.invitation.findFirst({
+            where: {
+              tenantId: tenant.id,
+              email: normalizedEmail,
+              acceptedAt: null,
+              revokedAt: null,
+            },
+            select: { id: true },
+          });
+          if (openMatch) {
+            throw new ConflictException('open_invitation_exists');
+          }
 
           const targetUser = await tx.user.findUnique({
             where: { email: normalizedEmail },
@@ -250,7 +280,6 @@ export class InvitationService {
 
           return { created, plaintext, tenant };
         },
-        { reason: `invitation:create:${params.tenantId}` },
       );
 
       // Post-commit enqueue. Plaintext token travels in the payload —
@@ -293,7 +322,8 @@ export class InvitationService {
   // ---------------------------------------------------------------------
 
   async resend(params: ResendInvitationParams): Promise<InvitationCreatedView> {
-    const result = await this.prisma.runAsSuperAdmin(
+    const result = await this.prisma.runInTenant(
+      params.tenantId,
       async (tx) => {
         const existing = await tx.invitation.findUnique({
           where: { id: params.invitationId },
@@ -328,7 +358,6 @@ export class InvitationService {
 
         return { updated, plaintext };
       },
-      { reason: `invitation:resend:${params.invitationId}` },
     );
 
     this.queue
@@ -356,7 +385,8 @@ export class InvitationService {
   // ---------------------------------------------------------------------
 
   async revoke(params: RevokeInvitationParams): Promise<void> {
-    await this.prisma.runAsSuperAdmin(
+    await this.prisma.runInTenant(
+      params.tenantId,
       async (tx) => {
         const existing = await tx.invitation.findUnique({
           where: { id: params.invitationId },
@@ -380,7 +410,6 @@ export class InvitationService {
           metadata: { email: existing.email, role: existing.role },
         });
       },
-      { reason: `invitation:revoke:${params.invitationId}` },
     );
   }
 
@@ -544,14 +573,14 @@ export class InvitationService {
   // ---------------------------------------------------------------------
 
   async list(params: ListInvitationsParams): Promise<InvitationListItemView[]> {
-    const rows = await this.prisma.runAsSuperAdmin(
+    const rows = await this.prisma.runInTenant(
+      params.tenantId,
       (tx) =>
         tx.invitation.findMany({
           where: { tenantId: params.tenantId },
           orderBy: { createdAt: 'desc' },
           take: params.limit ?? 100,
         }),
-      { reason: `invitation:list:${params.tenantId}` },
     );
     const filtered = rows.filter((r) => this.matchStatus(r, params.status));
     return filtered.map((r) => this.toListItem(r));

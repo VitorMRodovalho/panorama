@@ -435,6 +435,30 @@ describe('invitation flow e2e', () => {
     expect(body.reason).toBe('expired');
   });
 
+  it('expired-but-not-swept invite → second create for same email returns 409 (not 500)', async () => {
+    // Regression for the runInTenant/RLS migration (#56): the partial
+    // unique index `invitations_one_open_per_tenant_email` is keyed
+    // on (tenantId, email) WHERE acceptedAt IS NULL AND revokedAt IS NULL,
+    // with no expiry clause. An expired-but-not-swept row still occupies
+    // the slot. The pre-check inside InvitationService.create must
+    // mirror the index predicate exactly so a duplicate-on-expired
+    // surfaces as 409, not as a 500 from a P2002 whose meta.target
+    // RLS strips to '(not available)'.
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    const first = await createInvitation(adminCookie, 'collide@invitation-test.example');
+    if (!('token' in first.body)) throw new Error('expected first create to succeed');
+
+    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    await adminDb.invitation.update({
+      where: { id: first.body.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await adminDb.$disconnect();
+
+    const second = await createInvitation(adminCookie, 'collide@invitation-test.example');
+    expect(second.status).toBe(409);
+  });
+
   it('GET /invitations?tenantId= lists invitations for admin', async () => {
     const cookie = await loginCookie(admin.email, admin.password);
     const res = await fetch(`${url}/invitations?tenantId=${tenantAcme}&status=all&limit=50`, {
