@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-// `file-type` 19 is ESM-only (no CJS export). Static `import` from
+// `file-type` is ESM-only since v17 (no CJS export). Static `import` from
 // our compiled CJS module would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`
 // at runtime. Dynamic import works in CJS via Node's interop and
 // resolves to the ESM exports lazily. The cost is one async hop on
