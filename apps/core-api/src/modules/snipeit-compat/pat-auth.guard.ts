@@ -160,7 +160,8 @@ export class PatAuthGuard implements CanActivate {
     if (cached !== null) return cached;
 
     try {
-      const row = await this.prisma.runAsSuperAdmin(
+      const row = await this.prisma.runInTenant(
+        token.tenantId,
         (tx) =>
           tx.tenantMembership.findUnique({
             where: {
@@ -168,7 +169,6 @@ export class PatAuthGuard implements CanActivate {
             },
             select: { status: true },
           }),
-        { reason: `pat:membership_check:${token.userId}:${token.tenantId}` },
       );
       const status: 'active' | 'suspended' | 'not_a_member' = !row
         ? 'not_a_member'
@@ -231,7 +231,8 @@ export class PatAuthGuard implements CanActivate {
     if (isFirstUse || isDormantReuse) {
       // Synchronous write + audit so the admin-visible "first used"
       // / "woken up from dormant" signal is never lost on a crash.
-      await this.prisma.runAsSuperAdmin(
+      await this.prisma.runInTenant(
+        token.tenantId,
         async (tx) => {
           await tx.personalAccessToken.update({
             where: { id: token.id },
@@ -252,20 +253,17 @@ export class PatAuthGuard implements CanActivate {
             },
           });
         },
-        { reason: `pat:touch_first_or_dormant:${token.id}` },
       );
     } else {
       // Hot path — fire-and-forget timestamp refresh. A dropped
       // update just leaves lastUsedAt stale; rate-limiter metrics
       // are the audit source of truth per ADR-0010.
       this.prisma
-        .runAsSuperAdmin(
-          (tx) =>
-            tx.personalAccessToken.update({
-              where: { id: token.id },
-              data: { lastUsedAt: now },
-            }),
-          { reason: `pat:touch:${token.id}` },
+        .runInTenant(token.tenantId, (tx) =>
+          tx.personalAccessToken.update({
+            where: { id: token.id },
+            data: { lastUsedAt: now },
+          }),
         )
         .catch((err) =>
           this.log.warn({ err: String(err), tokenId: token.id }, 'pat_last_used_async_failed'),
