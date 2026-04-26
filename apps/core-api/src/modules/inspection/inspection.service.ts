@@ -18,11 +18,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type {
-  Inspection,
-  InspectionOutcome,
-  Prisma,
-} from '@prisma/client';
+import type { Inspection, InspectionOutcome } from '@prisma/client';
+// `Prisma.sql` + `Prisma.join` build parameterised raw SQL — needed
+// for the respond batch-upsert hot path (#62 / PERF-03).
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationService } from '../notification/notification.service.js';
@@ -235,35 +234,52 @@ export class InspectionService {
         validateResponseShape(item, r);
       }
 
-      // Upsert each response against the unique (inspectionId, snapshotItemId).
-      let count = 0;
-      for (const r of input.responses) {
-        await tx.inspectionResponse.upsert({
-          where: {
-            inspectionId_snapshotItemId: {
-              inspectionId,
-              snapshotItemId: r.snapshotItemId,
-            },
-          },
-          create: {
-            tenantId: actor.tenantId,
-            inspectionId,
-            snapshotItemId: r.snapshotItemId,
-            booleanValue: r.booleanValue ?? null,
-            textValue: r.textValue ?? null,
-            numberValue: r.numberValue ?? null,
-            note: r.note ?? null,
-          },
-          update: {
-            booleanValue: r.booleanValue ?? null,
-            textValue: r.textValue ?? null,
-            numberValue: r.numberValue ?? null,
-            note: r.note ?? null,
-          },
-        });
-        count++;
-      }
-      return { count };
+      // PERF-03 (#62): batch upsert in a single round-trip. The prior
+      // for-loop did N upserts (≈100ms for 20 items on slow cellular).
+      // Single INSERT … ON CONFLICT DO UPDATE collapses N→1.
+      //
+      // Safety: `Prisma.sql` + `Prisma.join` keep every value
+      // parameterised. The `tx.$executeRaw` tagged-template form is
+      // allowed in this module (see head-comment); `$executeRawUnsafe`
+      // remains forbidden.
+      //
+      // Dedupe by snapshotItemId (last-write-wins). Postgres raises
+      // 21000 cardinality_violation if ON CONFLICT DO UPDATE sees the
+      // same conflict target twice in one statement. The prior loop
+      // tolerated duplicates as overwrite-in-order; we preserve that
+      // behaviour by keeping the last occurrence per snapshotItemId.
+      if (input.responses.length === 0) return { count: 0 };
+      const dedup = new Map<string, (typeof input.responses)[number]>();
+      for (const r of input.responses) dedup.set(r.snapshotItemId, r);
+      const rows = Array.from(dedup.values());
+      const valueRows = rows.map(
+        (r) => Prisma.sql`(
+          gen_random_uuid(),
+          ${actor.tenantId}::uuid,
+          ${inspectionId}::uuid,
+          ${r.snapshotItemId}::uuid,
+          ${r.booleanValue ?? null},
+          ${r.textValue ?? null},
+          ${r.numberValue ?? null},
+          ${r.note ?? null},
+          now(),
+          now()
+        )`,
+      );
+      await tx.$executeRaw`
+        INSERT INTO inspection_responses (
+          "id", "tenantId", "inspectionId", "snapshotItemId",
+          "booleanValue", "textValue", "numberValue", "note",
+          "createdAt", "updatedAt"
+        ) VALUES ${Prisma.join(valueRows, ', ')}
+        ON CONFLICT ("inspectionId", "snapshotItemId") DO UPDATE SET
+          "booleanValue" = EXCLUDED."booleanValue",
+          "textValue"    = EXCLUDED."textValue",
+          "numberValue"  = EXCLUDED."numberValue",
+          "note"         = EXCLUDED."note",
+          "updatedAt"    = now()
+      `;
+      return { count: rows.length };
     });
   }
 

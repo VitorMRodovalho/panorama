@@ -283,6 +283,98 @@ describe('inspections lifecycle e2e', () => {
     expect(payload['summaryNote']).toBe('all good');
   });
 
+  // PERF-03 (#62): respond is now a single INSERT … ON CONFLICT DO
+  // UPDATE round-trip. Smoke-test the batch + upsert (re-respond)
+  // semantics so the raw-SQL path matches the prior Prisma upsert
+  // behaviour on every shape.
+  it('respond batch upsert: multiple items in one call + re-respond replaces', async () => {
+    const cookie = await login(url, driverEmail, password);
+    const start = (await (
+      await fetch(`${url}/inspections`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ assetId: alphaAssetId }),
+      })
+    ).json()) as { id: string };
+
+    const insp = (await (
+      await fetch(`${url}/inspections/${start.id}`, { headers: { cookie } })
+    ).json()) as {
+      templateSnapshot: { items: Array<{ id: string; label: string; itemType: string }> };
+    };
+    const lights = insp.templateSnapshot.items.find((i) => i.label === 'Lights working?')!;
+    const mileage = insp.templateSnapshot.items.find((i) => i.label === 'Mileage')!;
+
+    // Batch of 2 different shapes (BOOLEAN + NUMBER) in one call.
+    const r1 = await fetch(`${url}/inspections/${start.id}/responses`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        responses: [
+          { snapshotItemId: lights.id, booleanValue: true },
+          { snapshotItemId: mileage.id, numberValue: 120_000 },
+        ],
+      }),
+    });
+    expect(r1.status).toBe(200);
+    expect(((await r1.json()) as { count: number }).count).toBe(2);
+
+    // Re-respond on the SAME item with a different value. ON CONFLICT
+    // DO UPDATE must replace the prior row (not insert a duplicate).
+    const r2 = await fetch(`${url}/inspections/${start.id}/responses`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        responses: [{ snapshotItemId: lights.id, booleanValue: false, note: 'left turn dim' }],
+      }),
+    });
+    expect(r2.status).toBe(200);
+
+    // Read-back via admin DB: still exactly two rows, lights row
+    // reflects the overwrite (booleanValue=false + note set).
+    const responses = await admin.inspectionResponse.findMany({
+      where: { inspectionId: start.id },
+    });
+    expect(responses).toHaveLength(2);
+    const lightsRow = responses.find((r) => r.snapshotItemId === lights.id)!;
+    expect(lightsRow.booleanValue).toBe(false);
+    expect(lightsRow.note).toBe('left turn dim');
+    const mileageRow = responses.find((r) => r.snapshotItemId === mileage.id)!;
+    expect(mileageRow.numberValue?.toString()).toBe('120000');
+
+    // Same snapshotItemId appearing twice in one batch — Postgres ON
+    // CONFLICT DO UPDATE raises 21000 if not deduped. The prior Prisma
+    // loop tolerated it as overwrite-in-order; the new SQL path
+    // dedupes by snapshotItemId keeping the last occurrence.
+    const r3 = await fetch(`${url}/inspections/${start.id}/responses`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        responses: [
+          { snapshotItemId: lights.id, booleanValue: true, note: 'first' },
+          { snapshotItemId: lights.id, booleanValue: false, note: 'last wins' },
+        ],
+      }),
+    });
+    expect(r3.status).toBe(200);
+    const r3Body = (await r3.json()) as { count: number };
+    expect(r3Body.count).toBe(1); // dedupe collapsed the pair
+    const reread = await admin.inspectionResponse.findMany({
+      where: { inspectionId: start.id, snapshotItemId: lights.id },
+    });
+    expect(reread).toHaveLength(1);
+    expect(reread[0]!.booleanValue).toBe(false);
+    expect(reread[0]!.note).toBe('last wins');
+
+    // Cleanup so subsequent tests don't trip on this in-progress row.
+    const cancelRes = await fetch(`${url}/inspections/${start.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(cancelRes.status).toBe(200);
+  });
+
   it('complete fails 400 if a required item has no response', async () => {
     const cookie = await login(url, driverEmail, password);
     const start = (await (
