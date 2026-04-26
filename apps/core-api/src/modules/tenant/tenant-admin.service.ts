@@ -169,7 +169,8 @@ export class TenantAdminService {
       throw new BadRequestException(`invalid_status:${params.status}`);
     }
 
-    const result = await this.prisma.runAsSuperAdmin(
+    const result = await this.prisma.runInTenant(
+      params.tenantId,
       async (tx) => {
         const existing = await tx.tenantMembership.findUnique({
           where: { id: params.membershipId },
@@ -221,7 +222,6 @@ export class TenantAdminService {
           throw err;
         }
       },
-      { reason: `membership:update:${params.membershipId}` },
     );
     // ADR-0010 explicit invalidation — a status/role change must be
     // visible to PatAuthGuard on the next call, not 30s from now.
@@ -239,7 +239,8 @@ export class TenantAdminService {
     membershipId: string;
     actorUserId: string;
   }): Promise<void> {
-    const deleted = await this.prisma.runAsSuperAdmin(
+    const deleted = await this.prisma.runInTenant(
+      params.tenantId,
       async (tx) => {
         const existing = await tx.tenantMembership.findUnique({
           where: { id: params.membershipId },
@@ -269,7 +270,6 @@ export class TenantAdminService {
           throw err;
         }
       },
-      { reason: `membership:delete:${params.membershipId}` },
     );
     // Post-commit cache invalidation (ADR-0010).
     await this.patCache.invalidate(deleted.userId, deleted.tenantId);
@@ -353,12 +353,12 @@ export class TenantAdminService {
   // ---------------------------------------------------------------------
 
   async countActiveOwners(tenantId: string): Promise<number> {
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      tenantId,
       (tx) =>
         tx.tenantMembership.count({
           where: { tenantId, role: 'owner', status: 'active' },
         }),
-      { reason: `tenant:countActiveOwners:${tenantId}` },
     );
   }
 
