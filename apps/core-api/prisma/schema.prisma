@@ -78,8 +78,10 @@ model Tenant {
   /// `createdByUserId` for auto-suggested maintenance tickets
   /// emitted by MaintenanceTicketSubscriber (ADR-0016 §5).
   /// Seeded at tenant creation. Migration 0014 backfills existing
-  /// tenants then SETs NOT NULL.
+  /// tenants then SETs NOT NULL. Migration 0015 adds the FK
+  /// constraint enforcing referential integrity (DATA-04 / #42).
   systemActorUserId               String    @db.Uuid
+  systemActor                     User      @relation("TenantSystemActor", fields: [systemActorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   /// ADR-0016 §5 toggle: when true, FAIL/NEEDS_MAINTENANCE
   /// inspection outcomes AND damageFlag check-in events auto-open
   /// a draft maintenance ticket. Defaults FALSE per security +
@@ -138,6 +140,9 @@ model User {
 
   authIdentities             AuthIdentity[]
   memberships                TenantMembership[]
+  /// Tenants for which this User is the system actor (auto-ticket
+  /// author). Empty for human users.
+  tenantsAsSystemActor       Tenant[]              @relation("TenantSystemActor")
   invitationsSent            Invitation[]          @relation("InvitationInviter")
   invitationsTargeted        Invitation[]          @relation("InvitationTarget")
   invitationsAccepted        Invitation[]          @relation("InvitationAcceptor")
@@ -475,6 +480,11 @@ model Reservation {
   @@index([tenantId, requesterUserId])
   @@index([tenantId, lifecycleStatus])
   @@index([tenantId, basketId])
+  /// PERF-06 / #65 — covers the second arm of the "my reservations"
+  /// OR query: `WHERE tenantId = $1 AND (requesterUserId = $2 OR
+  /// onBehalfUserId = $2)`. Without it, the BitmapOr seq-scans the
+  /// tenant partition for the second arm at scale.
+  @@index([tenantId, onBehalfUserId])
   @@map("reservations")
 }
 

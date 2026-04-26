@@ -42,8 +42,15 @@ export async function resetTestDb(admin: PrismaClient): Promise<void> {
     await tx.notificationEvent.deleteMany();
     await tx.tenantMembership.deleteMany();
     await tx.authIdentity.deleteMany();
-    await tx.user.deleteMany();
+    // Tenants must clear before Users — migration 0015 (#42)
+    // added a RESTRICT FK on Tenant.systemActorUserId. Deleting
+    // the systemActor User while its Tenant still exists would
+    // raise constraint violation. Tenant delete cascades into
+    // asset_maintenances + maintenance_photos via their CASCADE
+    // FKs, so those don't need explicit deletes here.
+    // Don't reorder this without checking the FK direction.
     await tx.tenant.deleteMany();
+    await tx.user.deleteMany();
     await tx.importIdentityMap.deleteMany();
     await tx.auditEvent.deleteMany();
   });
