@@ -17,6 +17,7 @@ import type { Request } from 'express';
 import {
   ApprovalDecisionSchema,
   BasketBatchDecisionSchema,
+  BasketBatchRejectionSchema,
   CancelReservationSchema,
   CheckinSchema,
   CheckoutSchema,
@@ -25,6 +26,7 @@ import {
   CreateReservationSchema,
   ListBlackoutsSchema,
   ListReservationsSchema,
+  RejectionDecisionSchema,
 } from './reservation.dto.js';
 import {
   ReservationService,
@@ -156,13 +158,16 @@ export class ReservationController {
     @Req() req: Request,
   ): Promise<unknown> {
     const actor = this.actorFromSession(req);
-    const parsed = ApprovalDecisionSchema.safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const parsed = RejectionDecisionSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'invalid_body';
+      throw new BadRequestException(message);
+    }
     const rejectParams: Parameters<ReservationService['reject']>[0] = {
       actor,
       reservationId: id,
+      note: parsed.data.note,
     };
-    if (parsed.data.note) rejectParams.note = parsed.data.note;
     const updated = await this.reservations.reject(rejectParams);
     return this.shape(updated);
   }
@@ -193,13 +198,16 @@ export class ReservationController {
     @Req() req: Request,
   ): Promise<unknown> {
     const actor = this.actorFromSession(req);
-    const parsed = BasketBatchDecisionSchema.safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException('invalid_body');
+    const parsed = BasketBatchRejectionSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'invalid_body';
+      throw new BadRequestException(message);
+    }
     const callParams: Parameters<ReservationService['rejectBasket']>[0] = {
       actor,
       basketId,
+      note: parsed.data.note,
     };
-    if (parsed.data.note) callParams.note = parsed.data.note;
     return this.reservations.rejectBasket(callParams);
   }
 

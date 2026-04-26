@@ -33,6 +33,7 @@ function fmtError(raw: string): string {
   if (e.includes('basket_not_found')) return 'Basket not found (it may have been fully cancelled or deleted).';
   if (e.includes('basket_batch_disabled')) return 'Basket batch actions are disabled for this tenant.';
   if (e.includes('admin_role_required')) return 'Admin role required for this action.';
+  if (e.includes('note_required')) return 'A reason is required when rejecting.';
   return raw;
 }
 

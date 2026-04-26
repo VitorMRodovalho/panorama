@@ -375,7 +375,38 @@ export default async function ReservationsPage({
                         </span>
                       ) : null}
                     </td>
-                    <td>{humaniseApproval(messages.t, r.approvalStatus)}</td>
+                    <td>
+                      {humaniseApproval(messages.t, r.approvalStatus)}
+                      {/* OPS-01 (#33): surface the approver's note so the
+                          requester sees *why* a reservation was rejected (or
+                          approved with caveats) without having to walk to
+                          dispatch. Amber callout — matches the reject-panel
+                          warning style — so a 5am driver in sun glare on a
+                          phone can't miss it. */}
+                      {r.approvalNote &&
+                      (r.approvalStatus === 'REJECTED' || r.approvalStatus === 'APPROVED') ? (
+                        <div
+                          title={r.approvalNote}
+                          style={{
+                            marginTop: 4,
+                            padding: '6px 8px',
+                            fontSize: 13,
+                            lineHeight: 1.4,
+                            color: '#7a3a00',
+                            background: '#fff4e0',
+                            border: '1px solid #f0c890',
+                            borderRadius: 4,
+                            whiteSpace: 'normal',
+                            maxWidth: 320,
+                          }}
+                        >
+                          <strong style={{ display: 'block', marginBottom: 2 }}>
+                            {messages.t('reservation.approvalNote.label')}
+                          </strong>
+                          {r.approvalNote}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>{humaniseLifecycle(messages.t, r.lifecycleStatus)}</td>
                     <td>{r.purpose ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
@@ -420,11 +451,18 @@ export default async function ReservationsPage({
                                   className="panorama-inline-form"
                                 >
                                   <input type="hidden" name="basketId" value={r.basketId!} />
-                                  <input
-                                    type="text"
+                                  <p style={{ margin: '0 0 6px', fontSize: 12, color: '#a14d00' }}>
+                                    {messages.t('reservation.action.reject.note_label')}
+                                  </p>
+                                  <textarea
                                     name="note"
-                                    placeholder="Reason shown to the requester (recommended)"
+                                    required
+                                    minLength={1}
                                     maxLength={500}
+                                    rows={2}
+                                    placeholder={messages.t(
+                                      'reservation.action.reject.note_placeholder',
+                                    )}
                                   />
                                   <button type="submit" className="panorama-button secondary">
                                     Reject basket
@@ -471,18 +509,88 @@ export default async function ReservationsPage({
                       ) : null}
                       {isAdmin && r.approvalStatus === 'PENDING_APPROVAL' ? (
                         <>
-                          <form action={approveReservationAction} style={{ display: 'inline', marginLeft: 6 }}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <button type="submit" className="panorama-button">
-                              Approve
-                            </button>
-                          </form>
-                          <form action={rejectReservationAction} style={{ display: 'inline', marginLeft: 6 }}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <button type="submit" className="panorama-button secondary">
-                              Reject
-                            </button>
-                          </form>
+                          {/* OPS-01 (#33): both approve and reject open a
+                              confirm panel so a single misclick on a busy
+                              Monday morning queue can't push the action
+                              through. Reject also forces a non-empty note
+                              (server enforces this too). */}
+                          <details style={{ display: 'inline-block', marginLeft: 6 }}>
+                            <summary className="panorama-button" style={{ cursor: 'pointer' }}>
+                              {messages.t('actions.approve')}
+                            </summary>
+                            <form
+                              action={approveReservationAction}
+                              className="panorama-inline-form"
+                            >
+                              <input type="hidden" name="id" value={r.id} />
+                              <p style={{ margin: '0 0 6px', fontSize: 13 }}>
+                                {messages.t('reservation.action.approve.confirm_title')}
+                              </p>
+                              <input
+                                type="text"
+                                name="note"
+                                maxLength={500}
+                                placeholder={messages.t(
+                                  'reservation.action.approve.note_placeholder',
+                                )}
+                              />
+                              {/* Required checkbox is the forcing function:
+                                  the disclosure-triangle pattern alone lets
+                                  a hurried admin click-click through (open
+                                  panel, click confirm). The checkbox breaks
+                                  muscle memory — same forcing function the
+                                  rejection textarea provides on the other
+                                  side. */}
+                              <label
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  fontSize: 13,
+                                  margin: '6px 0',
+                                }}
+                              >
+                                <input type="checkbox" required />
+                                {messages.t('reservation.action.approve.confirm_checkbox')}
+                              </label>
+                              <button type="submit" className="panorama-button">
+                                {messages.t('reservation.action.approve.confirm_button')}
+                              </button>
+                            </form>
+                          </details>
+                          <details style={{ display: 'inline-block', marginLeft: 6 }}>
+                            <summary
+                              className="panorama-button secondary"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              {messages.t('actions.reject')}
+                            </summary>
+                            <form
+                              action={rejectReservationAction}
+                              className="panorama-inline-form"
+                            >
+                              <input type="hidden" name="id" value={r.id} />
+                              <p style={{ margin: '0 0 6px', fontSize: 13 }}>
+                                {messages.t('reservation.action.reject.confirm_title')}
+                              </p>
+                              <p style={{ margin: '0 0 6px', fontSize: 12, color: '#a14d00' }}>
+                                {messages.t('reservation.action.reject.note_label')}
+                              </p>
+                              <textarea
+                                name="note"
+                                required
+                                minLength={1}
+                                maxLength={500}
+                                rows={2}
+                                placeholder={messages.t(
+                                  'reservation.action.reject.note_placeholder',
+                                )}
+                              />
+                              <button type="submit" className="panorama-button secondary">
+                                {messages.t('reservation.action.reject.confirm_button')}
+                              </button>
+                            </form>
+                          </details>
                         </>
                       ) : null}
                       {canCheckout(r) && r.assetId ? (
