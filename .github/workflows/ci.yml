@@ -159,26 +159,45 @@ jobs:
   container-scan:
     name: Filesystem SCA (Trivy)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     permissions:
       contents: read
       security-events: write
-    # Report-only during 0.x bootstrap. Dependabot's automated security
-    # fixes are chewing through transitive vulns one group at a time;
-    # blocking main on that queue would stall delivery. Flip exit-code
-    # back to '1' once the transitive queue is empty.
-    continue-on-error: true
+    # Wave 2d.C / #68 — two-pass pattern.
+    #
+    # 1. SARIF pass (exit-code: 0): always uploads to the Security tab
+    #    so the dashboard reflects current state regardless of whether
+    #    the PR fails the blocking gate. `if: always()` on the upload
+    #    keeps the SARIF current even if pass 2 errors.
+    # 2. Blocking pass (exit-code: 1, --severity HIGH,CRITICAL,
+    #    --ignore-unfixed): fails the build on real risk. Suppression
+    #    of unreachable advisories goes through .trivyignore at the
+    #    repo root (Wave 3b / #83) — every entry has a justification
+    #    header per the template; PRs adding bare CVE ids without
+    #    headers must be rejected.
+    #
+    # Pinned action version (was @master) per OSSF Scorecard
+    # pinned-deps. Bumps go through deliberate review.
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      - name: Trivy report (SARIF, never blocks)
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: '0'
           format: sarif
           output: trivy-results.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF
         if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+      - name: Trivy gate (blocks on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: .trivyignore
