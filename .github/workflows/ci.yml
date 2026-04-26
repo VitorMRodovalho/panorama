@@ -32,6 +32,11 @@ jobs:
       # must contain migration.sql + ROLLBACK.md + exactly one of
       # rls.sql / NO_RLS.md. Fails CI on any drift.
       - run: pnpm migrations:check
+      # Closes Wave 2 RLS-CI / #58 — every prisma.runAsSuperAdmin
+      # call site is budgeted in .runAsSuperAdmin.allowlist.json.
+      # Drift requires either migrating to runInTenant or raising
+      # the budget with security-reviewer sign-off.
+      - run: pnpm rls:allowlist-check
 
   test:
     name: Unit tests
