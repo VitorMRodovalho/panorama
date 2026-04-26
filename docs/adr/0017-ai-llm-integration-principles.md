@@ -1,9 +1,9 @@
 # ADR-0017: AI/LLM integration principles
 
-- Status: **Draft** (drafted 2026-04-23 from Wave 3b audit; pending maintainer acceptance)
-- Date: 2026-04-23
-- Deciders: TBD (maintainer + ai-architect + security-reviewer)
-- Related: ADR-0006 (plugin-sdk), `.claude/agents/ai-architect.md`
+- Status: **Accepted** (drafted 2026-04-23 from Wave 3b audit; accepted 2026-04-26 by maintainer — policy precedes first AI feature per the Wave 3 §"Decisions needing maintainer input" recommendation; zero AI features in production today, so accepting now lets every future AI ADR cite this ADR as the standing constraint)
+- Date: 2026-04-23 drafted; 2026-04-26 accepted
+- Deciders: Vitor Rodovalho (maintainer)
+- Related: ADR-0006 (plugin-sdk), `.claude/agents/ai-architect.md`, `docs/runbooks/dev-environment-ai-tooling.md`
 
 ## Context
 

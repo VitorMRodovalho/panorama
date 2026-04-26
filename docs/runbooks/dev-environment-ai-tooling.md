@@ -46,7 +46,7 @@ Use only MCP servers on the verified list. Current list (2026-04-23):
 
 | MCP server | Purpose | Verified version | Verified by / date |
 |---|---|---|---|
-| Supabase MCP | Schema management, migrations | `<pin the version>` | `<maintainer>` / `<date>` |
+| Supabase MCP (`@supabase/mcp-server-supabase`) | Schema management, migrations | `0.7.0` | Vitor Rodovalho / 2026-04-26 |
 | _Others_ | Require maintainer approval before use | — | — |
 
 The list is short on purpose. Any MCP server not on this list is **forbidden** until reviewed and added.
