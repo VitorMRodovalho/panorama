@@ -12,10 +12,20 @@
  *     reason='auto_cancel_stale'.
  *
  * --- LOAD-BEARING MODULE INVARIANT (mandatory-runInTenant) ---
- * `runAsSuperAdmin` is FORBIDDEN here. Sweeps need cluster-wide
- * visibility but route writes through `runInTenant` per tenant
- * group. The ONE call to `audit.record` is the only path that
- * spawns its own super-admin tx (existing AuditService design).
+ * `runAsSuperAdmin` is FORBIDDEN here for tenant-scoped reads
+ * and ALL writes. The two sweeps below loop over tenants and
+ * route every candidate scan + update through `runInTenant`.
+ *
+ * The ONE allowed cluster-wide path is the tenant LIST itself,
+ * which is intrinsically cross-tenant — `panorama_app` can only
+ * see its own row in `tenants`, so we use `runAsSuperAdmin` for
+ * the list of tenant ids + per-tenant config. Each per-tenant
+ * scan + update then runs under RLS. `audit.record` opens its
+ * own super-admin tx via the existing AuditService design.
+ *
+ * The CI gate `pnpm rls:allowlist-check` (#58) budgets this file
+ * at 1 super-admin call (the tenant list). Adding more requires
+ * security-reviewer sign-off.
  * --------------------------------------------------------------
  */
 import {
@@ -179,32 +189,42 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
    *   4. Audit `panorama.inspection.photo.hard_deleted reason='retention_sweep'`.
    */
   async runPhotoRetentionSweep(): Promise<number> {
-    // Step 1: gather candidates across tenants. We fetch by joining
-    // tenant.inspectionPhotoRetentionDays directly via raw SQL so the
-    // per-tenant cutoff is applied inside the database, not row-by-row
-    // in Node — bounded by `PHOTO_BATCH_SIZE`.
-    const candidates = await this.prisma.runAsSuperAdmin(
-      async (tx) =>
-        tx.$queryRaw<
-          Array<{
-            id: string;
-            tenantId: string;
-            storageKey: string;
-            inspectionId: string;
-          }>
-        >`
-          SELECT p.id, p."tenantId", p."storageKey", p."inspectionId"
-            FROM inspection_photos p
-            JOIN tenants t ON t.id = p."tenantId"
-           WHERE p."deletedAt" IS NOT NULL
-             AND p."deletedAt" < now() - (
-               GREATEST(30, COALESCE(t."inspectionPhotoRetentionDays", 425)) || ' days'
-             )::interval
-           ORDER BY p."deletedAt" ASC
-           LIMIT ${PHOTO_BATCH_SIZE}
-        `,
-      { reason: 'inspection:photo_retention_sweep:scan' },
+    // Step 1: list tenants + per-tenant retention. Only allowed
+    // cluster-wide read in this module — `panorama_app` cannot see
+    // other tenants' rows in `tenants`, so the list itself needs
+    // privileged context. Per-tenant photo scans + deletes that
+    // follow run under runInTenant.
+    const tenants = await this.prisma.runAsSuperAdmin(
+      (tx) =>
+        tx.tenant.findMany({
+          select: { id: true, inspectionPhotoRetentionDays: true },
+        }),
+      { reason: 'inspection:photo_retention_sweep:list_tenants' },
     );
+
+    // Step 2: per-tenant scan under RLS. Each tenant gets its own
+    // PHOTO_BATCH_SIZE budget per sweep tick — under 1k tenants
+    // this is acceptable. Bigger fleets should switch to a
+    // priority-queue scheduler (out of scope).
+    const candidates: Array<{
+      id: string;
+      tenantId: string;
+      storageKey: string;
+      inspectionId: string;
+    }> = [];
+    for (const tenant of tenants) {
+      const days = effectiveRetentionDays(tenant.inspectionPhotoRetentionDays);
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const rows = await this.prisma.runInTenant(tenant.id, (tx) =>
+        tx.inspectionPhoto.findMany({
+          where: { deletedAt: { lt: cutoff, not: null } },
+          orderBy: { deletedAt: 'asc' },
+          take: PHOTO_BATCH_SIZE,
+          select: { id: true, tenantId: true, storageKey: true, inspectionId: true },
+        }),
+      );
+      candidates.push(...rows);
+    }
 
     if (candidates.length === 0) return 0;
 
@@ -262,32 +282,31 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
    * follow the soft-delete + retention-sweep path.
    */
   async runStaleInProgressSweep(): Promise<number> {
-    // Per-tenant cutoff inside SQL — reads tenant.inspectionConfig
-    // JSON. NULL config → default 24 h, then * 3 = 72 h. Casting to
-    // numeric defends against missing keys.
-    const candidates = await this.prisma.runAsSuperAdmin(
-      async (tx) =>
-        tx.$queryRaw<
-          Array<{ id: string; tenantId: string; startedAt: Date }>
-        >`
-          SELECT i.id, i."tenantId", i."startedAt"
-            FROM inspections i
-            JOIN tenants t ON t.id = i."tenantId"
-           WHERE i.status = 'IN_PROGRESS'
-             AND i."startedAt" < now() - (
-               (3 * COALESCE(
-                 NULLIF(
-                   (t."inspectionConfig" ->> 'staleInProgressHours')::numeric,
-                   0
-                 ),
-                 24
-               )) || ' hours'
-             )::interval
-           ORDER BY i."startedAt" ASC
-           LIMIT ${STALE_BATCH_SIZE}
-        `,
-      { reason: 'inspection:stale_in_progress_sweep:scan' },
+    // Same shape as runPhotoRetentionSweep — list tenants
+    // (cluster-wide), then per-tenant scan + update under RLS.
+    const tenants = await this.prisma.runAsSuperAdmin(
+      (tx) =>
+        tx.tenant.findMany({
+          select: { id: true, inspectionConfig: true },
+        }),
+      { reason: 'inspection:stale_in_progress_sweep:list_tenants' },
     );
+
+    const candidates: Array<{ id: string; tenantId: string; startedAt: Date }> = [];
+    for (const tenant of tenants) {
+      const cfg = parseInspectionTenantConfig(tenant.inspectionConfig);
+      const cutoffMs = 3 * cfg.staleInProgressHours * 60 * 60 * 1000;
+      const cutoff = new Date(Date.now() - cutoffMs);
+      const rows = await this.prisma.runInTenant(tenant.id, (tx) =>
+        tx.inspection.findMany({
+          where: { status: 'IN_PROGRESS', startedAt: { lt: cutoff } },
+          orderBy: { startedAt: 'asc' },
+          take: STALE_BATCH_SIZE,
+          select: { id: true, tenantId: true, startedAt: true },
+        }),
+      );
+      candidates.push(...rows);
+    }
 
     if (candidates.length === 0) return 0;
 
