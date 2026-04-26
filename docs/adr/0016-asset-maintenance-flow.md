@@ -839,7 +839,7 @@ back to who triggered it.
 ### Notification email
 
 The existing ADR-0012 step 6 inspection-outcome email gets a new
-line: "A draft maintenance ticket has been opened: /maintenance/<id>"
+line: `"A draft maintenance ticket has been opened: /maintenance/<id>"`
 when the subscriber fired. No extra email; the existing recipients
 learn about the ticket via the same notification.
 
