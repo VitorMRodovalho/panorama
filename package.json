@@ -25,6 +25,7 @@
     "license:check": "tsx scripts/license-check.ts",
     "migrations:check": "tsx scripts/check-migration-conventions.ts",
     "ensure:community-complete": "tsx scripts/ensure-community-complete.ts",
+    "rls:allowlist-check": "tsx scripts/check-runAsSuperAdmin-allowlist.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

@@ -1,0 +1,47 @@
+{
+  "_doc": "Allowlist gate for prisma.runAsSuperAdmin call sites. Closes #58 (RLS-CI). Each entry is a file path + the count of CURRENTLY-JUSTIFIED runAsSuperAdmin calls in it + a one-line rationale. The CI script `scripts/check-runAsSuperAdmin-allowlist.ts` compares the actual count against the budget and fails if a file exceeds its budget. Lower the budget when a site migrates to runInTenant; raise only with reviewer sign-off documenting why a tenant-scoped op needs the privileged path.",
+  "_review_policy": "Any PR that raises a budget MUST be reviewed by security-reviewer. Lowering a budget is encouraged.",
+  "_last_audit": "2026-04-26 — post Bucket D (#55, #56, #57) RLS migration.",
+  "files": {
+    "apps/core-api/src/modules/audit/audit.service.ts": {
+      "budget": 1,
+      "rationale": "AuditService.record() opens its own tx via runAsSuperAdmin so the chain head read can see all tenants. Architectural escape per ADR-0011."
+    },
+    "apps/core-api/src/modules/auth/auth.service.ts": {
+      "budget": 6,
+      "rationale": "Login flows: identity lookup runs before tenant context exists (the credential IS what selects the tenant)."
+    },
+    "apps/core-api/src/modules/auth/discovery.service.ts": {
+      "budget": 1,
+      "rationale": "Email-domain → tenant discovery runs before any session, no tenant context."
+    },
+    "apps/core-api/src/modules/auth/personal-access-token.service.ts": {
+      "budget": 1,
+      "rationale": "findByPlaintext: the token IS what determines the tenant; lookup is pre-tenant-context."
+    },
+    "apps/core-api/src/modules/import/import.service.ts": {
+      "budget": 2,
+      "rationale": "Import flow runs as a privileged batch operation under operator credentials, not session-bound."
+    },
+    "apps/core-api/src/modules/inspection/inspection-maintenance.service.ts": {
+      "budget": 2,
+      "rationale": "Cross-tenant photo retention sweep + cluster-wide sweep candidates per ADR-0012 §11."
+    },
+    "apps/core-api/src/modules/invitation/invitation-email.queue.ts": {
+      "budget": 2,
+      "rationale": "BullMQ worker processes jobs whose payload only carries invitationId — pending #115 follow-up to thread tenantId through the payload."
+    },
+    "apps/core-api/src/modules/invitation/invitation.service.ts": {
+      "budget": 6,
+      "rationale": "Six legitimate cross-tenant / pre-tenant paths: previewAcceptance + finalizeAccept (token-driven, pre-tenant); markEmailSent + markEmailFailed + rotateTokenForRescue (worker callbacks; #115 to resolve); sweepExpired (cross-tenant background sweep)."
+    },
+    "apps/core-api/src/modules/notification/notification.dispatcher.ts": {
+      "budget": 5,
+      "rationale": "Notification dispatcher is by-design cross-tenant — claims jobs across tenants, dispatches, marks. ADR-0011 explicitly authorises."
+    },
+    "apps/core-api/src/modules/tenant/tenant-admin.service.ts": {
+      "budget": 2,
+      "rationale": "createTenantWithOwner (pre-tenant — birthing the row) + nominateOwner (admin tooling: lookup tenant by slug across cluster)."
+    }
+  }
+}
