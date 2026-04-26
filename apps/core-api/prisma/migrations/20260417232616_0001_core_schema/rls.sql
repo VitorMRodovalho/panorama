@@ -17,13 +17,24 @@ BEGIN;
 -- --------------------------------------------------------------------
 -- Helper: current_tenant() returns NULL if the GUC is unset or empty,
 -- so we can treat "no tenant context" as "deny" for scoped tables.
+--
+-- GUC namespace was migrated from `app.*` → `panorama.*` by ADR-0015 v2
+-- (migration 0013). The function body below reflects the CURRENT
+-- namespace. We update this 0001/rls.sql in-place rather than letting
+-- 0013/migration.sql's CREATE OR REPLACE be the only authority,
+-- because the CI workflow re-applies rls.sql files on every job —
+-- if 0001/rls.sql kept the old `app.current_tenant` body, every CI
+-- run would silently overwrite 0013's correction and the helper
+-- would return NULL inside transactions that set the new GUC.
+-- rls.sql files are NOT Prisma-migration-tracked; they are managed
+-- project-level fixtures, so amending this body is safe.
 -- --------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION panorama_current_tenant() RETURNS uuid
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
     raw text;
 BEGIN
-    raw := current_setting('app.current_tenant', true);
+    raw := current_setting('panorama.current_tenant', true);
     IF raw IS NULL OR raw = '' THEN
         RETURN NULL;
     END IF;
@@ -34,7 +45,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION panorama_current_tenant() IS
-  'Tenant context for the current transaction. Set via SET LOCAL app.current_tenant = ''<uuid>''. Returns NULL when unset — which denies access to tenant-scoped tables.';
+  'Tenant context for the current transaction. Set via SET LOCAL panorama.current_tenant = ''<uuid>'' (PrismaService.runInTenant). Returns NULL when unset — denies access to tenant-scoped tables. GUC namespace migrated from app.* per ADR-0015 v2.';
 
 -- --------------------------------------------------------------------
 -- Grants. The app role owns no tables; the schema owner (panorama) does.
