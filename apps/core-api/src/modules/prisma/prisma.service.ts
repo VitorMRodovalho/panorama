@@ -352,7 +352,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         );
       }
     }
-    // Unreachable — the loop above either returns or throws.
+    // Unreachable — the loop above either returns or throws. We
+    // rethrow whatever the inner code threw verbatim so the caller's
+    // catch sees the original Prisma error class (lastErr is typed
+    // unknown by `catch (err)`); the rule demands an Error subclass
+    // but rewrapping would erase the type info that callers branch on.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw lastErr ?? new Error('runTxWithRetry: unexpected exit');
   }
 

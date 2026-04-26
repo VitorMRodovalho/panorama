@@ -45,7 +45,7 @@ describe('reservation basket batch exhaustion', () => {
   let url: string;
   let adminDb: PrismaClient;
   let tenantId: string;
-  let assetIds: string[] = [];
+  const assetIds: string[] = [];
 
   const admin = {
     email: 'admin@basket-exh.example',

@@ -152,9 +152,9 @@ describe('notification bus integration', () => {
       passwordHash: 'x',
       Authorization: 'Bearer abc',
     });
-    expect((redacted as Record<string, unknown>)['tokenPlaintext']).toBe('<redacted>');
-    expect((redacted as Record<string, unknown>)['passwordHash']).toBe('<redacted>');
-    expect((redacted as Record<string, unknown>)['Authorization']).toBe('<redacted>');
+    expect((redacted)['tokenPlaintext']).toBe('<redacted>');
+    expect((redacted)['passwordHash']).toBe('<redacted>');
+    expect((redacted)['Authorization']).toBe('<redacted>');
     const nested = (redacted as Record<string, Record<string, unknown>>)['nested']!;
     expect(nested['apiSecret']).toBe('<redacted>');
     expect(nested['ok']).toBe(1);

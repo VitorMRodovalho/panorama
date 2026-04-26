@@ -246,7 +246,7 @@ describe('PhotoPipeline.process — metadata strip', () => {
 
   it('exiftool sees zero metadata across JPEG / PNG / WebP inputs', async () => {
     if (!exiftoolAvailable) {
-      // eslint-disable-next-line no-console
+       
       console.warn('skip: exiftool binary not on PATH — install libimage-exiftool-perl to enable');
       return;
     }

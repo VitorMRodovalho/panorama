@@ -342,7 +342,7 @@ export class ImportService {
         data: {
           tenantId,
           name: fixture.name,
-          kind: fixture.kind as CategoryKind,
+          kind: fixture.kind,
         },
       });
       await this.recordMapping(
@@ -521,7 +521,7 @@ export class ImportService {
           tag: fixture.tag,
           name: fixture.name,
           serial: fixture.serial ?? null,
-          status: fixture.status as AssetStatus,
+          status: fixture.status,
           bookable: fixture.bookable,
           customFields: fixture.customFields as Prisma.InputJsonValue,
         },

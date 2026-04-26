@@ -202,7 +202,7 @@ function requireSession(req: Request): PanoramaSession {
 
 function extractTenantIdFromBody(body: unknown): string | undefined {
   if (body && typeof body === 'object' && 'tenantId' in body) {
-    const v = (body as { tenantId: unknown }).tenantId;
+    const v = (body).tenantId;
     return typeof v === 'string' ? v : undefined;
   }
   return undefined;

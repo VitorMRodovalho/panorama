@@ -176,7 +176,7 @@ export class InspectionService {
         data: {
           tenantId: actor.tenantId,
           templateId: template.id,
-          templateSnapshot: snapshotParse.data as unknown as Prisma.InputJsonValue,
+          templateSnapshot: snapshotParse.data,
           assetId: input.assetId,
           reservationId: input.reservationId ?? null,
           startedByUserId: actor.userId,
@@ -340,7 +340,7 @@ export class InspectionService {
         where: { id: inspectionId },
         data: {
           status: 'COMPLETED',
-          outcome: input.outcome as InspectionOutcome,
+          outcome: input.outcome,
           summaryNote: input.summaryNote ?? null,
           completedAt: new Date(),
           completedByUserId: actor.userId,

@@ -94,7 +94,7 @@ export class BullMqInvitationQueue
       const attemptsMade = job?.attemptsMade ?? 0;
       const attemptsAllowed = job?.opts?.attempts ?? 5;
       const terminal = attemptsMade >= attemptsAllowed;
-      const invitationId = (job?.data as InvitationEmailJobData | undefined)?.invitationId;
+      const invitationId = (job?.data)?.invitationId;
       if (!invitationId) return;
       this.invitations
         .markEmailFailed(invitationId, String(err?.message ?? err ?? 'unknown_error'), terminal)

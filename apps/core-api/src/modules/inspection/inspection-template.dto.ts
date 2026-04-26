@@ -47,7 +47,7 @@ export type InspectionTemplateItemInput = z.infer<
   typeof InspectionTemplateItemInputSchema
 >;
 
-const TemplateScopeRefine = (v: { categoryKind?: unknown; categoryId?: unknown | null }) => {
+const TemplateScopeRefine = (v: { categoryKind?: unknown; categoryId?: unknown }) => {
   // The CHECK constraint reads "exactly one set". We mirror it with a
   // strict XOR — an admin mis-setting both gets a clean 400 instead
   // of a Postgres CHECK error message that leaks the constraint name.

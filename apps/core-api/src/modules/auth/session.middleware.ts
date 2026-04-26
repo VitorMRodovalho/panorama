@@ -69,6 +69,8 @@ export class SessionMiddleware implements NestMiddleware {
       actorEmail: session?.email ?? null,
     };
 
-    runInContext(ctx, () => next());
+    await runInContext(ctx, () => {
+      next();
+    });
   }
 }
