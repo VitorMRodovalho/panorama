@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
 import { getCurrentSession } from '../../../lib/session';
@@ -35,7 +36,7 @@ interface AssetsResponse {
 }
 
 interface CalendarPageProps {
-  searchParams: { scope?: string; days?: string };
+  searchParams: Promise<{ scope?: string; days?: string }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
@@ -57,13 +58,14 @@ const DAY_MS = 24 * HOUR_MS;
  */
 export default async function ReservationCalendarPage({
   searchParams,
-}: CalendarPageProps): Promise<JSX.Element> {
+}: CalendarPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   const isAdmin = ADMIN_ROLES.has(session.currentRole);
 
-  const requestedScope = searchParams.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
-  const days = clampDays(Number(searchParams.days ?? DEFAULT_DAYS));
+  const requestedScope = sp.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
+  const days = clampDays(Number(sp.days ?? DEFAULT_DAYS));
   const startOfToday = atStartOfDay(new Date());
   const windowStart = startOfToday;
   const windowEnd = new Date(startOfToday.getTime() + days * DAY_MS);
@@ -232,7 +234,7 @@ export default async function ReservationCalendarPage({
   );
 }
 
-function CalendarLegend(): JSX.Element {
+function CalendarLegend(): ReactNode {
   return (
     <div className="panorama-calendar-legend">
       <Swatch kind="pending" label="Pending" />
@@ -244,7 +246,7 @@ function CalendarLegend(): JSX.Element {
   );
 }
 
-function Swatch({ kind, label }: { kind: string; label: string }): JSX.Element {
+function Swatch({ kind, label }: { kind: string; label: string }): ReactNode {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 12 }}>
       <span className={`panorama-swatch panorama-block--${kind}`} />
@@ -267,7 +269,7 @@ function Block({
   endMs: number;
   windowStartMs: number;
   windowEndMs: number;
-}): JSX.Element | null {
+}): ReactNode {
   const clampedStart = Math.max(startMs, windowStartMs);
   const clampedEnd = Math.min(endMs, windowEndMs);
   if (clampedEnd <= clampedStart) return null;

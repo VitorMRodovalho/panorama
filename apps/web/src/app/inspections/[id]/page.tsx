@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
@@ -62,14 +63,14 @@ interface TemplateMeta {
 }
 
 interface InspectionDetailPageProps {
-  params: { id: string };
-  searchParams: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{
     error?: string;
     saved?: string;
     resumed?: string;
     reviewed?: string;
     photo?: string;
-  };
+  }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
@@ -77,7 +78,8 @@ const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 export default async function InspectionDetailPage({
   params,
   searchParams,
-}: InspectionDetailPageProps): Promise<JSX.Element> {
+}: InspectionDetailPageProps): Promise<ReactNode> {
+  const [p, sp] = await Promise.all([params, searchParams]);
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
@@ -86,7 +88,7 @@ export default async function InspectionDetailPage({
     session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantLocale ?? 'en';
   const messages = loadMessages(tenantLocale);
 
-  const inspectionRes = await apiGet<InspectionDetail>(`/inspections/${params.id}`);
+  const inspectionRes = await apiGet<InspectionDetail>(`/inspections/${p.id}`);
   if (!inspectionRes.ok) {
     redirect(`/inspections?error=${encodeURIComponent('Inspection not found.')}`);
   }
@@ -182,17 +184,17 @@ export default async function InspectionDetailPage({
           </div>
         </div>
 
-        {searchParams.error ? <div className="panorama-banner-warning">{searchParams.error}</div> : null}
-        {searchParams.resumed ? (
+        {sp.error ? <div className="panorama-banner-warning">{sp.error}</div> : null}
+        {sp.resumed ? (
           <div className="panorama-banner-success">Resumed your in-progress inspection.</div>
         ) : null}
-        {searchParams.saved ? (
+        {sp.saved ? (
           <div className="panorama-banner-success">Item saved.</div>
         ) : null}
-        {searchParams.reviewed ? (
+        {sp.reviewed ? (
           <div className="panorama-banner-success">Inspection reviewed.</div>
         ) : null}
-        {searchParams.photo === 'ok' ? (
+        {sp.photo === 'ok' ? (
           <div className="panorama-banner-success">Photo uploaded.</div>
         ) : null}
 
@@ -210,7 +212,7 @@ export default async function InspectionDetailPage({
             inspectionId={inspection.id}
             canEdit={canEdit}
             messages={messages}
-            justSaved={searchParams.saved === item.id}
+            justSaved={sp.saved === item.id}
             // Per-render UUID — re-rendering generates a new key so a
             // refresh-then-resubmit doesn't accidentally trigger
             // upload_key_collision against the prior submit. The
@@ -304,7 +306,7 @@ function ItemCard({
   messages: { t: (key: string) => string };
   justSaved: boolean;
   uploadKey: string;
-}): JSX.Element {
+}): ReactNode {
   const showsPhotoUpload =
     canEdit && (item.itemType === 'PHOTO' || item.photoRequired);
   return (
@@ -433,7 +435,7 @@ function CancelInspectionButton({
 }: {
   inspectionId: string;
   t: (key: string) => string;
-}): JSX.Element {
+}): ReactNode {
   return (
     <form action={cancelInspectionAction} style={{ display: 'inline' }}>
       <input type="hidden" name="inspectionId" value={inspectionId} />

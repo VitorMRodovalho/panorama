@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '../../../lib/api';
@@ -20,11 +21,11 @@ interface AssetsResponse {
 }
 
 interface NewInspectionPageProps {
-  searchParams: {
+  searchParams: Promise<{
     asset?: string;
     reservation?: string;
     error?: string;
-  };
+  }>;
 }
 
 /**
@@ -39,7 +40,8 @@ interface NewInspectionPageProps {
  */
 export default async function NewInspectionPage({
   searchParams,
-}: NewInspectionPageProps): Promise<JSX.Element> {
+}: NewInspectionPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
@@ -49,7 +51,7 @@ export default async function NewInspectionPage({
 
   const assetsRes = await apiGet<AssetsResponse>('/assets?limit=200');
   const assets = (assetsRes.ok ? assetsRes.data.items : []).filter((a) => a.bookable);
-  const presetAsset = searchParams.asset ?? '';
+  const presetAsset = sp.asset ?? '';
 
   return (
     <>
@@ -79,8 +81,8 @@ export default async function NewInspectionPage({
           </Link>
         </div>
 
-        {searchParams.error ? (
-          <div className="panorama-banner-warning">{searchParams.error}</div>
+        {sp.error ? (
+          <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
 
         {assets.length === 0 ? (
@@ -107,8 +109,8 @@ export default async function NewInspectionPage({
               </select>
             </label>
 
-            {searchParams.reservation ? (
-              <input type="hidden" name="reservationId" value={searchParams.reservation} />
+            {sp.reservation ? (
+              <input type="hidden" name="reservationId" value={sp.reservation} />
             ) : null}
 
             <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8 }}>

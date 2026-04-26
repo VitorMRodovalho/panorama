@@ -1,10 +1,12 @@
+import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { loginAction, discoveryAction } from './actions';
 import type { DiscoveryResult } from './actions';
 
 interface LoginPageProps {
-  searchParams: { next?: string; email?: string; error?: string; invite_token?: string };
+  // Next 15 — searchParams is a Promise that resolves at use time.
+  searchParams: Promise<{ next?: string; email?: string; error?: string; invite_token?: string }>;
 }
 
 /**
@@ -13,22 +15,24 @@ interface LoginPageProps {
  * Password + OIDC (Google/Microsoft) are all offered — unwired providers
  * simply 400 at /auth/oidc/:provider/start which the UI handles.
  */
-export default async function LoginPage({ searchParams }: LoginPageProps): Promise<JSX.Element> {
+export default async function LoginPage({ searchParams }: LoginPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   // If already logged in, skip the login form.
-  const existing = cookies().get('panorama_session');
-  if (existing) redirect(searchParams.next ?? '/assets');
+  const jar = await cookies();
+  const existing = jar.get('panorama_session');
+  if (existing) redirect(sp.next ?? '/assets');
 
-  const email = (searchParams.email ?? '').trim();
+  const email = (sp.email ?? '').trim();
   const discovery: DiscoveryResult = email
     ? await discoveryAction(email)
     : { providers: ['password'], tenantHint: null };
 
-  const inviteToken = (searchParams.invite_token ?? '').trim();
+  const inviteToken = (sp.invite_token ?? '').trim();
   // Default post-login destination: the invite-accept page if we're in
   // the middle of an invitation flow, otherwise the explicit ?next, else
   // /assets. Safe: the accept page itself re-validates the token.
   const nextParam =
-    searchParams.next ??
+    sp.next ??
     (inviteToken ? `/invitations/accept?t=${encodeURIComponent(inviteToken)}` : '');
 
   return (
@@ -43,9 +47,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
       </p>
 
       <div className="panorama-card">
-        {searchParams.error ? (
+        {sp.error ? (
           <p className="panorama-error">
-            {searchParams.error === 'invalid_credentials'
+            {sp.error === 'invalid_credentials'
               ? 'Email or password is incorrect.'
               : 'Sign-in failed. Please try again.'}
           </p>

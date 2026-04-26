@@ -5,8 +5,9 @@ import { redirect } from 'next/navigation';
 
 const CORE_API = process.env.CORE_API_URL ?? 'http://localhost:4000';
 
-function cookieHeader(): string {
-  return cookies()
+async function cookieHeader(): Promise<string> {
+  const jar = await cookies();
+  return jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
@@ -110,7 +111,7 @@ export async function createTemplateAction(formData: FormData): Promise<void> {
 
   const res = await fetch(`${CORE_API}/inspection-templates`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(body),
   });
@@ -135,7 +136,7 @@ export async function archiveTemplateAction(formData: FormData): Promise<void> {
 
   const res = await fetch(`${CORE_API}/inspection-templates/${id}`, {
     method: 'DELETE',
-    headers: { cookie: cookieHeader() },
+    headers: { cookie: await cookieHeader() },
     cache: 'no-store',
   });
 

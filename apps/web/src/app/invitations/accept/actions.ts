@@ -14,7 +14,7 @@ export async function finalizeAcceptAction(formData: FormData): Promise<void> {
   const token = String(formData.get('token') ?? '').trim();
   if (!token) redirect('/invitations/accept');
 
-  const jar = cookies();
+  const jar = await cookies();
   const cookieHeader = jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
