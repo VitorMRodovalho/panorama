@@ -13,6 +13,18 @@ export interface OidcProviderConfig {
   extraScopes?: string[];
   /** For Google Workspace / Microsoft Entra single-tenant hints. */
   hostedDomainHint?: string;
+  /**
+   * Google Workspace `hd` claim values (lowercased domains) we trust to
+   * stand in for `email_verified=true`. Workspace admins prove domain
+   * ownership out-of-band, so the IdP issuing an `hd` claim is itself
+   * the verification signal — independent of the per-account
+   * `email_verified` flag, which Workspace doesn't always set.
+   *
+   * Empty (default) means the gate is strict: any login with
+   * `email_verified !== true` is refused. Only meaningful for the
+   * `google` provider; ignored elsewhere.
+   */
+  trustedHdDomains?: string[];
 }
 
 export interface AuthConfig {
@@ -59,6 +71,10 @@ export class AuthConfigService {
       if (process.env.OIDC_GOOGLE_HOSTED_DOMAIN) {
         google.hostedDomainHint = process.env.OIDC_GOOGLE_HOSTED_DOMAIN;
       }
+      const trusted = parseDomainList(process.env.OIDC_GOOGLE_TRUSTED_HD_DOMAINS);
+      if (trusted.length > 0) {
+        google.trustedHdDomains = trusted;
+      }
       providers.google = google;
     }
     if (process.env.OIDC_MICROSOFT_CLIENT_ID) {
@@ -90,4 +106,12 @@ export class AuthConfigService {
   hasProvider(name: 'google' | 'microsoft'): boolean {
     return !!this.config.providers[name]?.clientId;
   }
+}
+
+function parseDomainList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter((d) => d.length > 0);
 }

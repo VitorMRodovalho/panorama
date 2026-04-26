@@ -1,8 +1,25 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuthConfigService } from './auth.config.js';
+import type { OidcUserInfo } from './oidc.service.js';
 import { PasswordService } from './password.service.js';
 import type { PanoramaSession, PanoramaSessionMembership } from './session.types.js';
+
+const GOOGLE_ISSUER = 'https://accounts.google.com';
+
+type OidcGateOutcome =
+  | { ok: true; viaHdOverride: boolean }
+  | {
+      ok: false;
+      reason:
+        | 'email_not_verified'
+        | 'hd_not_allowlisted'
+        | 'hd_iss_mismatch'
+        | 'hd_email_mismatch';
+    };
 
 export interface LoginOutcome {
   session: PanoramaSession;
@@ -24,6 +41,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly cfg: AuthConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -79,48 +98,93 @@ export class AuthService {
    * session. Memberships are resolved to whatever the user already has;
    * just-in-time tenant assignment by email domain lands in a later step
    * (0.3) together with the invitation UI.
+   *
+   * Refuses login when the IdP did not assert `email_verified=true`
+   * (SEC-01 / #28). One narrow exception: a Google Workspace `hd`
+   * claim that matches `OIDC_GOOGLE_TRUSTED_HD_DOMAINS` AND the
+   * email's own domain AND the actual Google issuer — Workspace admin
+   * verification stands in for the per-account verified bit, which
+   * Google Workspace doesn't always set.
+   *
+   * Under the hd-override path, the legacy "link this OIDC identity to
+   * a pre-existing User with the same email" branch is refused: the
+   * Workspace admin proved domain ownership, not control of an
+   * already-existing local account. Linking would let an attacker who
+   * controls a Workspace tenant for `acme.example` graft a Google
+   * identity onto a victim's prior password-account at the same email.
    */
-  async loginWithOidc(params: {
-    provider: 'google' | 'microsoft';
-    subject: string;
-    email: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    displayName?: string | null;
-  }): Promise<PanoramaSession> {
-    const email = params.email.toLowerCase().trim();
+  async loginWithOidc(
+    provider: 'google' | 'microsoft',
+    userInfo: OidcUserInfo,
+    context: { ipAddress?: string | null; userAgent?: string | null } = {},
+  ): Promise<PanoramaSession> {
+    const email = userInfo.email.toLowerCase().trim();
+    const gate = this.evaluateOidcGate(provider, userInfo, email);
+    if (!gate.ok) {
+      await this.recordOidcRefusal(provider, userInfo, email, gate.reason, context);
+      this.log.warn(
+        {
+          provider,
+          reason: gate.reason,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          emailDomain: emailDomain(email),
+          hd: userInfo.hd,
+        },
+        'oidc_login_refused',
+      );
+      throw new UnauthorizedException(gate.reason);
+    }
+
+    const allowEmailLink = !gate.viaHdOverride;
     const displayName =
-      params.displayName?.trim() ||
-      [params.firstName, params.lastName].filter(Boolean).join(' ').trim() ||
+      userInfo.displayName?.trim() ||
+      [userInfo.firstName, userInfo.lastName].filter(Boolean).join(' ').trim() ||
       email;
 
-    const userId = await this.prisma.runAsSuperAdmin(
+    // Sentinel pattern (`{ kind: 'ok' | 'refused' }`) instead of throwing
+    // inside the closure: the audit row for a refusal must commit in
+    // its own transaction (recordOidcRefusal -> AuditService.record),
+    // not interleave with this find-or-create. Throwing inside
+    // runAsSuperAdmin would either roll the audit back with the
+    // refusal or split the refusal across two contexts. Returning a
+    // sentinel keeps the gate decision contiguous and the audit
+    // emission happens exactly once, after the closure has cleanly
+    // exited with no writes.
+    const resolution = await this.prisma.runAsSuperAdmin(
       async (tx) => {
         // Subject is IdP-unique; use it as the strongest key.
         const existing = await tx.authIdentity.findUnique({
-          where: { provider_subject: { provider: params.provider, subject: params.subject } },
+          where: { provider_subject: { provider, subject: userInfo.subject } },
         });
         if (existing) {
           await tx.authIdentity.update({
             where: { id: existing.id },
             data: { lastUsedAt: new Date(), emailAtLink: email },
           });
-          return existing.userId;
+          return { kind: 'ok' as const, userId: existing.userId };
         }
 
-        // Second chance: link this OIDC identity to an existing User with the same email.
+        // Second chance: link this OIDC identity to an existing User with
+        // the same email. Refused under the hd-override path: the
+        // Workspace admin proved domain ownership, not control of an
+        // already-existing local account; linking would graft this OIDC
+        // identity onto whatever (password, prior OIDC) account had
+        // claimed the email first.
         const byEmail = await tx.user.findUnique({ where: { email } });
         if (byEmail) {
+          if (!allowEmailLink) {
+            return { kind: 'refused' as const };
+          }
           await tx.authIdentity.create({
             data: {
               userId: byEmail.id,
-              provider: params.provider,
-              subject: params.subject,
+              provider,
+              subject: userInfo.subject,
               emailAtLink: email,
               lastUsedAt: new Date(),
             },
           });
-          return byEmail.id;
+          return { kind: 'ok' as const, userId: byEmail.id };
         }
 
         // Brand new — create the global User + the OIDC identity linking it.
@@ -128,25 +192,112 @@ export class AuthService {
           data: {
             email,
             displayName,
-            firstName: params.firstName ?? null,
-            lastName: params.lastName ?? null,
+            firstName: userInfo.firstName ?? null,
+            lastName: userInfo.lastName ?? null,
           },
         });
         await tx.authIdentity.create({
           data: {
             userId: created.id,
-            provider: params.provider,
-            subject: params.subject,
+            provider,
+            subject: userInfo.subject,
             emailAtLink: email,
             lastUsedAt: new Date(),
           },
         });
-        return created.id;
+        return { kind: 'ok' as const, userId: created.id };
       },
       { reason: 'oidc find-or-create' },
     );
 
-    return this.buildSessionForUser(userId, params.provider);
+    if (resolution.kind === 'refused') {
+      const reason = 'oidc_account_link_requires_verified_email' as const;
+      await this.recordOidcRefusal(provider, userInfo, email, reason, context);
+      this.log.warn(
+        {
+          provider,
+          reason,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          emailDomain: emailDomain(email),
+          hd: userInfo.hd,
+        },
+        'oidc_login_refused_account_link',
+      );
+      throw new UnauthorizedException(reason);
+    }
+
+    return this.buildSessionForUser(resolution.userId, provider);
+  }
+
+  private evaluateOidcGate(
+    provider: 'google' | 'microsoft',
+    userInfo: OidcUserInfo,
+    normalisedEmail: string,
+  ): OidcGateOutcome {
+    if (userInfo.emailVerified) return { ok: true, viaHdOverride: false };
+
+    if (provider !== 'google' || !userInfo.hd) {
+      return { ok: false, reason: 'email_not_verified' };
+    }
+    const trusted = this.cfg.config.providers.google?.trustedHdDomains ?? [];
+    if (trusted.length === 0) {
+      return { ok: false, reason: 'email_not_verified' };
+    }
+    const hd = userInfo.hd.toLowerCase();
+    if (!trusted.includes(hd)) {
+      return { ok: false, reason: 'hd_not_allowlisted' };
+    }
+    if (userInfo.iss !== GOOGLE_ISSUER) {
+      // Defence-in-depth against a misconfigured provider entry whose
+      // `provider` slot says "google" but discovers a different issuer.
+      return { ok: false, reason: 'hd_iss_mismatch' };
+    }
+    if (!normalisedEmail.endsWith(`@${hd}`)) {
+      return { ok: false, reason: 'hd_email_mismatch' };
+    }
+    return { ok: true, viaHdOverride: true };
+  }
+
+  private async recordOidcRefusal(
+    provider: 'google' | 'microsoft',
+    userInfo: OidcUserInfo,
+    normalisedEmail: string,
+    reason:
+      | 'email_not_verified'
+      | 'hd_not_allowlisted'
+      | 'hd_iss_mismatch'
+      | 'hd_email_mismatch'
+      | 'oidc_account_link_requires_verified_email',
+    context: { ipAddress?: string | null; userAgent?: string | null },
+  ): Promise<void> {
+    // `record()` (its own transaction) rather than `recordWithin(tx)`:
+    // refusal writes nothing else, so there is no domain row to
+    // commit-with. The audit-co-transaction rule applies to state
+    // transitions on tenant data, not to pre-tenant cluster events.
+    try {
+      await this.audit.record({
+        action: 'panorama.auth.oidc_refused',
+        resourceType: 'auth_identity',
+        resourceId: null,
+        tenantId: null,
+        actorUserId: null,
+        ipAddress: context.ipAddress ?? null,
+        userAgent: context.userAgent ?? null,
+        metadata: {
+          provider,
+          reason,
+          emailDomain: emailDomain(normalisedEmail),
+          hd: userInfo.hd,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          iss: userInfo.iss,
+        },
+      });
+    } catch (err) {
+      // Audit-log failure must not mask the auth refusal — the throw
+      // happens immediately after this call. Log loudly so the gap is
+      // detectable.
+      this.log.error({ err: String(err) }, 'oidc_refusal_audit_write_failed');
+    }
   }
 
   /**
@@ -270,4 +421,16 @@ export class AuthService {
       }
     }, { reason: 'setPasswordForUser' });
   }
+}
+
+function hashSubject(provider: string, subject: string): string {
+  // Truncated SHA-256 — enough entropy to correlate refusals across
+  // log lines without exposing the IdP-stable user ID itself.
+  return createHash('sha256').update(`${provider}:${subject}`).digest('hex').slice(0, 16);
+}
+
+function emailDomain(normalisedEmail: string): string | null {
+  const at = normalisedEmail.lastIndexOf('@');
+  if (at < 0 || at === normalisedEmail.length - 1) return null;
+  return normalisedEmail.slice(at + 1);
 }
