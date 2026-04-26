@@ -131,7 +131,7 @@ export class SnipeitCompatService {
     });
   }
 
-  async getHardware(tenantId: string, id: string): Promise<unknown | null> {
+  async getHardware(tenantId: string, id: string): Promise<unknown> {
     return this.prisma.runInTenant(tenantId, async (tx) => {
       const row = await tx.asset.findUnique({
         where: { id },
@@ -226,7 +226,7 @@ export class SnipeitCompatService {
     });
   }
 
-  async getUser(tenantId: string, userId: string): Promise<unknown | null> {
+  async getUser(tenantId: string, userId: string): Promise<unknown> {
     return this.prisma.runInTenant(tenantId, async (tx) => {
       const membership = await tx.tenantMembership.findUnique({
         where: { tenantId_userId: { tenantId, userId } },
@@ -362,7 +362,7 @@ export class SnipeitCompatService {
     });
   }
 
-  async getModel(tenantId: string, id: string): Promise<unknown | null> {
+  async getModel(tenantId: string, id: string): Promise<unknown> {
     return this.prisma.runInTenant(tenantId, async (tx) => {
       const row = await tx.assetModel.findUnique({
         where: { id },

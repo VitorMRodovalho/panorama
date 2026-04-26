@@ -236,7 +236,7 @@ describe('InspectionOutcomeEmailChannel — defensive guards', () => {
     }) as unknown as EmailService['send'];
     channel = new InspectionOutcomeEmailChannel(
       makePrisma(FIXTURE_BASE),
-      failingEmail as unknown as EmailService,
+      failingEmail,
     );
     await expect(channel.handle(makeEvent({ payload: FAIL_PAYLOAD }))).rejects.toThrow(
       /email_send_partial_failure/,

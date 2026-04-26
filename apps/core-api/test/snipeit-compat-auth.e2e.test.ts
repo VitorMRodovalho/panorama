@@ -172,7 +172,8 @@ describe('snipeit compat — PatAuthGuard e2e', () => {
     expect(audit).toBeTruthy();
     const meta = (audit?.metadata ?? {}) as Record<string, unknown>;
     expect(meta['reason']).toBe('invalid_token');
-    expect(String(meta['tokenPrefix'] ?? '')).toMatch(/^pnrm_pat_/);
+    const prefix = meta['tokenPrefix'];
+    expect(typeof prefix === 'string' ? prefix : '').toMatch(/^pnrm_pat_/);
   });
 
   it('GET /api/v1/whoami with revoked token → 401 invalid_token', async () => {

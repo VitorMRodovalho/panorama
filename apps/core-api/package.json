@@ -11,7 +11,7 @@
     "start": "node dist/src/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "echo 'core-api lint — no ESLint config yet, gated by typecheck'",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -54,6 +54,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.15",
     "@swc/core": "^1.15.26",
@@ -62,6 +63,7 @@
     "@types/nodemailer": "^8.0.0",
     "eslint": "^9.16.0",
     "tsx": "^4.19.2",
+    "typescript-eslint": "^8.59.0",
     "unplugin-swc": "^1.5.9",
     "vitest": "^2.1.8"
   }

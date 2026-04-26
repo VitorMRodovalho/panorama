@@ -380,7 +380,8 @@ export class TenantAdminService {
 
   private isOwnerInvariantViolation(err: unknown): boolean {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2010') {
-      const msg = String(err.meta?.['message'] ?? err.message ?? '');
+      const meta = err.meta?.['message'];
+      const msg = typeof meta === 'string' ? meta : String(err.message ?? '');
       return msg.includes('TENANT_MUST_HAVE_AT_LEAST_ONE_OWNER');
     }
     if (err instanceof Prisma.PrismaClientUnknownRequestError) {

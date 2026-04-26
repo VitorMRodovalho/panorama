@@ -264,7 +264,8 @@ function collectMetadataFieldNames(md: sharp.Metadata): string[] {
     if (KNOWN_PIXEL_PROPERTIES.has(key)) continue;
     if (value === undefined || value === null) continue;
     if (Buffer.isBuffer(value) && value.length === 0) continue;
-    if (typeof value === 'object' && !Buffer.isBuffer(value) && Object.keys(value).length === 0) continue;
+    if (typeof value === 'object' && !Buffer.isBuffer(value) && Object.keys(value).length === 0)
+      continue;
     names.add(`unknown:${key}`);
   }
   return [...names];

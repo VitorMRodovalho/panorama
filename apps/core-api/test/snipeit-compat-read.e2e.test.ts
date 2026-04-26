@@ -40,7 +40,7 @@ describe('snipeit compat read endpoints e2e', () => {
   let tenantId: string;
   let adminUserId: string;
   let otherTenantId: string;
-  let assetIds: string[] = [];
+  const assetIds: string[] = [];
   let categoryId: string;
   let modelId: string;
 

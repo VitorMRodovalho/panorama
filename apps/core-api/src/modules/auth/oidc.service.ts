@@ -149,9 +149,9 @@ export class OidcService {
     return {
       subject: claims.sub,
       email: String(claims.email).toLowerCase().trim(),
-      firstName: (claims['given_name'] as string | undefined) ?? null,
-      lastName: (claims['family_name'] as string | undefined) ?? null,
-      displayName: (claims['name'] as string | undefined) ?? null,
+      firstName: (claims['given_name']) ?? null,
+      lastName: (claims['family_name']) ?? null,
+      displayName: (claims['name']) ?? null,
       emailVerified: claims['email_verified'] === true,
       hd,
       iss: typeof claims.iss === 'string' && claims.iss.length > 0 ? claims.iss : null,

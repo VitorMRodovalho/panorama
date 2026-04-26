@@ -253,7 +253,7 @@ export class InspectionPhotoService {
             width: sanitised.width,
             height: sanitised.height,
             capturedAt: sanitised.capturedAt,
-            exifStripped: sanitised.inputMetadataFields as unknown as Prisma.InputJsonValue,
+            exifStripped: sanitised.inputMetadataFields,
             uploadedByUserId: actor.userId,
           },
         });

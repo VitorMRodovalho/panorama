@@ -75,7 +75,7 @@ export class NotificationService {
       throw new Error(`unknown_event_type:${event.eventType}`);
     }
 
-    const schema = NOTIFICATION_PAYLOAD_SCHEMAS[event.eventType as NotificationEventType];
+    const schema = NOTIFICATION_PAYLOAD_SCHEMAS[event.eventType];
     const parsed = schema.safeParse(event.payload);
     if (!parsed.success) {
       await this.audit.record({
@@ -94,7 +94,7 @@ export class NotificationService {
     }
 
     const { redacted, redactedKeys } = redactSensitive(
-      parsed.data as Record<string, unknown>,
+      parsed.data,
     );
     if (redactedKeys.length > 0) {
       this.log.warn(

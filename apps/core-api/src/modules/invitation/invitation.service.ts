@@ -454,7 +454,7 @@ export class InvitationService {
           where: { tokenHash },
           include: { tenant: { select: { id: true } } },
         });
-        if (!invitation) return { state: 'invalid', reason: 'not_found' } as AcceptanceResult;
+        if (!invitation) return { state: 'invalid', reason: 'not_found' };
         if (invitation.revokedAt) return { state: 'invalid', reason: 'revoked' };
         if (invitation.acceptedAt) return { state: 'invalid', reason: 'already_accepted' };
         if (invitation.expiresAt.getTime() <= Date.now()) {

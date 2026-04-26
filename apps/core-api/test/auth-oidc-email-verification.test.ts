@@ -45,10 +45,10 @@ function makeService(envOverrides: Record<string, string | undefined> = {}) {
   }
 
   const cfg = new AuthConfigService();
-  const runAsSuperAdmin = vi.fn() as ReturnType<typeof vi.fn>;
+  const runAsSuperAdmin = vi.fn();
   const prisma = { runAsSuperAdmin } as unknown as PrismaService;
   const passwords = {} as unknown as PasswordService;
-  const auditRecord = vi.fn() as ReturnType<typeof vi.fn>;
+  const auditRecord = vi.fn();
   const audit = { record: auditRecord } as unknown as AuditService;
   const svc = new AuthService(prisma, passwords, cfg, audit);
   return { svc, runAsSuperAdmin, auditRecord };
@@ -306,7 +306,7 @@ describe('AuthService.loginWithOidc — email_verified gate (#28)', () => {
         }),
       ),
     ).rejects.toThrow(UnauthorizedException);
-    const meta = lastAuditMetadata(auditRecord) as Record<string, unknown>;
+    const meta = lastAuditMetadata(auditRecord);
     expect(meta.subjectHash).toMatch(/^[0-9a-f]{16}$/);
     expect(meta.subjectHash).not.toContain('google-sub-very-secret');
   });

@@ -37,7 +37,7 @@ describe('reservation basket e2e', () => {
   let url: string;
   let adminDb: PrismaClient;
   let tenantId: string;
-  let assetIds: string[] = [];
+  const assetIds: string[] = [];
 
   const admin = {
     email: 'admin@basket-test.example',
