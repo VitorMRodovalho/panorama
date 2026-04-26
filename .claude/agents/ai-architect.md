@@ -60,6 +60,21 @@ now — don't invent work. But when an AI feature proposal appears
    (plan → act → observe) must have a hard step-count cap + a cost
    cap + a timeout. Runaway loops are a reliability + billing
    failure mode.
+7. **MCP / tool-server config files committed to the repo.** Per
+   ADR-0017 §"Configuration is execution surface" (accepted
+   2026-04-26 in response to the 2026-04-20 OX Security disclosure
+   of CVE-2025-49596 et al.), any MCP or tool-server connection
+   config that ships in git is treated as authorisation grant —
+   reviewer-required, allowlisted, and isolated. Default posture:
+   tool servers run in a sandbox with the absolute minimum
+   filesystem + network surface; STDIO-transport tool servers that
+   inherit parent-process credentials are forbidden without an ADR
+   amendment. Cross-link: `docs/runbooks/dev-environment-ai-tooling.md`
+   for the contributor-side allowlist + incident-response path.
+8. **AI-generated code without provenance.** When the LLM emits
+   code that lands in a PR, the commit body MUST carry the
+   `Assisted-By: <model> <provenance>` trailer per the user-level
+   CONTRIBUTING convention. NEVER `Co-Authored-By:`.
 
 ## Default lines you push
 
