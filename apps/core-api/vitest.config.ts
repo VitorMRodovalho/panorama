@@ -36,5 +36,37 @@ export default defineConfig({
     // any test file's static imports run. Required so AppModule's
     // module-load-time conditional sees the flag on.
     setupFiles: ['./test/_setup.ts'],
+    // Coverage (Wave 2d.E / #70). Honest baseline thresholds —
+    // ratchet UP only, never down (CONTRIBUTING.md "Migrations must
+    // be reversible" sibling rule for coverage). Whole-project floor
+    // is separate from CONTRIBUTING.md's per-file 80% rule for
+    // touched files.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'json-summary', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      // src/ + scripts that ship at runtime. Test files, build
+      // artefacts, and Prisma seeds are excluded.
+      include: ['src/**/*.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/*.spec.ts',
+        'src/**/*.d.ts',
+        'src/**/index.ts',
+        'src/main.ts',
+        'src/scripts/**',
+        'prisma/**',
+      ],
+      // Honest baseline as of 2026-04-26 (PR landing #70):
+      //   statements 83.86%, branches 72.55%, functions 81.68%, lines 83.86%
+      // Floors below set just under each, rounded down to the nearest 5.
+      // Ratchet UP only — see CONTRIBUTING.md "Threshold ratchet".
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        functions: 80,
+        branches: 70,
+      },
+    },
   },
 });

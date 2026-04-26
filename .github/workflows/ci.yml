@@ -79,7 +79,40 @@ jobs:
             echo "Applying $rls"
             PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f "$rls"
           done
-      - run: pnpm test
+      # Coverage instead of bare test — same surface, plus a v8 report.
+      # See vitest.config.ts §coverage for the threshold floors. Floors
+      # ratchet UP only (see CONTRIBUTING.md). Wave 2d.E / #70.
+      - name: Run tests with coverage
+        run: pnpm --filter @panorama/core-api test:coverage
+      - name: Publish coverage summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="apps/core-api/coverage/coverage-summary.json"
+          if [ ! -f "$summary" ]; then
+            echo "_coverage-summary.json not produced — coverage step likely failed earlier._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Coverage — apps/core-api"
+            echo
+            echo "| Metric | Pct | Covered / Total |"
+            echo "|---|---:|---:|"
+            for k in statements branches functions lines; do
+              pct=$(jq -r ".total.$k.pct" "$summary")
+              covered=$(jq -r ".total.$k.covered" "$summary")
+              total=$(jq -r ".total.$k.total" "$summary")
+              echo "| ${k^} | ${pct}% | ${covered} / ${total} |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-api-coverage
+          path: apps/core-api/coverage/
+          retention-days: 14
 
   i18n-coverage:
     name: i18n coverage (EN = PT-BR = ES)
