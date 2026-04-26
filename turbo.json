@@ -22,10 +22,6 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "e2e": {
-      "dependsOn": ["^build"],
-      "outputs": ["playwright-report/**", "test-results/**"]
-    },
     "clean": {
       "cache": false
     }

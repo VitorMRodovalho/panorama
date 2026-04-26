@@ -10,8 +10,7 @@
     "start": "next start -p 3000",
     "lint": "echo 'web lint deferred until UI stabilises — typecheck is the gate'",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'web — Playwright e2e lands in a follow-up PR'",
-    "e2e": "echo 'web — Playwright e2e lands in a follow-up PR'"
+    "test": "echo 'web — Playwright e2e lands in a follow-up PR'"
   },
   "dependencies": {
     "@panorama/i18n": "workspace:*",
