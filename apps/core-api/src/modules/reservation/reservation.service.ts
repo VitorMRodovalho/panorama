@@ -145,7 +145,8 @@ export class ReservationService {
       if (!canOnBehalf) throw new ForbiddenException('cannot_reserve_on_behalf');
     }
 
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         const tenant = await tx.tenant.findUnique({
           where: { id: actor.tenantId },
@@ -248,7 +249,7 @@ export class ReservationService {
 
         return created;
       },
-      { reason: `reservation:create:${actor.tenantId}`, isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable' },
     );
   }
 
@@ -277,7 +278,8 @@ export class ReservationService {
 
     const basketId = randomUUID();
 
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         const tenant = await tx.tenant.findUnique({
           where: { id: actor.tenantId },
@@ -413,7 +415,7 @@ export class ReservationService {
 
         return { basketId, reservations: rows };
       },
-      { reason: `reservation:createBasket:${actor.tenantId}`, isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable' },
     );
   }
 
@@ -439,14 +441,14 @@ export class ReservationService {
     if (to) where.startAt = { lte: to };
     if (from) where.endAt = { gte: from };
 
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       (tx) =>
         tx.reservation.findMany({
           where,
           orderBy: [{ startAt: 'asc' }, { createdAt: 'asc' }],
           take: limit,
         }),
-      { reason: `reservation:list:${actor.tenantId}` },
     );
   }
 
@@ -455,9 +457,9 @@ export class ReservationService {
   // ---------------------------------------------------------------------
 
   async cancel(params: CancelReservationParams): Promise<Reservation> {
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      params.actor.tenantId,
       (tx) => this.cancelWithin(tx, params),
-      { reason: `reservation:cancel:${params.reservationId}` },
     );
   }
 
@@ -533,12 +535,10 @@ export class ReservationService {
     if (!isAdmin(params.actor.role)) {
       throw new ForbiddenException('admin_role_required');
     }
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      params.actor.tenantId,
       (tx) => this.decideWithin(tx, params, target),
-      {
-        reason: `reservation:${target.toLowerCase()}:${params.reservationId}`,
-        isolationLevel: 'Serializable',
-      },
+      { isolationLevel: 'Serializable' },
     );
   }
 
@@ -667,7 +667,8 @@ export class ReservationService {
     const { actor, basketId, note, reason } = params;
     await this.assertBatchEnabled(actor.tenantId);
 
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         const rows = await tx.reservation.findMany({
           where: { tenantId: actor.tenantId, basketId },
@@ -784,10 +785,7 @@ export class ReservationService {
 
         return { basketId, processed, skipped };
       },
-      {
-        reason: `reservation:basket_${operation.toLowerCase()}:${basketId}`,
-        isolationLevel: 'Serializable',
-      },
+      { isolationLevel: 'Serializable' },
     );
   }
 
@@ -804,7 +802,8 @@ export class ReservationService {
 
   async checkOut(params: CheckoutParams): Promise<Reservation> {
     const { actor, reservationId } = params;
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
         if (!existing || existing.tenantId !== actor.tenantId) {
@@ -888,7 +887,6 @@ export class ReservationService {
         });
         return updated;
       },
-      { reason: `reservation:checkout:${reservationId}` },
     );
   }
 
@@ -963,7 +961,8 @@ export class ReservationService {
 
   async checkIn(params: CheckinParams): Promise<Reservation> {
     const { actor, reservationId } = params;
-    return this.prisma.runAsSuperAdmin(
+    return this.prisma.runInTenant(
+      actor.tenantId,
       async (tx) => {
         const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
         if (!existing || existing.tenantId !== actor.tenantId) {
@@ -1026,7 +1025,6 @@ export class ReservationService {
         });
         return updated;
       },
-      { reason: `reservation:checkin:${reservationId}` },
     );
   }
 
@@ -1047,13 +1045,13 @@ export class ReservationService {
   // ---------------------------------------------------------------------
 
   private async loadRules(tenantId: string): Promise<ReservationRules> {
-    const tenant = await this.prisma.runAsSuperAdmin(
+    const tenant = await this.prisma.runInTenant(
+      tenantId,
       (tx) =>
         tx.tenant.findUnique({
           where: { id: tenantId },
           select: { reservationRules: true },
         }),
-      { reason: `reservation:loadRules:${tenantId}` },
     );
     return this.cfg.fromJson(tenant?.reservationRules);
   }
