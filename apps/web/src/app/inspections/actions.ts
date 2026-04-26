@@ -5,8 +5,9 @@ import { redirect } from 'next/navigation';
 
 const CORE_API = process.env.CORE_API_URL ?? 'http://localhost:4000';
 
-function cookieHeader(): string {
-  return cookies()
+async function cookieHeader(): Promise<string> {
+  const jar = await cookies();
+  return jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
@@ -60,7 +61,7 @@ export async function startInspectionAction(formData: FormData): Promise<void> {
 
   const res = await fetch(`${CORE_API}/inspections`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify({ assetId, ...(reservationId ? { reservationId } : {}) }),
   });
@@ -104,7 +105,7 @@ export async function respondInspectionAction(formData: FormData): Promise<void>
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/responses`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify({ responses: [payload] }),
   });
@@ -131,7 +132,7 @@ export async function completeInspectionAction(formData: FormData): Promise<void
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/complete`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify({ outcome, ...(summaryNote ? { summaryNote } : {}) }),
   });
@@ -154,7 +155,7 @@ export async function cancelInspectionAction(formData: FormData): Promise<void> 
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/cancel`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(reason ? { reason } : {}),
   });
@@ -201,7 +202,7 @@ export async function uploadPhotoAction(formData: FormData): Promise<void> {
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/photos`, {
     method: 'POST',
-    headers: { cookie: cookieHeader() },
+    headers: { cookie: await cookieHeader() },
     cache: 'no-store',
     body: apiForm,
   });
@@ -244,7 +245,7 @@ export async function reviewInspectionAction(formData: FormData): Promise<void> 
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/review`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(reviewNote ? { reviewNote } : {}),
   });

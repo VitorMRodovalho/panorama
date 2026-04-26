@@ -50,7 +50,7 @@ export async function loginAction(formData: FormData): Promise<void> {
 
   // Copy Set-Cookie from core-api → our response.
   const setCookies = res.headers.getSetCookie?.() ?? [];
-  const jar = cookies();
+  const jar = await cookies();
   for (const raw of setCookies) {
     const [first = '', ...rest] = raw.split(';');
     const [name = '', ...valueParts] = first.split('=');
@@ -73,7 +73,7 @@ export async function loginAction(formData: FormData): Promise<void> {
 }
 
 export async function logoutAction(): Promise<void> {
-  const jar = cookies();
+  const jar = await cookies();
   const cookieHeader = jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
@@ -91,7 +91,7 @@ export async function logoutAction(): Promise<void> {
 
 export async function switchTenantAction(formData: FormData): Promise<void> {
   const tenantId = String(formData.get('tenantId') ?? '');
-  const jar = cookies();
+  const jar = await cookies();
   const cookieHeader = jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)

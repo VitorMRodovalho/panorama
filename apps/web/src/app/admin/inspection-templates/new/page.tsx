@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '../../../../lib/api';
@@ -17,9 +18,9 @@ interface CategoriesResponse {
 }
 
 interface NewTemplatePageProps {
-  searchParams: {
+  searchParams: Promise<{
     error?: string;
-  };
+  }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
@@ -45,7 +46,8 @@ const NUM_ITEM_SLOTS = 10;
 
 export default async function NewTemplatePage({
   searchParams,
-}: NewTemplatePageProps): Promise<JSX.Element> {
+}: NewTemplatePageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   if (!ADMIN_ROLES.has(session.currentRole)) {
@@ -90,8 +92,8 @@ export default async function NewTemplatePage({
           </Link>
         </div>
 
-        {searchParams.error ? (
-          <div className="panorama-banner-warning">{searchParams.error}</div>
+        {sp.error ? (
+          <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
 
         <form action={createTemplateAction} className="panorama-card panorama-form-grid">

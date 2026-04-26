@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '../../lib/api';
@@ -38,7 +39,7 @@ interface AssetsResponse {
 }
 
 interface InspectionsPageProps {
-  searchParams: {
+  searchParams: Promise<{
     scope?: string;
     status?: string;
     outcome?: string;
@@ -46,25 +47,26 @@ interface InspectionsPageProps {
     error?: string;
     completed?: string;
     cancelled?: string;
-  };
+  }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
 export default async function InspectionsPage({
   searchParams,
-}: InspectionsPageProps): Promise<JSX.Element> {
+}: InspectionsPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 
   const isAdmin = ADMIN_ROLES.has(session.currentRole);
   // Driver default = scope=mine; admin default = scope=tenant + needsReview
   // (the review queue per ADR-0012 §11).
-  const requestedScope = searchParams.scope === 'tenant' ? 'tenant' : 'mine';
+  const requestedScope = sp.scope === 'tenant' ? 'tenant' : 'mine';
   const scope = requestedScope === 'tenant' && !isAdmin ? 'mine' : requestedScope;
-  const status = searchParams.status ?? 'all';
-  const outcome = searchParams.outcome ?? 'all';
-  const needsReview = searchParams.needsReview === 'true';
+  const status = sp.status ?? 'all';
+  const outcome = sp.outcome ?? 'all';
+  const needsReview = sp.needsReview === 'true';
 
   const tenantLocale =
     session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantLocale ?? 'en';
@@ -138,13 +140,13 @@ export default async function InspectionsPage({
           </div>
         </div>
 
-        {searchParams.error ? (
-          <div className="panorama-banner-warning">{searchParams.error}</div>
+        {sp.error ? (
+          <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
-        {searchParams.completed ? (
+        {sp.completed ? (
           <div className="panorama-banner-success">Inspection completed.</div>
         ) : null}
-        {searchParams.cancelled ? (
+        {sp.cancelled ? (
           <div className="panorama-banner-success">Inspection cancelled.</div>
         ) : null}
 

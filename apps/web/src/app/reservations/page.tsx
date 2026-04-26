@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { apiGet } from '../../lib/api';
 import { loadMessages } from '../../lib/i18n';
@@ -55,7 +56,7 @@ interface AssetsResponse {
 }
 
 interface ReservationsPageProps {
-  searchParams: {
+  searchParams: Promise<{
     scope?: string;
     status?: string;
     error?: string;
@@ -71,14 +72,15 @@ interface ReservationsPageProps {
     processed?: string;
     skipped?: string;
     skippedReasons?: string;
-  };
+  }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
 export default async function ReservationsPage({
   searchParams,
-}: ReservationsPageProps): Promise<JSX.Element> {
+}: ReservationsPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   const isAdmin = ADMIN_ROLES.has(session.currentRole);
@@ -90,8 +92,8 @@ export default async function ReservationsPage({
   );
   const messages = loadMessages(currentMembership?.tenantLocale);
 
-  const scopeParam = searchParams.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
-  const statusParam = (searchParams.status ?? 'open').toString();
+  const scopeParam = sp.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
+  const statusParam = (sp.status ?? 'open').toString();
 
   const [resList, assetList] = await Promise.all([
     apiGet<ReservationListResponse>(
@@ -183,46 +185,46 @@ export default async function ReservationsPage({
           <a href="/reservations/calendar">Calendar</a>
         </nav>
 
-        {searchParams.error ? (
-          <div className="panorama-banner-warning">{searchParams.error}</div>
+        {sp.error ? (
+          <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
-        {searchParams.created ? (
+        {sp.created ? (
           <div className="panorama-banner-success">Reservation created.</div>
         ) : null}
-        {searchParams.cancelled ? (
+        {sp.cancelled ? (
           <div className="panorama-banner-success">Reservation cancelled.</div>
         ) : null}
-        {searchParams.approved ? (
+        {sp.approved ? (
           <div className="panorama-banner-success">Reservation approved.</div>
         ) : null}
-        {searchParams.rejected ? (
+        {sp.rejected ? (
           <div className="panorama-banner-success">Reservation rejected.</div>
         ) : null}
-        {searchParams.checkedout ? (
+        {sp.checkedout ? (
           <div className="panorama-banner-success">Reservation checked out.</div>
         ) : null}
-        {searchParams.checkedin ? (
+        {sp.checkedin ? (
           <div className="panorama-banner-success">Reservation checked in.</div>
         ) : null}
-        {searchParams.basket ? (
+        {sp.basket ? (
           <div className="panorama-banner-success">
-            Basket created{searchParams.basketId ? ` (basket ${searchParams.basketId.slice(0, 8)}…).` : '.'}
+            Basket created{sp.basketId ? ` (basket ${sp.basketId.slice(0, 8)}…).` : '.'}
           </div>
         ) : null}
-        {searchParams.batch ? (
+        {sp.batch ? (
           <div
             className={
-              Number(searchParams.processed ?? '0') === 0 &&
-              Number(searchParams.skipped ?? '0') === 0
+              Number(sp.processed ?? '0') === 0 &&
+              Number(sp.skipped ?? '0') === 0
                 ? 'panorama-banner-warning'
                 : 'panorama-banner-success'
             }
           >
             {renderBatchBanner(messages.t, {
-              verb: searchParams.batch,
-              processed: Number(searchParams.processed ?? '0'),
-              skipped: Number(searchParams.skipped ?? '0'),
-              skippedReasons: searchParams.skippedReasons ?? '',
+              verb: sp.batch,
+              processed: Number(sp.processed ?? '0'),
+              skipped: Number(sp.skipped ?? '0'),
+              skippedReasons: sp.skippedReasons ?? '',
             })}
           </div>
         ) : null}
@@ -601,7 +603,7 @@ function renderBatchBanner(
     skipped: number;
     skippedReasons: string;
   },
-): JSX.Element {
+): ReactNode {
   const { verb, processed, skipped, skippedReasons } = opts;
   const verbPast =
     verb === 'cancel' ? 'cancelled' : verb === 'approve' ? 'approved' : 'rejected';

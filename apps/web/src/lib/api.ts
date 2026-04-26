@@ -13,8 +13,8 @@ import { cookies, headers } from 'next/headers';
  */
 const CORE_API = process.env.CORE_API_URL ?? 'http://localhost:4000';
 
-function forwardSessionCookie(init?: RequestInit): RequestInit {
-  const jar = cookies();
+async function forwardSessionCookie(init?: RequestInit): Promise<RequestInit> {
+  const [jar, hdr] = await Promise.all([cookies(), headers()]);
   const cookieHeader = jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
@@ -25,15 +25,15 @@ function forwardSessionCookie(init?: RequestInit): RequestInit {
       ...(init?.headers ?? {}),
       cookie: cookieHeader,
       // Traceability across the web → api hop
-      'x-forwarded-host': headers().get('host') ?? '',
-      'x-forwarded-proto': headers().get('x-forwarded-proto') ?? 'http',
+      'x-forwarded-host': hdr.get('host') ?? '',
+      'x-forwarded-proto': hdr.get('x-forwarded-proto') ?? 'http',
     },
     cache: 'no-store',
   };
 }
 
 export async function apiGet<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number }> {
-  const res = await fetch(`${CORE_API}${path}`, forwardSessionCookie({ method: 'GET' }));
+  const res = await fetch(`${CORE_API}${path}`, await forwardSessionCookie({ method: 'GET' }));
   if (!res.ok) return { ok: false, status: res.status };
   const data = (await res.json()) as T;
   return { ok: true, data };
@@ -45,7 +45,7 @@ export async function apiPost<T>(
 ): Promise<{ ok: true; data: T; setCookie: string[] } | { ok: false; status: number }> {
   const res = await fetch(
     `${CORE_API}${path}`,
-    forwardSessionCookie({
+    await forwardSessionCookie({
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body ?? {}),

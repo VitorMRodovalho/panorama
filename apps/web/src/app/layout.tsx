@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: 'Unified open-source platform for IT asset + operational fleet management.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }): JSX.Element {
+export default function RootLayout({ children }: { children: ReactNode }): ReactNode {
   return (
     <html lang="en">
       <body>

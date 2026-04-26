@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { apiGet } from '../../lib/api';
 import { getCurrentSession } from '../../lib/session';
@@ -24,7 +25,7 @@ interface OwnershipSummary {
   isSpof: boolean;
 }
 
-export default async function AssetsPage(): Promise<JSX.Element> {
+export default async function AssetsPage(): Promise<ReactNode> {
   const session = await getCurrentSession();
   if (!session) redirect('/login');
 

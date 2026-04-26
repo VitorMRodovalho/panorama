@@ -5,8 +5,9 @@ import { redirect } from 'next/navigation';
 
 const CORE_API = process.env.CORE_API_URL ?? 'http://localhost:4000';
 
-function cookieHeader(): string {
-  return cookies()
+async function cookieHeader(): Promise<string> {
+  const jar = await cookies();
+  return jar
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
@@ -44,7 +45,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
 
   const res = await fetch(`${CORE_API}/reservations`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify({
       assetId,
@@ -78,7 +79,7 @@ export async function createBasketAction(formData: FormData): Promise<void> {
 
   const res = await fetch(`${CORE_API}/reservations/basket`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify({
       assetIds,
@@ -107,7 +108,7 @@ export async function cancelReservationAction(formData: FormData): Promise<void>
 
   const res = await fetch(`${CORE_API}/reservations/${id}/cancel`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(reason ? { reason } : {}),
   });
@@ -125,7 +126,7 @@ export async function approveReservationAction(formData: FormData): Promise<void
 
   const res = await fetch(`${CORE_API}/reservations/${id}/approve`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(note ? { note } : {}),
   });
@@ -143,7 +144,7 @@ export async function rejectReservationAction(formData: FormData): Promise<void>
 
   const res = await fetch(`${CORE_API}/reservations/${id}/reject`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(note ? { note } : {}),
   });
@@ -172,7 +173,7 @@ async function runBatchAction(
 
   const res = await fetch(`${CORE_API}/reservations/basket/${basketId}/${endpoint}`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(payload),
   });
@@ -237,7 +238,7 @@ export async function checkoutReservationAction(formData: FormData): Promise<voi
 
   const res = await fetch(`${CORE_API}/reservations/${id}/checkout`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(payload),
   });
@@ -266,7 +267,7 @@ export async function checkinReservationAction(formData: FormData): Promise<void
 
   const res = await fetch(`${CORE_API}/reservations/${id}/checkin`, {
     method: 'POST',
-    headers: { cookie: cookieHeader(), 'content-type': 'application/json' },
+    headers: { cookie: await cookieHeader(), 'content-type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(payload),
   });

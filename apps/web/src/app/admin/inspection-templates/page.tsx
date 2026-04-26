@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '../../../lib/api';
@@ -23,19 +24,20 @@ interface ListResponse {
 }
 
 interface AdminTemplatesPageProps {
-  searchParams: {
+  searchParams: Promise<{
     error?: string;
     created?: string;
     archived?: string;
     includeArchived?: string;
-  };
+  }>;
 }
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
 export default async function AdminTemplatesPage({
   searchParams,
-}: AdminTemplatesPageProps): Promise<JSX.Element> {
+}: AdminTemplatesPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   if (!ADMIN_ROLES.has(session.currentRole)) {
@@ -46,7 +48,7 @@ export default async function AdminTemplatesPage({
     session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantLocale ?? 'en';
   const messages = loadMessages(tenantLocale);
 
-  const includeArchived = searchParams.includeArchived === 'true';
+  const includeArchived = sp.includeArchived === 'true';
   const listRes = await apiGet<ListResponse>(
     `/inspection-templates?includeArchived=${includeArchived ? 'true' : 'false'}&limit=200`,
   );
@@ -85,13 +87,13 @@ export default async function AdminTemplatesPage({
           </div>
         </div>
 
-        {searchParams.error ? (
-          <div className="panorama-banner-warning">{searchParams.error}</div>
+        {sp.error ? (
+          <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
-        {searchParams.created ? (
+        {sp.created ? (
           <div className="panorama-banner-success">Template created.</div>
         ) : null}
-        {searchParams.archived ? (
+        {sp.archived ? (
           <div className="panorama-banner-success">Template archived.</div>
         ) : null}
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { apiGet } from '../../../lib/api';
 import { finalizeAcceptAction } from './actions';
@@ -23,7 +24,7 @@ type AcceptancePreview =
   | { state: 'invalid'; reason: 'not_found' | 'expired' | 'revoked' | 'already_accepted' };
 
 interface AcceptPageProps {
-  searchParams: { t?: string; error?: string };
+  searchParams: Promise<{ t?: string; error?: string }>;
 }
 
 /**
@@ -42,8 +43,9 @@ interface AcceptPageProps {
  */
 export default async function InvitationAcceptPage({
   searchParams,
-}: AcceptPageProps): Promise<JSX.Element> {
-  const token = (searchParams.t ?? '').trim();
+}: AcceptPageProps): Promise<ReactNode> {
+  const sp = await searchParams;
+  const token = (sp.t ?? '').trim();
   if (!token) {
     return (
       <div className="panorama-login">
@@ -120,8 +122,8 @@ export default async function InvitationAcceptPage({
         {data.tenantDisplayName} as <strong>{roleLabel(data.role)}</strong>.
       </p>
       <div className="panorama-card">
-        {searchParams.error ? (
-          <p className="panorama-error">{labelForFinalizeError(searchParams.error)}</p>
+        {sp.error ? (
+          <p className="panorama-error">{labelForFinalizeError(sp.error)}</p>
         ) : null}
         <form action={finalizeAcceptAction}>
           <input type="hidden" name="token" value={token} />

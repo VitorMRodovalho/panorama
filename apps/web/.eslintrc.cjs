@@ -2,14 +2,12 @@
 // ESLint legacy config for @panorama/web (Wave 2d.B / #67 / extends
 // Wave 1 #39).
 //
-// Pinned to ESLint 8 + eslint-config-next@14.2.35 because Next 14.2's
-// shipped eslint-config uses the legacy `.eslintrc` format. Mixing
-// ESLint 9's flat-config with it requires `FlatCompat` glue and is
-// fragile — the workspace isolates this config from core-api's
-// ESLint 9 via pnpm hoist boundaries, so the two majors coexist.
-//
-// Bump to ESLint 9 + flat config when this app moves to Next 15
-// (tracked separately under #79).
+// Legacy `.eslintrc` format because eslint-config-next@15 still ships
+// in this shape (Next has not migrated its config to flat). ESLint 9
+// IS now the workspace-wide major (post-#79 Next 15 upgrade lifted
+// the apps/web ESLint pin from ^8 to ^9), but the config file format
+// stays legacy until eslint-config-next ships flat. Migrate this file
+// when that lands; track via a separate follow-up issue.
 module.exports = {
   root: true,
   extends: [
