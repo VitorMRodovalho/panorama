@@ -259,13 +259,9 @@ export class AuthController {
       expectedNonce: stored.nonce,
     });
 
-    const session = await this.auth.loginWithOidc({
-      provider,
-      subject: userInfo.subject,
-      email: userInfo.email,
-      firstName: userInfo.firstName,
-      lastName: userInfo.lastName,
-      displayName: userInfo.displayName,
+    const session = await this.auth.loginWithOidc(provider, userInfo, {
+      ipAddress: req.ip ?? null,
+      userAgent: req.headers['user-agent'] ?? null,
     });
     await this.sessions.setSession(req, res, session);
 

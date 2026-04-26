@@ -31,6 +31,22 @@ export interface OidcUserInfo {
   lastName: string | null;
   displayName: string | null;
   emailVerified: boolean;
+  /**
+   * Google Workspace `hd` (hosted domain) claim, lowercased. Set by
+   * Google only for Workspace accounts where the admin has proven
+   * domain ownership; absent for consumer @gmail.com and for non-Google
+   * providers. Used by AuthService to allow a workspace-domain
+   * exception to the `email_verified` gate.
+   */
+  hd: string | null;
+  /**
+   * ID-token `iss` claim. Used to pin the hd-override to actual Google.
+   * NULL only if a token somehow arrives without an `iss` claim — a
+   * spec violation (RFC 7519). The gate refuses such tokens; the
+   * NULL is preserved here so the audit metadata isn't poisoned with
+   * the literal string `"undefined"`.
+   */
+  iss: string | null;
 }
 
 /**
@@ -116,14 +132,29 @@ export class OidcService {
 
     const claims = tokens.claims();
     if (!claims.email) throw new UnauthorizedException('oidc_missing_email');
+    // `sub` is mandatory per RFC 7519. If it's missing or non-string,
+    // the (provider, subject) tuple we use as the strongest identity
+    // key would degrade to `(provider, 'undefined')` and start
+    // colliding across upstream IdP misconfigurations. Refuse loudly.
+    if (typeof claims.sub !== 'string' || claims.sub.length === 0) {
+      throw new UnauthorizedException('oidc_missing_subject');
+    }
+
+    const rawHd = claims['hd'];
+    const hd =
+      typeof rawHd === 'string' && rawHd.trim().length > 0
+        ? rawHd.trim().toLowerCase()
+        : null;
 
     return {
-      subject: String(claims.sub),
+      subject: claims.sub,
       email: String(claims.email).toLowerCase().trim(),
       firstName: (claims['given_name'] as string | undefined) ?? null,
       lastName: (claims['family_name'] as string | undefined) ?? null,
       displayName: (claims['name'] as string | undefined) ?? null,
       emailVerified: claims['email_verified'] === true,
+      hd,
+      iss: typeof claims.iss === 'string' && claims.iss.length > 0 ? claims.iss : null,
     };
   }
 }

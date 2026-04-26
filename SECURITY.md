@@ -37,6 +37,23 @@ Panorama ships with sane defaults (see `apps/core-api/src/config/security.ts`):
   _(NOTE: audit-flagged as not yet implemented — see issue [#34](https://github.com/VitorMRodovalho/panorama/issues/34))_
 - HSTS + CSP + X-Content-Type-Options + Referrer-Policy set via middleware
 - Argon2id password hashing (with bcrypt fallback for Snipe-IT migrations)
+- OIDC logins refused unless the IdP asserts `email_verified=true`.
+  A narrow exception trusts the Google Workspace `hd` (hosted domain)
+  claim when (a) the domain is listed in `OIDC_GOOGLE_TRUSTED_HD_DOMAINS`,
+  (b) the token's `iss` is the actual Google issuer, and (c) the email
+  ends with `@<hd>` — Workspace admin verification stands in for the
+  per-account flag. Under the `hd` override, linking a Google identity
+  to a pre-existing local account at the same email is also refused;
+  the override proves domain ownership, not control of an existing
+  account. Microsoft Entra has no equivalent claim; deployments must
+  enforce email verification on the IdP side. Refusals are recorded as
+  `panorama.auth.oidc_refused` audit events with the structured reason
+  (`email_not_verified` / `hd_not_allowlisted` / `hd_iss_mismatch` /
+  `hd_email_mismatch` / `oidc_account_link_requires_verified_email`).
+  **On-call runbook for a Workspace tenant locked out at pilot
+  launch:** add their domain to `OIDC_GOOGLE_TRUSTED_HD_DOMAINS`
+  (comma-separated, lowercase) and roll the deployment. There is no
+  knob to disable the gate entirely — that is intentional.
 - All outbound fetches disable follow-redirects unless the caller opts in
 - Rate limiting on auth endpoints (configurable per-tenant)
 - Audit log appended to every write operation (tamper-evident hash chain)
