@@ -279,6 +279,35 @@ describe('reservation basket batch e2e', () => {
     expect(envelope).toBeTruthy();
   });
 
+  // OPS-01 (#33): rejectBasket also requires a non-empty note. The
+  // single-reservation rule applies to multi-asset baskets too.
+  it('rejectBasket without note → 400 note_required', async () => {
+    const driverCookie = await loginCookie(driver.email, driver.password);
+    const basket = await createBasketAs(
+      driverCookie,
+      [assetIds[3]!, assetIds[4]!],
+      96,
+      98,
+    );
+
+    const adminCookie = await loginCookie(admin.email, admin.password);
+
+    const noBody = await fetch(`${url}/reservations/basket/${basket.basketId}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(noBody.status).toBe(400);
+    expect(((await noBody.json()) as { message?: string }).message).toContain('note_required');
+
+    const blankNote = await fetch(`${url}/reservations/basket/${basket.basketId}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ note: '   ' }),
+    });
+    expect(blankNote.status).toBe(400);
+  });
+
   // ---- mixed outcomes ------------------------------------------------
 
   it('cancelBasket with 1 CHECKED_OUT row → 2 cancelled, 1 skipped', async () => {

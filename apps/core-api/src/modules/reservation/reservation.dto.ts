@@ -51,11 +51,36 @@ export const ApprovalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+// Rejection requires a non-empty note. Persona finding OPS-01 (#33):
+// requesters need to know *why* a reservation was rejected — without
+// the note they have to walk to dispatch to ask. Server-side enforcement
+// is the real safety net (the web modal also validates client-side).
+// Using explicit error messages so all invalid shapes (missing field,
+// wrong type, blank string) surface the same `note_required` code that
+// the web layer maps to a user-facing string.
+export const RejectionDecisionSchema = z.object({
+  note: z
+    .string({ required_error: 'note_required', invalid_type_error: 'note_required' })
+    .trim()
+    .min(1, 'note_required')
+    .max(500),
+});
+
 export const BasketBatchDecisionSchema = z.object({
   note: z.string().max(500).optional(),
   reason: z.string().max(500).optional(),
 });
 export type BasketBatchDecisionInput = z.infer<typeof BasketBatchDecisionSchema>;
+
+// Basket-level rejection mirrors the single-reservation rule: requesters
+// in a multi-asset basket get the same "why" surface as solo bookings.
+export const BasketBatchRejectionSchema = z.object({
+  note: z
+    .string({ required_error: 'note_required', invalid_type_error: 'note_required' })
+    .trim()
+    .min(1, 'note_required')
+    .max(500),
+});
 
 export const CheckoutSchema = z.object({
   mileage: z.number().int().nonnegative().optional(),

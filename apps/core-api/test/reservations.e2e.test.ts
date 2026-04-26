@@ -455,6 +455,44 @@ describe('reservation flow e2e', () => {
     expect(((await reject.json()) as { approvalStatus: string }).approvalStatus).toBe('REJECTED');
   });
 
+  // OPS-01 (#33): rejection requires a non-empty note. Without it the
+  // requester sees "Rejected" with no path back to why — persona finding.
+  it('reject without note → 400 note_required', async () => {
+    const driverCookie = await loginCookie(driverUser.email, driverUser.password);
+    const created = await fetch(`${url}/reservations`, {
+      method: 'POST',
+      headers: { cookie: driverCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ assetId, startAt: isoAt(820), endAt: isoAt(822) }),
+    });
+    const { id } = (await created.json()) as { id: string };
+
+    const adminCookie = await loginCookie(adminUser.email, adminUser.password);
+
+    const noBody = await fetch(`${url}/reservations/${id}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(noBody.status).toBe(400);
+    expect(((await noBody.json()) as { message?: string }).message).toContain('note_required');
+
+    const blankNote = await fetch(`${url}/reservations/${id}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ note: '   ' }),
+    });
+    expect(blankNote.status).toBe(400);
+    expect(((await blankNote.json()) as { message?: string }).message).toContain('note_required');
+
+    // Sanity: with a real note, the same id rejects fine.
+    const ok = await fetch(`${url}/reservations/${id}/reject`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ note: 'asset reserved for training that day' }),
+    });
+    expect(ok.status).toBe(200);
+  });
+
   it('driver cannot approve', async () => {
     const driverCookie = await loginCookie(driverUser.email, driverUser.password);
     const created = await fetch(`${url}/reservations`, {
