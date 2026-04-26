@@ -53,7 +53,7 @@ Never force-push to `main` or `release/*`.
 ```bash
 pnpm test                 # all packages
 pnpm --filter @panorama/core-api test
-pnpm e2e                  # Playwright against a docker-compose stack
+# pnpm e2e                # Playwright lands in 0.4+ — task removed pending first spec
 pnpm lint                 # ESLint + Prettier + markdownlint
 pnpm typecheck
 ```

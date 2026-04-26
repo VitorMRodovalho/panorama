@@ -118,8 +118,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Asserts Enterprise packages are not referenced in Community tests.
-      - run: 'grep -R "panorama-enterprise" apps/ packages/ --include="*.ts" --include="*.tsx" --include="*.json" && exit 1 || exit 0'
+      # Asserts Enterprise packages are not referenced in Community sources.
+      # See scripts/ensure-community-complete.ts (Wave 2d.D / #69 / replaces
+      # the prior `grep ... && exit 1 || exit 0` which masked grep's exit 2).
+      - run: pnpm ensure:community-complete
 
   container-scan:
     name: Filesystem SCA (Trivy)

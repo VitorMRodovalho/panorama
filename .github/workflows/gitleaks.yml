@@ -18,7 +18,10 @@ jobs:
         with:
           # Full history so we catch secrets added in older commits too
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      # Pinned per Wave 2d.H / #72 — improves OSSF Scorecard
+      # pinned-dependencies score. Bump this tag deliberately; the
+      # floating `@v2` would let upstream changes land without review.
+      - uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
