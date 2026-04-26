@@ -194,7 +194,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(200);
   });
@@ -216,7 +216,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(409);
     const body = (await co.json()) as { message?: string };
@@ -251,7 +251,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(200);
 
@@ -281,7 +281,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(409);
   });
@@ -306,7 +306,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(409);
   });
@@ -325,7 +325,7 @@ describe('reservation inspection tether e2e', () => {
     const co1 = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co1.status).toBe(200);
 
@@ -341,7 +341,7 @@ describe('reservation inspection tether e2e', () => {
     const ci = await fetch(`${url}/reservations/${reservation.id}/checkin`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(ci.status).toBe(200);
   });
@@ -365,7 +365,7 @@ describe('reservation inspection tether e2e', () => {
     const co = await fetch(`${url}/reservations/${reservation.id}/checkout`, {
       method: 'POST',
       headers: { cookie: driverCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mileage: 1000 }),
     });
     expect(co.status).toBe(409);
   });
@@ -431,7 +431,7 @@ describe('reservation inspection tether e2e', () => {
       const ap = await fetch(`${baseUrl}/reservations/${created.id}/approve`, {
         method: 'POST',
         headers: { cookie: ownerCookie, 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ mileage: 1000 }),
       });
       if (ap.status !== 200) {
         throw new Error(`approve failed: ${ap.status} ${await ap.text()}`);

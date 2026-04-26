@@ -610,7 +610,14 @@ export default async function ReservationsPage({
                           </summary>
                           <form action={checkoutReservationAction} className="panorama-inline-form">
                             <input type="hidden" name="id" value={r.id} />
-                            <input type="number" name="mileage" placeholder="Mileage out" min={0} />
+                            <input
+                              type="number"
+                              name="mileage"
+                              placeholder="Mileage out"
+                              min={0}
+                              required
+                              aria-required="true"
+                            />
                             <input type="text" name="condition" placeholder="Condition" maxLength={200} />
                             <button type="submit" className="panorama-button">
                               Confirm
@@ -630,6 +637,8 @@ export default async function ReservationsPage({
                               name="mileage"
                               placeholder="Mileage in"
                               min={r.mileageOut ?? 0}
+                              required
+                              aria-required="true"
                             />
                             <input type="text" name="condition" placeholder="Condition" maxLength={200} />
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
