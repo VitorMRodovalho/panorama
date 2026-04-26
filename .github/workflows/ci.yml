@@ -59,9 +59,27 @@ jobs:
         image: redis:7-alpine
         ports:
           - 6379:6379
+      # MailHog — outbound SMTP target. v1.0.1 is permanent (project dormant).
+      mailhog:
+        image: mailhog/mailhog:v1.0.1
+        ports:
+          - 1025:1025
+          - 8025:8025
+      # MinIO is NOT a service container here — GH Actions' service
+      # schema doesn't support `command:`, but MinIO's image needs
+      # `server /data` to start. Started via `docker run -d` in the
+      # "Start MinIO" step below (same docker daemon as services).
     env:
       DATABASE_URL: postgres://panorama:panorama@localhost:5432/panorama?schema=public
       REDIS_URL: redis://localhost:6379/0
+      S3_ENDPOINT: http://localhost:9000
+      S3_BUCKET_PHOTOS: panorama-photos
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ALLOW_PRIVATE_ENDPOINT: "true"
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -72,6 +90,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install psql client
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      # Start MinIO + create the panorama-photos bucket. Uses `docker
+      # run -d` instead of a service container because GH Actions
+      # services lack a `command:` knob, and MinIO needs `server /data`.
+      # Bucket creation via mc is idempotent (`--ignore-existing`).
+      - name: Start MinIO + create bucket
+        run: |
+          set -euo pipefail
+          docker run -d --name minio --network host \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data
+          # Wait for MinIO readiness (max 30s).
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+            if [ "$i" = "30" ]; then
+              echo "MinIO did not become ready in 30s; dumping logs:"
+              docker logs minio
+              exit 1
+            fi
+          done
+          docker run --rm --network host \
+            -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 \
+            minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            mb --ignore-existing local/panorama-photos
       - name: Bootstrap DB (extensions + roles)
         run: PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f infra/docker/postgres-init.sql
         env:
