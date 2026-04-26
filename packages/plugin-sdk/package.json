@@ -1,26 +1,19 @@
 {
   "name": "@panorama/plugin-sdk",
   "version": "0.0.0",
-  "description": "Panorama plugin SDK — typed extension surface.",
+  "description": "Panorama plugin SDK — typed event contract (types-only at 0.3 per ADR-0006).",
   "license": "AGPL-3.0-or-later",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "test": "echo 'plugin-sdk — real tests land with first plugin in 0.4'",
+    "test": "echo 'plugin-sdk — runtime + tests land with first plugin in 0.4'",
     "lint": "echo 'plugin-sdk lint — no ESLint config yet, gated by typecheck'",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },
-  "peerDependencies": {
-    "@nestjs/common": "^10",
-    "react": "^18"
-  },
   "devDependencies": {
-    "@nestjs/common": "^10.4.15",
-    "react": "^18.3.1",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "typescript": "^5.6.3"
   }
 }

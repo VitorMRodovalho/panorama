@@ -1,7 +1,13 @@
 /**
- * Public plugin SDK surface.
- * Stable contract: breaking changes follow a deprecation cycle per
- * semantic versioning of @panorama/plugin-sdk.
+ * Public plugin SDK surface — types only at 0.3.
+ *
+ * Per ADR-0006 (Accepted 2026-04-26, narrow scope per #84): this package
+ * exposes the plugin event-type contract only. The runtime loader, NestJS
+ * dynamic-module helper, and React UI-slot surface are deferred to 0.4+
+ * and will land alongside the isolation boundary required by ADR-0017.
+ *
+ * Stable contract: breaking changes to the exported types follow a
+ * deprecation cycle per semantic versioning of @panorama/plugin-sdk.
  */
 
 export type PanoramaEventName =
@@ -44,17 +50,3 @@ export type EventHandler<T = unknown> = (
   ctx: PluginContext,
   evt: PanoramaEvent<T>,
 ) => Promise<void> | void;
-
-export function onEvent<T = unknown>(
-  name: PanoramaEventName,
-  handler: EventHandler<T>,
-): { __panorama_handler: true; name: PanoramaEventName; handler: EventHandler<T> } {
-  return { __panorama_handler: true, name, handler };
-}
-
-// Re-exported by plugin authors in their server.ts:
-export const PluginModule = {
-  register<T>(cls: T): { provide: 'PANORAMA_PLUGIN_MODULE'; useValue: T } {
-    return { provide: 'PANORAMA_PLUGIN_MODULE', useValue: cls };
-  },
-};
