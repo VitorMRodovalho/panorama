@@ -33,6 +33,10 @@ export async function resetTestDb(admin: PrismaClient): Promise<void> {
     await tx.inspection.deleteMany();
     await tx.inspectionTemplateItem.deleteMany();
     await tx.inspectionTemplate.deleteMany();
+    // Maintenance ↔ Asset FK is onDelete: Restrict (ADR-0016 §1) so
+    // maintenance rows must clear before assets in the test reset.
+    await tx.maintenancePhoto.deleteMany();
+    await tx.assetMaintenance.deleteMany();
     await tx.reservation.deleteMany();
     await tx.asset.deleteMany();
     await tx.assetModel.deleteMany();

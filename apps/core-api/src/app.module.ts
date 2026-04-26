@@ -16,6 +16,7 @@ import { NotificationModule } from './modules/notification/notification.module.j
 import { ObjectStorageModule } from './modules/object-storage/object-storage.module.js';
 import { PhotoPipelineModule } from './modules/photo-pipeline/photo-pipeline.module.js';
 import { InspectionModule } from './modules/inspection/inspection.module.js';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
 import { BootAuditModule } from './modules/boot-audit/boot-audit.module.js';
@@ -57,6 +58,21 @@ const conditionalInspections: DynamicModule[] = inspectionsEnabled()
     ]
   : [];
 
+/**
+ * `FEATURE_MAINTENANCE` (ADR-0016 / #74) gates MaintenanceModule. The
+ * MVP slice ships with default `false` per PILOT-03 — flip per-tenant
+ * on canary, then community-default once the auto-suggest subscriber
+ * + PM-due cron land in 0.4. Same env-var shape as FEATURE_INSPECTIONS.
+ */
+function maintenanceEnabled(): boolean {
+  const raw = (process.env['FEATURE_MAINTENANCE'] ?? 'false').toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'no';
+}
+
+const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
+  ? [{ module: MaintenanceModule, global: false }]
+  : [];
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -82,6 +98,7 @@ const conditionalInspections: DynamicModule[] = inspectionsEnabled()
     ImportModule,
     ...conditionalCompatShim,
     ...conditionalInspections,
+    ...conditionalMaintenance,
     // BootAuditModule LAST — its OnModuleInit fires after Prisma +
     // Audit + Redis are wired so the boot audits commit cleanly.
     BootAuditModule,

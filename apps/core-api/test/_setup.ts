@@ -17,6 +17,9 @@
 if (!process.env['FEATURE_INSPECTIONS']) {
   process.env['FEATURE_INSPECTIONS'] = 'true';
 }
+if (!process.env['FEATURE_MAINTENANCE']) {
+  process.env['FEATURE_MAINTENANCE'] = 'true';
+}
 if (!process.env['SESSION_SECRET']) {
   process.env['SESSION_SECRET'] = 'a'.repeat(32);
 }
