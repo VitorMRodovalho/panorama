@@ -29,11 +29,11 @@
     },
     "apps/core-api/src/modules/invitation/invitation-email.queue.ts": {
       "budget": 2,
-      "rationale": "BullMQ worker processes jobs whose payload only carries invitationId — pending #115 follow-up to thread tenantId through the payload."
+      "rationale": "Two cross-tenant paths: rescue-query (cluster-wide scan for stuck invitations) + lookupTenantId (legacy-payload fallback for pre-#115 BullMQ jobs). Per-row writes that follow run under runInTenant."
     },
     "apps/core-api/src/modules/invitation/invitation.service.ts": {
-      "budget": 6,
-      "rationale": "Six legitimate cross-tenant / pre-tenant paths: previewAcceptance + finalizeAccept (token-driven, pre-tenant); markEmailSent + markEmailFailed + rotateTokenForRescue (worker callbacks; #115 to resolve); sweepExpired (cross-tenant background sweep)."
+      "budget": 3,
+      "rationale": "Three legitimate cross-tenant / pre-tenant paths: previewAcceptance + finalizeAccept (token-driven, pre-tenant); sweepExpired (cross-tenant background sweep). markEmailSent / markEmailFailed / rotateTokenForRescue migrated to runInTenant once tenantId was threaded through the BullMQ payload (#115 closed 2026-04-26)."
     },
     "apps/core-api/src/modules/notification/notification.dispatcher.ts": {
       "budget": 5,

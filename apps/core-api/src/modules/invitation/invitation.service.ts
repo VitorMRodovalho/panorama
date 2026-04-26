@@ -288,7 +288,7 @@ export class InvitationService {
       // where emailQueuedAt is set but the email was never sent by
       // rotating the token + re-enqueuing.
       this.queue
-        .enqueueDelivery(result.created.id, result.plaintext)
+        .enqueueDelivery(result.created.id, result.created.tenantId, result.plaintext)
         .catch((err: unknown) => {
           this.log.warn(
             { invitationId: result.created.id, err: String(err) },
@@ -361,7 +361,7 @@ export class InvitationService {
     );
 
     this.queue
-      .enqueueDelivery(result.updated.id, result.plaintext)
+      .enqueueDelivery(result.updated.id, result.updated.tenantId, result.plaintext)
       .catch((err: unknown) => {
         this.log.warn(
           { invitationId: result.updated.id, err: String(err) },
@@ -590,56 +590,57 @@ export class InvitationService {
   // Post-email-send callbacks (used by the BullMQ worker)
   // ---------------------------------------------------------------------
 
-  async markEmailSent(invitationId: string): Promise<void> {
-    await this.prisma.runAsSuperAdmin(
-      async (tx) => {
-        const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
-        if (!existing) return;
-        await tx.invitation.update({
-          where: { id: invitationId },
-          data: { emailSentAt: new Date(), emailLastError: null },
-        });
-        await this.audit.recordWithin(tx, {
-          action: 'panorama.invitation.email_sent',
-          resourceType: 'invitation',
-          resourceId: invitationId,
-          tenantId: existing.tenantId,
-          metadata: { email: existing.email },
-        });
-      },
-      { reason: `invitation:markEmailSent:${invitationId}` },
-    );
+  /**
+   * Worker callback. `tenantId` is threaded through the BullMQ payload
+   * (#115) so this runs under `runInTenant` instead of an unscoped
+   * privileged write.
+   */
+  async markEmailSent(invitationId: string, tenantId: string): Promise<void> {
+    await this.prisma.runInTenant(tenantId, async (tx) => {
+      const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
+      if (!existing || existing.tenantId !== tenantId) return;
+      await tx.invitation.update({
+        where: { id: invitationId },
+        data: { emailSentAt: new Date(), emailLastError: null },
+      });
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.invitation.email_sent',
+        resourceType: 'invitation',
+        resourceId: invitationId,
+        tenantId,
+        metadata: { email: existing.email },
+      });
+    });
   }
 
+  /** Worker callback — see markEmailSent re: tenantId threading. */
   async markEmailFailed(
     invitationId: string,
+    tenantId: string,
     error: string,
     terminal: boolean,
   ): Promise<void> {
-    await this.prisma.runAsSuperAdmin(
-      async (tx) => {
-        const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
-        if (!existing) return;
-        await tx.invitation.update({
-          where: { id: invitationId },
-          data: {
-            emailAttempts: { increment: 1 },
-            emailLastError: error.slice(0, 500),
-            ...(terminal ? { emailBouncedAt: new Date() } : {}),
-          },
-        });
-        await this.audit.recordWithin(tx, {
-          action: terminal
-            ? 'panorama.invitation.email_bounced'
-            : 'panorama.invitation.email_failed',
-          resourceType: 'invitation',
-          resourceId: invitationId,
-          tenantId: existing.tenantId,
-          metadata: { email: existing.email, error: error.slice(0, 500) },
-        });
-      },
-      { reason: `invitation:markEmailFailed:${invitationId}` },
-    );
+    await this.prisma.runInTenant(tenantId, async (tx) => {
+      const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
+      if (!existing || existing.tenantId !== tenantId) return;
+      await tx.invitation.update({
+        where: { id: invitationId },
+        data: {
+          emailAttempts: { increment: 1 },
+          emailLastError: error.slice(0, 500),
+          ...(terminal ? { emailBouncedAt: new Date() } : {}),
+        },
+      });
+      await this.audit.recordWithin(tx, {
+        action: terminal
+          ? 'panorama.invitation.email_bounced'
+          : 'panorama.invitation.email_failed',
+        resourceType: 'invitation',
+        resourceId: invitationId,
+        tenantId,
+        metadata: { email: existing.email, error: error.slice(0, 500) },
+      });
+    });
   }
 
   /**
@@ -651,39 +652,42 @@ export class InvitationService {
    * Unlike `resend`, this is system-initiated — no admin actor exists.
    * The audit row uses `actorUserId=null` and `action=resent` with
    * metadata reason=`rescue`.
+   *
+   * `tenantId` comes from the rescue scan (cluster-wide read) so the
+   * write itself runs under `runInTenant` (#115).
    */
-  async rotateTokenForRescue(invitationId: string): Promise<{ plaintext: string } | null> {
-    return this.prisma.runAsSuperAdmin(
-      async (tx) => {
-        const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
-        if (!existing) return null;
-        if (existing.acceptedAt || existing.revokedAt) return null;
-        if (existing.expiresAt.getTime() <= Date.now()) return null;
+  async rotateTokenForRescue(
+    invitationId: string,
+    tenantId: string,
+  ): Promise<{ plaintext: string } | null> {
+    return this.prisma.runInTenant(tenantId, async (tx) => {
+      const existing = await tx.invitation.findUnique({ where: { id: invitationId } });
+      if (!existing || existing.tenantId !== tenantId) return null;
+      if (existing.acceptedAt || existing.revokedAt) return null;
+      if (existing.expiresAt.getTime() <= Date.now()) return null;
 
-        const { plaintext, tokenHash } = this.generateToken();
-        await tx.invitation.update({
-          where: { id: invitationId },
-          data: {
-            tokenHash,
-            emailQueuedAt: new Date(),
-            emailSentAt: null,
-            emailBouncedAt: null,
-            emailAttempts: 0,
-            emailLastError: null,
-          },
-        });
-        await this.audit.recordWithin(tx, {
-          action: 'panorama.invitation.resent',
-          resourceType: 'invitation',
-          resourceId: invitationId,
-          tenantId: existing.tenantId,
-          actorUserId: null,
-          metadata: { email: existing.email, reason: 'rescue' },
-        });
-        return { plaintext };
-      },
-      { reason: `invitation:rotateTokenForRescue:${invitationId}` },
-    );
+      const { plaintext, tokenHash } = this.generateToken();
+      await tx.invitation.update({
+        where: { id: invitationId },
+        data: {
+          tokenHash,
+          emailQueuedAt: new Date(),
+          emailSentAt: null,
+          emailBouncedAt: null,
+          emailAttempts: 0,
+          emailLastError: null,
+        },
+      });
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.invitation.resent',
+        resourceType: 'invitation',
+        resourceId: invitationId,
+        tenantId,
+        actorUserId: null,
+        metadata: { email: existing.email, reason: 'rescue' },
+      });
+      return { plaintext };
+    });
   }
 
   async sweepExpired(): Promise<number> {

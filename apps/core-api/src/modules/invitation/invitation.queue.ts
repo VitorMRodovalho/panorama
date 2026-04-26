@@ -18,7 +18,16 @@ import { Injectable, Logger } from '@nestjs/common';
  * is removed from Redis on completion (see `removeOnComplete`).
  */
 export interface InvitationQueuePort {
-  enqueueDelivery(invitationId: string, plaintextToken: string): Promise<void>;
+  /**
+   * Queue an invitation email for delivery. `tenantId` rides in the
+   * payload so the worker can run callbacks under `runInTenant` instead
+   * of escalating to `runAsSuperAdmin` (#115 / closes a #56 follow-up).
+   */
+  enqueueDelivery(
+    invitationId: string,
+    tenantId: string,
+    plaintextToken: string,
+  ): Promise<void>;
 }
 
 export const INVITATION_QUEUE = Symbol('INVITATION_QUEUE');
@@ -32,7 +41,11 @@ export const INVITATION_QUEUE = Symbol('INVITATION_QUEUE');
 export class NoopInvitationQueue implements InvitationQueuePort {
   private readonly log = new Logger('NoopInvitationQueue');
 
-  async enqueueDelivery(invitationId: string, _plaintextToken: string): Promise<void> {
-    this.log.debug({ invitationId }, 'noop_enqueue');
+  async enqueueDelivery(
+    invitationId: string,
+    tenantId: string,
+    _plaintextToken: string,
+  ): Promise<void> {
+    this.log.debug({ invitationId, tenantId }, 'noop_enqueue');
   }
 }

@@ -37,6 +37,19 @@ const MAINTENANCE_JOB = 'sweep';
 
 interface InvitationEmailJobData {
   invitationId: string;
+  /**
+   * Tenant the invitation belongs to. Threaded through the payload so
+   * the worker callbacks (`markEmailSent`, `markEmailFailed`,
+   * `rotateTokenForRescue`) can run under `runInTenant` instead of
+   * `runAsSuperAdmin` — closes a #56 follow-up (issue #115).
+   *
+   * Old-shape jobs queued before this field landed are tolerated:
+   * `runEmailJob` falls back to a privileged read for tenantId
+   * resolution when this field is absent. Pre-pilot we have no
+   * persistent queue volume; this fallback exists so a rolling deploy
+   * doesn't drop in-flight jobs.
+   */
+  tenantId?: string;
   /** Plaintext token — present only for the duration of the job. */
   plaintextToken: string;
 }
@@ -62,10 +75,14 @@ export class BullMqInvitationQueue
 
   // --- InvitationQueuePort -------------------------------------------
 
-  async enqueueDelivery(invitationId: string, plaintextToken: string): Promise<void> {
+  async enqueueDelivery(
+    invitationId: string,
+    tenantId: string,
+    plaintextToken: string,
+  ): Promise<void> {
     await this.emailQueue.add(
       'send',
-      { invitationId, plaintextToken },
+      { invitationId, tenantId, plaintextToken },
       {
         attempts: 5,
         backoff: { type: 'exponential', delay: 60_000 }, // 1m, 2m, 4m, 8m, 16m
@@ -95,9 +112,28 @@ export class BullMqInvitationQueue
       const attemptsAllowed = job?.opts?.attempts ?? 5;
       const terminal = attemptsMade >= attemptsAllowed;
       const invitationId = (job?.data)?.invitationId;
+      const tenantId = (job?.data)?.tenantId;
       if (!invitationId) return;
-      this.invitations
-        .markEmailFailed(invitationId, String(err?.message ?? err ?? 'unknown_error'), terminal)
+      // Resolve a tenantId for old-shape jobs that landed before #115.
+      const resolveTenantId = tenantId
+        ? Promise.resolve(tenantId)
+        : this.lookupTenantId(invitationId);
+      resolveTenantId
+        .then((tid) => {
+          if (!tid) {
+            this.log.warn(
+              { invitationId },
+              'markEmailFailed_skipped_missing_tenantid',
+            );
+            return undefined;
+          }
+          return this.invitations.markEmailFailed(
+            invitationId,
+            tid,
+            String(err?.message ?? err ?? 'unknown_error'),
+            terminal,
+          );
+        })
         .catch((markErr: unknown) =>
           this.log.warn({ invitationId, err: String(markErr) }, 'markEmailFailed_error'),
         );
@@ -139,19 +175,35 @@ export class BullMqInvitationQueue
 
   private async runEmailJob(job: Job<InvitationEmailJobData>): Promise<void> {
     const { invitationId, plaintextToken } = job.data;
-    const invitation = await this.prisma.runAsSuperAdmin(
-      (tx) =>
-        tx.invitation.findUnique({
-          where: { id: invitationId },
-          include: {
-            tenant: { select: { displayName: true, locale: true } },
-            invitedBy: { select: { displayName: true, email: true } },
-          },
-        }),
-      { reason: `invitation-email:load:${invitationId}` },
+
+    // tenantId rides in the payload now (#115). For backward compat
+    // with jobs queued by the prior shape (no rolling-deploy job loss),
+    // resolve it from the row when missing.
+    let tenantId = job.data.tenantId;
+    if (!tenantId) {
+      const fallback = await this.lookupTenantId(invitationId);
+      if (!fallback) {
+        this.log.warn({ invitationId }, 'invitation_missing_skipping');
+        return;
+      }
+      tenantId = fallback;
+      this.log.warn(
+        { invitationId, tenantId },
+        'invitation_email_legacy_payload_shape_resolved_tenantid',
+      );
+    }
+
+    const invitation = await this.prisma.runInTenant(tenantId, (tx) =>
+      tx.invitation.findUnique({
+        where: { id: invitationId },
+        include: {
+          tenant: { select: { displayName: true, locale: true } },
+          invitedBy: { select: { displayName: true, email: true } },
+        },
+      }),
     );
     if (!invitation) {
-      this.log.warn({ invitationId }, 'invitation_missing_skipping');
+      this.log.warn({ invitationId, tenantId }, 'invitation_missing_skipping');
       return;
     }
     if (invitation.revokedAt || invitation.acceptedAt) {
@@ -185,7 +237,27 @@ export class BullMqInvitationQueue
       html: rendered.html,
     });
 
-    await this.invitations.markEmailSent(invitation.id);
+    await this.invitations.markEmailSent(invitation.id, tenantId);
+  }
+
+  /**
+   * Cluster-wide invitation -> tenantId lookup. Used only as a fallback
+   * for legacy-shape BullMQ jobs that landed before #115 wired tenantId
+   * into the payload. The cross-tenant read justifies `runAsSuperAdmin`
+   * — same architectural escape pattern the inspection-maintenance
+   * sweep uses.
+   */
+  private async lookupTenantId(invitationId: string): Promise<string | null> {
+    return this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const row = await tx.invitation.findUnique({
+          where: { id: invitationId },
+          select: { tenantId: true },
+        });
+        return row?.tenantId ?? null;
+      },
+      { reason: `invitation-email:lookup-tenantid:${invitationId}` },
+    );
   }
 
   private async runMaintenance(): Promise<void> {
@@ -196,6 +268,10 @@ export class BullMqInvitationQueue
     // initial `queue.add` never landed (crash between tx commit and
     // enqueue). Only pick rows created more than 60s ago so we don't
     // race the happy-path enqueue in-flight.
+    // Cluster-wide rescue scan — legitimate cross-tenant read for the
+    // maintenance sweep, same architectural escape pattern as
+    // inspection-maintenance. Per-row rescue work below runs under
+    // `runInTenant` with the tenantId pulled out of this query.
     const stuck = await this.prisma.runAsSuperAdmin(
       (tx) =>
         tx.invitation.findMany({
@@ -207,7 +283,7 @@ export class BullMqInvitationQueue
             emailAttempts: 0,
             createdAt: { lt: new Date(Date.now() - 60_000) },
           },
-          select: { id: true },
+          select: { id: true, tenantId: true },
           take: 100,
         }),
       { reason: 'invitation-email:rescue-query' },
@@ -215,9 +291,9 @@ export class BullMqInvitationQueue
     let rescued = 0;
     for (const row of stuck) {
       try {
-        const rotated = await this.invitations.rotateTokenForRescue(row.id);
+        const rotated = await this.invitations.rotateTokenForRescue(row.id, row.tenantId);
         if (rotated) {
-          await this.enqueueDelivery(row.id, rotated.plaintext);
+          await this.enqueueDelivery(row.id, row.tenantId, rotated.plaintext);
           rescued++;
         }
       } catch (err) {
