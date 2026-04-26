@@ -123,6 +123,13 @@ jobs:
         env:
           PGPASSWORD: panorama
       - run: pnpm --filter @panorama/core-api prisma:generate
+      # Build workspace packages so vite/vitest can resolve them.
+      # @panorama/shared + migrator + i18n + ui-kit + plugin-sdk are
+      # all consumed by core-api tests; their tsc emits to `dist/`
+      # which package.json's `main`/`exports` point at. Without the
+      # build step vitest fails to resolve `@panorama/shared` at
+      # test-load time and 21 e2e files collect zero tests.
+      - run: pnpm --filter '!@panorama/core-api' --filter '!@panorama/web' build
       - run: pnpm --filter @panorama/core-api prisma:deploy
       - name: Apply RLS policies
         run: |
