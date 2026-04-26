@@ -53,11 +53,15 @@ export class AuthConfigService {
 
     const sessionSecret = process.env.SESSION_SECRET ?? '';
     if (sessionSecret.length < 32) {
-      const msg =
+      // Throw in EVERY environment, not just production. The previous
+      // dev-only fallback (`'dev-only-insecure-session-secret-replace-me-32b'`)
+      // turned into deterministic session forgery on any non-production
+      // environment carrying real tenant data — staging, UAT, even CI
+      // when NODE_ENV happened to differ from "production". SEC-03 / #35.
+      throw new Error(
         'SESSION_SECRET must be at least 32 characters. Generate with ' +
-        '`node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))"`';
-      if (isProduction) throw new Error(msg);
-      this.log.warn({ secretLength: sessionSecret.length }, msg);
+          '`node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))"`',
+      );
     }
 
     const providers: AuthConfig['providers'] = {};
@@ -89,7 +93,7 @@ export class AuthConfigService {
     }
 
     this.config = {
-      sessionSecret: sessionSecret || 'dev-only-insecure-session-secret-replace-me-32b',
+      sessionSecret,
       sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'panorama_session',
       oauthStateCookieName: process.env.OAUTH_STATE_COOKIE_NAME ?? 'panorama_oauth',
       sessionMaxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS ?? 60 * 60 * 24 * 7), // 7d
