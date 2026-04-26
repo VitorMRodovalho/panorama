@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
 import { apiGet } from '../../../lib/api';
 import { loadMessages } from '../../../lib/i18n';
@@ -11,8 +10,8 @@ import {
   completeInspectionAction,
   respondInspectionAction,
   reviewInspectionAction,
-  uploadPhotoAction,
 } from '../actions';
+import { PhotoUploader } from './photo-uploader';
 
 interface SnapshotItem {
   id: string;
@@ -213,11 +212,6 @@ export default async function InspectionDetailPage({
             canEdit={canEdit}
             messages={messages}
             justSaved={sp.saved === item.id}
-            // Per-render UUID — re-rendering generates a new key so a
-            // refresh-then-resubmit doesn't accidentally trigger
-            // upload_key_collision against the prior submit. The
-            // intent is "this render = this upload attempt".
-            uploadKey={randomUUID()}
           />
         ))}
 
@@ -298,14 +292,12 @@ function ItemCard({
   canEdit,
   messages,
   justSaved,
-  uploadKey,
 }: {
   item: SnapshotItem;
   inspectionId: string;
   canEdit: boolean;
   messages: { t: (key: string) => string };
   justSaved: boolean;
-  uploadKey: string;
 }): ReactNode {
   const showsPhotoUpload =
     canEdit && (item.itemType === 'PHOTO' || item.photoRequired);
@@ -396,34 +388,31 @@ function ItemCard({
       )}
 
       {showsPhotoUpload ? (
-        <form
-          action={uploadPhotoAction}
-          encType="multipart/form-data"
-          className="panorama-form-grid"
-          style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #334155' }}
-        >
-          <input type="hidden" name="inspectionId" value={inspectionId} />
-          <input type="hidden" name="clientUploadKey" value={uploadKey} />
-          <label style={{ gridColumn: '1 / -1' }}>
-            {messages.t('inspection.photo.upload')}
-            <input
-              type="file"
-              name="photo"
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-              required
-              className="panorama-input"
-            />
-          </label>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <button type="submit" className="panorama-button">
-              {messages.t('inspection.photo.upload')}
-            </button>
-            <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 8 }}>
-              JPEG/PNG/WebP/HEIC, max 10 MB. Server strips EXIF +
-              re-encodes before storing.
-            </span>
-          </div>
-        </form>
+        <PhotoUploader
+          inspectionId={inspectionId}
+          strings={{
+            upload: messages.t('inspection.photo.upload'),
+            uploading: messages.t('inspection.photo.uploading'),
+            cancel: messages.t('inspection.photo.cancel'),
+            retry: messages.t('inspection.photo.retry'),
+            aborted: messages.t('inspection.photo.upload_aborted'),
+            failed: messages.t('inspection.photo.upload_failed'),
+            pickFile: messages.t('inspection.photo.pick_file'),
+            pickFileFirst: messages.t('inspection.photo.pick_file_first'),
+            help: messages.t('inspection.photo.help'),
+            error: {
+              rateLimitedSeconds: messages.t('inspection.photo.error.rate_limited'),
+              rateLimited: messages.t('inspection.photo.error.rate_limited_no_seconds'),
+              tooLargePixels: messages.t('inspection.photo.error.too_large_pixels'),
+              unsupportedMediaType: messages.t('inspection.photo.error.unsupported_media_type'),
+              processingFailed: messages.t('inspection.photo.error.processing_failed'),
+              capReached: messages.t('inspection.photo.error.cap_reached'),
+              uploadKeyCollision: messages.t('inspection.photo.error.upload_key_collision'),
+              tooLarge: messages.t('inspection.photo.error.too_large'),
+              generic: messages.t('inspection.photo.error.generic'),
+            },
+          }}
+        />
       ) : null}
     </div>
   );
