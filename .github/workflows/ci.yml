@@ -137,6 +137,27 @@ jobs:
             echo "Applying $rls"
             PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f "$rls"
           done
+      # Diagnostic: confirm panorama_app role + GUC mechanics work end-to-end.
+      # If this prints a tenant uuid, RLS is fully wired. If it prints NULL or
+      # errors, the remaining test failures are CI-environment-specific
+      # postgres init drift that needs investigation. Logged as CI debug,
+      # not gating.
+      - name: Diagnostic — RLS GUC + panorama_app
+        run: |
+          set -euo pipefail
+          PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -c "
+            SELECT rolname, rolbypassrls, rolcanlogin
+              FROM pg_roles
+             WHERE rolname LIKE 'panorama%'
+             ORDER BY rolname;
+          "
+          PGPASSWORD=panorama psql -h localhost -U panorama_app -d panorama -v ON_ERROR_STOP=1 -c "
+            BEGIN;
+            SET LOCAL panorama.current_tenant = '11111111-1111-4111-8111-111111111111';
+            SELECT panorama_current_tenant() AS gut_check;
+            SELECT current_setting('panorama.current_tenant', true) AS guc_value;
+            COMMIT;
+          " || echo "panorama_app GUC diagnostic FAILED — investigate before relying on test signal"
       # Coverage instead of bare test — same surface, plus a v8 report.
       # See vitest.config.ts §coverage for the threshold floors. Floors
       # ratchet UP only (see CONTRIBUTING.md). Wave 2d.E / #70.
