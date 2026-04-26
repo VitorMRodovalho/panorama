@@ -55,65 +55,74 @@ or [`audit:wave-3`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Ais
 The **Community** edition is the reference implementation — everything in it must work
 end-to-end without Enterprise code. Enterprise is **additive**, never subtractive.
 
-## Feature pillars
+## Feature pillars — what's shipped vs. building vs. planned
 
-| Pillar | From Snipe-IT we keep | From FleetManager we keep | Panorama adds |
-|--------|-----------------------|---------------------------|---------------|
-| **Assets** | Hardware/License/Accessory/Consumable/Component/Kits, Categories, Manufacturers, Models, Suppliers, Status Labels, Custom Fields & Fieldsets, Asset lifecycle events, Depreciation, Acceptance / EULA | Vehicle-first model, VIN/plate duplicate check, per-company tag prefix | Unified `assetable` abstraction so any asset type can be bookable |
-| **Bookings**| — | Advance reservation with approval workflow, recurring reservations, blackouts, training compliance gating, VIP auto-approval, basket (multi-asset) booking | First-class calendar UX, conflict detection under `FOR UPDATE`, configurable approval matrices |
-| **Inspections**| — | Configurable checklist (Quick 4 / Full 50-item / Off), photo evidence, EXIF strip, pre/post comparison | Arbitrary checklists per asset type, signature capture, offline-first on mobile |
-| **Maintenance**| Asset maintenances | Maintenance flag at checkin, mileage/time-based alerts | Predictive alerts, per-asset-type schedules, vendor-side portal |
-| **People** | Users, Groups, Departments, Locations, Companies, Permissions | Driver training validity, OAuth-by-email sync | SCIM 2.0, IdP-driven group mapping, per-company RBAC matrix |
-| **Multi-tenancy**| Companies (row-level), per-company permission flag | Company-scoped vehicle/reservation filtering | Strict row-level tenancy at query layer + tenant-aware cache keys |
-| **Auth**| LDAP, SAML, Google/Microsoft OAuth, Passport API tokens, 2FA | OAuth-only for web, API token for CLI | OIDC, SAML, SCIM provisioning, per-IdP group mapping, WebAuthn, short-lived API keys |
-| **Notifications**| Email, Slack, Teams, Google Chat | SMTP + Teams per-event channels, overdue reminders, training expiry | Webhooks, PagerDuty, configurable event bus (`panorama.asset.checked_out`), queue-backed delivery |
-| **Reports**| 20+ built-ins, CSV export | Utilization, compliance, driver analytics | ReportTemplate 2.0: save-as-view, schedule, email; export CSV/XLSX/PDF |
-| **Labels/Barcodes**| QR + 1D barcode PDFs via TCPDF | — | Server-side SVG rendering, per-tenant templates |
-| **Importers**| CSV for every major entity | — | Idempotent CSV with dry-run preview, `panorama migrate-from-snipeit` CLI |
-| **API**| v1 REST (1,379 routes), Passport OAuth 2 tokens | — | REST + typed OpenAPI 3.1, GraphQL optional, webhooks with HMAC signatures |
-| **Observability**| Activity log, Spatie backups | Activity log, CRON health monitor | OpenTelemetry tracing, Prometheus metrics, structured JSON logs |
-| **i18n**| 50+ community translations | English only | First-class EN / PT-BR / ES, framework for contributors to add more |
+> Shipped = works end-to-end today. Building = in active development for 0.3.
+> Planned = on the roadmap (0.4+); cite the version next to the feature.
+
+| Pillar | Status (0.3-pre-pilot, 2026-04-26) |
+|--------|------------------------------------|
+| **Assets** | **Shipped:** core schema, Categories, Manufacturers, Models, tag prefix, vehicle fields. **Planned (0.4+):** Snipe-IT parity for Custom Fields & Fieldsets, Suppliers, Depreciation, Status Labels, Acceptance / EULA. |
+| **Bookings** | **Shipped:** advance reservation with approval workflow, basket (multi-asset), blackouts, conflict detection under `FOR UPDATE` SERIALIZABLE. **Building:** blackout management UI, overdue detection sweep + UI signal. **Planned (0.4+):** recurring reservations, training compliance gating, configurable approval matrices. |
+| **Inspections** | **Shipped:** configurable templates (per-tenant), photo evidence with EXIF strip, snapshot-based item versioning, FAIL-review workflow, photo retention sweep. **Planned (0.4+):** signature capture, offline-first on mobile, pre/post comparison. |
+| **Maintenance** | **Building:** manual ticket open / list / close + asset-status flip (ADR-0016 step 3+). **Planned (0.4+):** auto-suggest from FAIL inspection or damage flag, mileage/time-based PM alerts, vendor-side portal. |
+| **People** | **Shipped:** Users, TenantMembership with role + status, OIDC + email/password auth, invitation flow. **Planned (0.4+):** SCIM 2.0, IdP-driven group mapping. SAML/LDAP not on roadmap pre-1.0 — see `PILOT-SCOPE-LOCK-2026-04-26.md`. |
+| **Multi-tenancy** | **Shipped:** Postgres RLS at query layer, `panorama.current_tenant` GUC enforced via `runInTenant`, FORCE RLS on every tenant-scoped table, cross-tenant FK trigger. |
+| **Auth** | **Shipped:** OIDC (Google + Microsoft Entra) with `email_verified` gate + Workspace `hd` override, email/password with argon2id, Personal Access Tokens for Snipe-IT compat. **Planned (0.4+):** SAML, WebAuthn. |
+| **Notifications** | **Shipped:** internal event bus (`panorama.*.*`), per-event channel registry, hash-chained tamper-audit, invitation email channel. **Planned (0.4+):** Slack/Teams/PagerDuty connectors, webhook delivery with HMAC, reservation lifecycle emails. |
+| **Reports** | **Planned (0.4+):** save-as-view, schedule, email; CSV/XLSX/PDF export. Nothing shipped today. |
+| **Labels/Barcodes** | **Planned (0.4+):** server-side SVG rendering, per-tenant templates. Nothing shipped today. |
+| **Importers** | **Shipped:** CSV importer + `panorama-migrator` CLI for Snipe-IT API + SnipeScheduler-FleetManager MySQL dump → fixtures. |
+| **API** | **Shipped:** REST under NestJS, typed OpenAPI auto-generated, Snipe-IT compat shim with PAT auth. **Planned (0.4+):** webhooks with HMAC. GraphQL is **not** on the roadmap — REST + OpenAPI is the contract. |
+| **Observability** | **Shipped:** structured JSON logging via Pino, audit-event hash chain, vitest coverage threshold. **Planned (0.4+):** OpenTelemetry tracing, Prometheus metrics, slow-query baseline runner. |
+| **i18n** | **Shipped:** EN/PT-BR/ES framework + CI gate (every key must exist in all three locales). **Building:** ~80% of web strings still hardcoded English; the migration to fully-translated UI lands during pilot prep. |
 
 ## Architecture at a glance
 
 ```
-+--------------------+     +--------------------+     +-----------------+
-| apps/web (Next.js) |     | apps/admin (Next.js)|    | apps/mobile (RN)|
-+---------+----------+     +---------+----------+     +--------+--------+
-          |                           |                         |
-          +------------ REST + webhooks, OIDC session ----------+
++--------------------+
+| apps/web (Next.js) |   apps/admin and apps/mobile are 0.4+ — not yet
++---------+----------+   committed; the web app handles admin flows today.
+          |
+          +-------- REST + OIDC session, /api/* proxy --------+
                                     |
                        +------------v-------------+
-                       |   apps/core-api (NestJS) |
-                       |  domain modules + plugin  |
-                       |       SDK lifecycle       |
+                       |  apps/core-api (NestJS)  |
+                       |  domain modules + Prisma |
                        +------------+-------------+
                                     |
-      +-----------+------------+----+---------+-----------------+
-      |           |            |              |                 |
-   Postgres    Redis       Object Store    OpenSearch       Event bus
-   (Prisma)   (cache,      (photos,        (optional        (NATS JetStream
-              queues via    uploads,         full-text        or Redpanda)
-              BullMQ)       backups)         search)
+      +-----------+----------+------+------+---------------+
+      |           |          |             |               |
+   Postgres    Redis     Object Store   MailHog (dev)   BullMQ
+   (Prisma,   (rate-     (MinIO; S3       SMTP relay     (in-process,
+   RLS, GUC)  limits,     in prod)        outbound        Redis-backed)
+              queues)                     email)
 ```
+
+**OpenSearch + NATS / event bus + plugin SDK runtime** are 0.4+ targets,
+not shipped today. See `docs/audits/PILOT-SCOPE-LOCK-2026-04-26.md` for
+the explicit won't-ship-for-pilot list.
 
 Deployment topologies:
 
-- **Single-node Docker Compose** — comes out of the box; hobbyist/small team
-- **Kubernetes + Helm** — `infra/helm/panorama`; horizontal web + worker tiers, managed Postgres
-- **Terraform blueprints** for AWS/GCP/Azure managed Postgres + object store
+- **Single-node Docker Compose** — `infra/docker/compose.dev.yml` for dev,
+  `compose.prod.yml` for self-hosted. Shipped today.
+- **Supabase / managed Postgres** — design landed (ADR-0013 + 0015),
+  staging not yet provisioned. 0.3 deploy-prep work in progress.
+- **Kubernetes + Helm**, **Terraform blueprints** — 0.4+, not started.
 
-See [`docs/adr/0001-stack-choice.md`](./docs/adr/0001-stack-choice.md) for why NestJS + Next.js + Postgres + Prisma,
-and [`docs/architecture.md`](./docs/en/architecture.md) for the full write-up.
+See [`docs/adr/0001-stack-choice.md`](./docs/adr/0001-stack-choice.md) for the stack rationale,
+[`docs/adr/0013-staging-deploy-architecture.md`](./docs/adr/0013-staging-deploy-architecture.md) for deploy planning,
+and [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md) for the prioritised pre-pilot punch list.
 
 ## Getting started (dev)
 
 ```bash
-# Pre-req: Node 20+, pnpm 9+, Docker, Docker Compose v2
+# Pre-req: Node 22+, pnpm 9+, Docker, Docker Compose v2
 corepack enable
 pnpm install
 cp apps/core-api/.env.example apps/core-api/.env
-docker compose -f infra/docker/compose.dev.yml up -d postgres redis minio
+docker compose -f infra/docker/compose.dev.yml up -d
 pnpm --filter @panorama/core-api prisma migrate dev
 pnpm dev
 ```
@@ -121,9 +130,16 @@ pnpm dev
 Then:
 
 - Web app:  http://localhost:3000
-- Admin:    http://localhost:3001
 - Core API: http://localhost:4000
 - API docs: http://localhost:4000/api/docs (OpenAPI UI)
+- MailHog (dev SMTP):  http://localhost:8025
+- MinIO console (dev): http://localhost:9001 (credentials in `.env.example`)
+
+**Contributor security note:** if you use Cursor / Claude Desktop /
+any AI tool with MCP servers configured against this repo, read
+[`docs/runbooks/dev-environment-ai-tooling.md`](./docs/runbooks/dev-environment-ai-tooling.md)
+before running anything. The runbook lists the verified MCP server
+allowlist and the incident-response path.
 
 ## Migrating from Snipe-IT or SnipeScheduler-FleetManager
 
