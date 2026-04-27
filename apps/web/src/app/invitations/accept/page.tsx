@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { apiGet } from '../../../lib/api';
+import { apiGet } from '@/lib/api';
+import { loadMessages, resolveRequestLocale } from '@/lib/i18n';
 import { finalizeAcceptAction } from './actions';
 
 type AcceptancePreview =
@@ -28,8 +29,9 @@ interface AcceptPageProps {
 }
 
 /**
- * Server-rendered invitation acceptance page. Handles the four states
- * the core-api returns from GET /invitations/accept:
+ * Server-rendered invitation acceptance page (#44 UX-03 — locale-aware).
+ * Handles the four states the core-api returns from
+ * GET /invitations/accept:
  *
  *   ready           → render a confirm button that POSTs the token
  *   needs_login     → redirect to /login?invite_token=... with the email
@@ -40,19 +42,24 @@ interface AcceptPageProps {
  * The state machine lives on the server; the browser only sees the
  * rendered HTML + a single form POST for the ready → accepted
  * transition.
+ *
+ * Locale resolves from cookie → Accept-Language since the user may not
+ * be signed in yet (the `needs_login` branch redirects them through
+ * /login first).
  */
 export default async function InvitationAcceptPage({
   searchParams,
 }: AcceptPageProps): Promise<ReactNode> {
   const sp = await searchParams;
+  const locale = await resolveRequestLocale();
+  const messages = loadMessages(locale);
+
   const token = (sp.t ?? '').trim();
   if (!token) {
     return (
       <div className="panorama-login">
-        <h1>Invitation token missing</h1>
-        <p className="muted">
-          The invitation link is incomplete. Ask your admin to resend the invitation.
-        </p>
+        <h1>{messages.t('invitation.accept.token_missing.title')}</h1>
+        <p className="muted">{messages.t('invitation.accept.token_missing.body')}</p>
       </div>
     );
   }
@@ -63,8 +70,8 @@ export default async function InvitationAcceptPage({
   if (!preview.ok) {
     return (
       <div className="panorama-login">
-        <h1>Invitation could not be verified</h1>
-        <p className="muted">Panorama couldn't reach the invitation service. Please retry.</p>
+        <h1>{messages.t('invitation.accept.unverified.title')}</h1>
+        <p className="muted">{messages.t('invitation.accept.unverified.body')}</p>
       </div>
     );
   }
@@ -80,16 +87,10 @@ export default async function InvitationAcceptPage({
   if (data.state === 'invalid') {
     return (
       <div className="panorama-login">
-        <h1>{labelForInvalid(data.reason)}</h1>
-        <p className="muted">
-          {data.reason === 'expired' || data.reason === 'not_found'
-            ? 'Ask your admin for a new invitation.'
-            : data.reason === 'revoked'
-              ? 'This invitation was revoked by an admin.'
-              : 'This invitation has already been accepted — try signing in instead.'}
-        </p>
+        <h1>{messages.t(`invitation.accept.invalid.${data.reason}.title`)}</h1>
+        <p className="muted">{messages.t(`invitation.accept.invalid.${data.reason}.body`)}</p>
         <p className="panorama-login-link">
-          <a href="/login">Go to sign in</a>
+          <a href="/login">{messages.t('invitation.accept.go_to_signin')}</a>
         </p>
       </div>
     );
@@ -98,15 +99,17 @@ export default async function InvitationAcceptPage({
   if (data.state === 'email_mismatch') {
     return (
       <div className="panorama-login">
-        <h1>Wrong account for this invitation</h1>
+        <h1>{messages.t('invitation.accept.email_mismatch.title')}</h1>
         <p className="muted">
-          This invitation is for <strong>{data.invitationEmail}</strong>. You're signed in
-          as <strong>{data.sessionEmail}</strong>. Log out and try again with the invited
-          email — Panorama never auto-accepts an invitation for a different address.
+          {messages.t('invitation.accept.email_mismatch.body.prefix')}{' '}
+          <strong>{data.invitationEmail}</strong>
+          {messages.t('invitation.accept.email_mismatch.body.middle')}{' '}
+          <strong>{data.sessionEmail}</strong>
+          {messages.t('invitation.accept.email_mismatch.body.suffix')}
         </p>
         <form action="/api/auth/logout" method="post">
           <button type="submit" className="panorama-button" style={{ width: '100%' }}>
-            Log out
+            {messages.t('invitation.accept.email_mismatch.logout')}
           </button>
         </form>
       </div>
@@ -114,63 +117,43 @@ export default async function InvitationAcceptPage({
   }
 
   // state === 'ready'
+  const roleLabel = messages.t(`invitation.role.${data.role}`);
   return (
     <div className="panorama-login">
-      <h1>Join {data.tenantDisplayName}</h1>
+      <h1>
+        {messages.t('invitation.accept.ready.title', {
+          tenantName: data.tenantDisplayName,
+        })}
+      </h1>
       <p className="muted">
-        {data.inviterDisplayName} invited <strong>{data.email}</strong> to join{' '}
-        {data.tenantDisplayName} as <strong>{roleLabel(data.role)}</strong>.
+        {messages.t('invitation.accept.ready.body.prefix', {
+          inviter: data.inviterDisplayName,
+        })}{' '}
+        <strong>{data.email}</strong>{' '}
+        {messages.t('invitation.accept.ready.body.middle', {
+          tenantName: data.tenantDisplayName,
+        })}{' '}
+        <strong>{roleLabel}</strong>.
       </p>
       <div className="panorama-card">
         {sp.error ? (
-          <p className="panorama-error">{labelForFinalizeError(sp.error)}</p>
+          <p className="panorama-error">
+            {messages.t(
+              sp.error === 'email_mismatch'
+                ? 'invitation.accept.error.email_mismatch'
+                : sp.error === 'invalid'
+                  ? 'invitation.accept.error.invalid'
+                  : 'invitation.accept.error.generic',
+            )}
+          </p>
         ) : null}
         <form action={finalizeAcceptAction}>
           <input type="hidden" name="token" value={token} />
           <button type="submit" className="panorama-button" style={{ width: '100%' }}>
-            Accept invitation
+            {messages.t('invitation.accept.ready.button')}
           </button>
         </form>
       </div>
     </div>
   );
-}
-
-function labelForInvalid(reason: 'not_found' | 'expired' | 'revoked' | 'already_accepted'): string {
-  switch (reason) {
-    case 'expired':
-      return 'Invitation expired';
-    case 'revoked':
-      return 'Invitation revoked';
-    case 'already_accepted':
-      return 'Invitation already used';
-    case 'not_found':
-      return 'Invitation not found';
-  }
-}
-
-function labelForFinalizeError(error: string): string {
-  switch (error) {
-    case 'email_mismatch':
-      return 'The invitation email does not match your session.';
-    case 'invalid':
-      return 'This invitation is no longer valid.';
-    default:
-      return 'Could not accept the invitation. Please try again.';
-  }
-}
-
-function roleLabel(role: string): string {
-  switch (role) {
-    case 'owner':
-      return 'Owner';
-    case 'fleet_admin':
-      return 'Fleet administrator';
-    case 'fleet_staff':
-      return 'Fleet staff';
-    case 'driver':
-      return 'Driver';
-    default:
-      return role;
-  }
 }

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { cookies, headers } from 'next/headers';
 import enCommon from '@panorama/i18n/en/common.json';
 import ptBrCommon from '@panorama/i18n/pt-br/common.json';
 import esCommon from '@panorama/i18n/es/common.json';
@@ -44,6 +45,55 @@ export function normalizeLocale(raw: string | undefined | null): SupportedLocale
 export interface Messages {
   readonly locale: SupportedLocale;
   readonly t: (key: string, vars?: Record<string, string | number>) => string;
+}
+
+/**
+ * Resolve the locale for a pre-session page render — login, invitation
+ * acceptance, the bare root layout. Order of precedence:
+ *
+ *   1. `panorama_locale` cookie — set by the user explicitly via a
+ *      future locale switcher OR carried over from a previous
+ *      authenticated session (the AppShell can refresh it on render
+ *      so a logged-out timeout keeps the user's last-chosen locale).
+ *   2. `Accept-Language` header — Negotiate the first segment that
+ *      matches a supported locale. Browser default if the user hasn't
+ *      changed anything.
+ *   3. `'en'` — final fallback.
+ *
+ * Authenticated pages prefer `loadMessages(membership.tenantLocale)`
+ * because the tenant's chosen locale is more authoritative than the
+ * user's browser. This helper covers the gap before a session exists.
+ */
+export async function resolveRequestLocale(): Promise<SupportedLocale> {
+  const jar = await cookies();
+  const cookieLocale = jar.get('panorama_locale')?.value;
+  if (cookieLocale) {
+    return normalizeLocale(cookieLocale);
+  }
+  const hdrs = await headers();
+  const accept = hdrs.get('accept-language');
+  if (accept) {
+    // Take the first weighted segment whose tag normalises to a
+    // supported locale. Accept-Language is "en-US,en;q=0.9,pt-BR;q=0.8"
+    // — split on `,` and `;`, normalise each tag, return on first
+    // hit. No q-weight sort: callers should set their preferred
+    // language first in their browser, and falling back to header
+    // order is a reasonable approximation for the pre-login surface.
+    for (const part of accept.split(',')) {
+      const tag = part.split(';')[0]?.trim();
+      if (!tag) continue;
+      const normalized = normalizeLocale(tag);
+      // Only return if it's a real match (not the silent fallback).
+      if (
+        normalized === 'pt-br' ||
+        normalized === 'es' ||
+        tag.toLowerCase().startsWith('en')
+      ) {
+        return normalized;
+      }
+    }
+  }
+  return DEFAULT_LOCALE;
 }
 
 export function loadMessages(rawLocale: string | undefined | null): Messages {
