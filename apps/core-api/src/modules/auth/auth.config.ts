@@ -40,6 +40,16 @@ export interface AuthConfig {
     google?: OidcProviderConfig;
     microsoft?: OidcProviderConfig;
   };
+  /**
+   * Trusted scheme://host origins for the CSRF Origin/Referer gate
+   * (SEC-02 / #34). Lowercased and deduplicated. Always includes
+   * `baseUrl` so a single-origin deploy works with no extra config;
+   * `WEB_ORIGIN` adds split-origin entries (e.g. when web and api
+   * live on different hosts).
+   */
+  csrf: {
+    trustedOrigins: ReadonlySet<string>;
+  };
 }
 
 @Injectable()
@@ -92,15 +102,24 @@ export class AuthConfigService {
       };
     }
 
+    const baseUrl = (process.env.APP_BASE_URL ?? 'http://localhost:4000')
+      .replace(/\/+$/, '')
+      .toLowerCase();
+    const csrfOrigins = new Set<string>([baseUrl]);
+    for (const o of parseOriginList(process.env.WEB_ORIGIN)) {
+      csrfOrigins.add(o);
+    }
+
     this.config = {
       sessionSecret,
       sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'panorama_session',
       oauthStateCookieName: process.env.OAUTH_STATE_COOKIE_NAME ?? 'panorama_oauth',
       sessionMaxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS ?? 60 * 60 * 24 * 7), // 7d
       oauthStateMaxAgeSeconds: 5 * 60, // 5 min
-      baseUrl: (process.env.APP_BASE_URL ?? 'http://localhost:4000').replace(/\/+$/, ''),
+      baseUrl,
       isProduction,
       providers,
+      csrf: { trustedOrigins: csrfOrigins },
     };
   }
 
@@ -118,4 +137,17 @@ function parseDomainList(raw: string | undefined): string[] {
     .split(',')
     .map((d) => d.trim().toLowerCase())
     .filter((d) => d.length > 0);
+}
+
+/**
+ * Parse `WEB_ORIGIN` (comma-separated scheme://host list). Lowercased,
+ * trailing-slash-stripped, deduplicated. Mirrors `parseDomainList`'s
+ * shape so the codebase stays consistent on env-list parsing.
+ */
+function parseOriginList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase().replace(/\/+$/, ''))
+    .filter((s) => s.length > 0);
 }

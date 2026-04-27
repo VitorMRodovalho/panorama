@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { CsrfOriginMiddleware } from '../src/modules/auth/csrf-origin.middleware.js';
@@ -38,14 +38,20 @@ function makeReq(opts: {
 
 const noopRes = {} as Response;
 
-function makeMiddleware(envWebOrigin?: string): CsrfOriginMiddleware {
-  if (envWebOrigin === undefined) {
-    delete process.env.WEB_ORIGIN;
-  } else {
-    process.env.WEB_ORIGIN = envWebOrigin;
-  }
+/**
+ * Build a typed AuthConfigService stub. The middleware now consumes
+ * the parsed-and-deduped origin set from `cfg.config.csrf.trustedOrigins`
+ * (the env-parsing lives in auth.config.ts), so the test fixture
+ * mirrors that shape directly. Each entry should be lowercase +
+ * trailing-slash-stripped to match the real parser.
+ */
+function makeMiddleware(extraOrigins: string[] = []): CsrfOriginMiddleware {
+  const trustedOrigins = new Set<string>([
+    BASE_URL,
+    ...extraOrigins.map((o) => o.replace(/\/+$/, '').toLowerCase()),
+  ]);
   const cfg = {
-    config: { baseUrl: BASE_URL },
+    config: { baseUrl: BASE_URL, csrf: { trustedOrigins } },
   } as unknown as AuthConfigService;
   return new CsrfOriginMiddleware(cfg);
 }
@@ -65,7 +71,7 @@ describe('CsrfOriginMiddleware — origin allowlist', () => {
   let mw: CsrfOriginMiddleware;
 
   beforeEach(() => {
-    mw = makeMiddleware('http://localhost:3000');
+    mw = makeMiddleware(['http://localhost:3000']);
   });
 
   it('allows when both Origin and Referer are absent (server-to-server)', () => {
@@ -173,10 +179,12 @@ describe('CsrfOriginMiddleware — origin allowlist', () => {
 });
 
 describe('CsrfOriginMiddleware — multi-origin allowlist', () => {
-  it('parses comma-separated WEB_ORIGIN entries and trims whitespace', () => {
-    const mw = makeMiddleware(
-      ' http://localhost:3000 , https://staging.example.com , https://prod.example.com ',
-    );
+  it('accepts every entry from a multi-origin trusted set', () => {
+    const mw = makeMiddleware([
+      'http://localhost:3000',
+      'https://staging.example.com',
+      'https://prod.example.com',
+    ]);
     for (const allowed of [
       'http://localhost:3000',
       'https://staging.example.com',
@@ -195,11 +203,11 @@ describe('CsrfOriginMiddleware — multi-origin allowlist', () => {
     }
   });
 
-  it('strips trailing slashes when matching against WEB_ORIGIN entries', () => {
-    const mw = makeMiddleware('https://prod.example.com/');
+  it('matches case-insensitively (browsers normalise lowercase, but be paranoid)', () => {
+    const mw = makeMiddleware(['https://Prod.Example.Com']);
     let nextCalled = false;
     mw.use(
-      makeReq({ method: 'POST', origin: 'https://prod.example.com' }),
+      makeReq({ method: 'POST', origin: 'HTTPS://prod.example.com' }),
       noopRes,
       () => {
         nextCalled = true;
@@ -208,12 +216,29 @@ describe('CsrfOriginMiddleware — multi-origin allowlist', () => {
     expect(nextCalled).toBe(true);
   });
 
-  it('handles header arrays (some proxies duplicate headers)', () => {
-    const mw = makeMiddleware('http://localhost:3000');
+  it('rejects fail-closed when Origin shows up as a duplicate header', () => {
+    // RFC 6454 mandates exactly one Origin per request. A proxy
+    // concatenating duplicates would create a `[trusted, evil.com]`
+    // bypass if we picked `[0]` permissively. Fail-closed instead.
+    const mw = makeMiddleware(['http://localhost:3000']);
     const req = {
       method: 'POST',
       path: '/auth/login',
       headers: { origin: ['http://localhost:3000', 'http://evil.com'] },
+    } as unknown as Request;
+    expect(() =>
+      mw.use(req, noopRes, () => {
+        throw new Error('should not be called');
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('treats an empty Origin array as absent (server-to-server allowed)', () => {
+    const mw = makeMiddleware(['http://localhost:3000']);
+    const req = {
+      method: 'POST',
+      path: '/auth/login',
+      headers: { origin: [] as string[] },
     } as unknown as Request;
     let nextCalled = false;
     mw.use(req, noopRes, () => {
@@ -221,8 +246,4 @@ describe('CsrfOriginMiddleware — multi-origin allowlist', () => {
     });
     expect(nextCalled).toBe(true);
   });
-});
-
-afterEach(() => {
-  delete process.env.WEB_ORIGIN;
 });
