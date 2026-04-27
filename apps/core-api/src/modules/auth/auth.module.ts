@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, RequestMethod, type NestModule } from '@nes
 import { AuthConfigService } from './auth.config.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
+import { CsrfOriginMiddleware } from './csrf-origin.middleware.js';
 import { DiscoveryService } from './discovery.service.js';
 import { OidcService } from './oidc.service.js';
 import { PasswordService } from './password.service.js';
@@ -36,6 +37,7 @@ import { RedisModule } from '../redis/redis.module.js';
   providers: [
     AuthConfigService,
     AuthService,
+    CsrfOriginMiddleware,
     DiscoveryService,
     OidcService,
     PasswordService,
@@ -55,6 +57,13 @@ import { RedisModule } from '../redis/redis.module.js';
 })
 export class AuthModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    // CSRF Origin/Referer gate runs FIRST: a cross-origin POST gets
+    // rejected before we touch the session, the DB, or anything else.
+    // SEC-02 / #34 — pairs with the SameSite=Lax cookie set in
+    // session.service.ts. Documented in SECURITY.md §Hardening.
+    consumer
+      .apply(CsrfOriginMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
     // Every request runs through the session middleware so downstream
     // code never sees a request without a resolved tenant context.
     // `{ path: '*', method: RequestMethod.ALL }` is the ESM-safe form —
