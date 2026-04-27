@@ -24,6 +24,7 @@ interface NewInspectionPageProps {
     asset?: string;
     reservation?: string;
     error?: string;
+    errorItems?: string;
   }>;
 }
 
@@ -62,24 +63,28 @@ export default async function NewInspectionPage({
         </div>
 
         {sp.error ? (
-          <div className="panorama-banner-warning">{sp.error}</div>
+          <div className="panorama-banner-warning">
+            {messages.t(sp.error, sp.errorItems ? { items: sp.errorItems } : undefined)}
+          </div>
         ) : null}
 
         {assets.length === 0 ? (
           <div className="panorama-card">
-            No bookable assets available. Ask an admin to add one in <Link href="/assets">Assets</Link>.
+            {messages.t('inspection.new.no_bookable_assets.prefix')}{' '}
+            <Link href="/assets">{messages.t('nav.assets')}</Link>
+            {messages.t('inspection.new.no_bookable_assets.suffix')}
           </div>
         ) : (
           <form action={startInspectionAction} className="panorama-card panorama-form-grid">
             <label>
-              Asset
+              {messages.t('inspection.new.field.asset_label')}
               <select
                 name="assetId"
                 required
                 defaultValue={presetAsset}
                 className="panorama-select"
               >
-                <option value="">— pick an asset —</option>
+                <option value="">{messages.t('inspection.new.field.asset_placeholder')}</option>
                 {assets.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.tag} — {a.name}
@@ -98,13 +103,12 @@ export default async function NewInspectionPage({
                 {messages.t('inspection.start')}
               </button>
               <Link href="/inspections" className="panorama-button secondary">
-                Cancel
+                {messages.t('actions.cancel')}
               </Link>
             </div>
 
             <p style={{ gridColumn: '1 / -1', color: '#94a3b8', fontSize: 13, margin: '8px 0 0 0' }}>
-              Note: if you already have an inspection in progress on this asset, it'll be resumed.
-              Templates are picked automatically from the asset's category.
+              {messages.t('inspection.new.help')}
             </p>
           </form>
         )}

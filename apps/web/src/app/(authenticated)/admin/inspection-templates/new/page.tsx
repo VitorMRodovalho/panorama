@@ -19,6 +19,7 @@ interface CategoriesResponse {
 interface NewTemplatePageProps {
   searchParams: Promise<{
     error?: string;
+    errorItems?: string;
   }>;
 }
 
@@ -50,7 +51,7 @@ export default async function NewTemplatePage({
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   if (!ADMIN_ROLES.has(session.currentRole)) {
-    redirect('/inspections?error=' + encodeURIComponent('Admin role required.'));
+    redirect('/inspections?error=inspection.template.error.admin_role_required');
   }
 
   const tenantLocale =
@@ -68,33 +69,34 @@ export default async function NewTemplatePage({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h1 style={{ margin: 0 }}>{messages.t('inspection.template.create')}</h1>
           <Link href="/admin/inspection-templates" className="panorama-button secondary">
-            ← back
+            {messages.t('inspection.template.new.back')}
           </Link>
         </div>
 
         {sp.error ? (
-          <div className="panorama-banner-warning">{sp.error}</div>
+          <div className="panorama-banner-warning">
+            {messages.t(sp.error, sp.errorItems ? { items: sp.errorItems } : undefined)}
+          </div>
         ) : null}
 
         <form action={createTemplateAction} className="panorama-card panorama-form-grid">
           <label>
-            Name
+            {messages.t('inspection.template.new.field.name')}
             <input type="text" name="name" required maxLength={200} className="panorama-input" />
           </label>
           <label>
-            Display order
+            {messages.t('inspection.template.new.field.display_order')}
             <input type="number" name="displayOrder" defaultValue={0} min={0} className="panorama-input" />
           </label>
           <label style={{ gridColumn: '1 / -1' }}>
-            Description (optional)
+            {messages.t('inspection.template.new.field.description')}
             <input type="text" name="description" maxLength={1000} className="panorama-input" />
           </label>
 
           <fieldset style={{ gridColumn: '1 / -1', border: '1px solid #334155', padding: 12, borderRadius: 6 }}>
-            <legend>Scope</legend>
+            <legend>{messages.t('inspection.template.new.scope_legend')}</legend>
             <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 8px 0' }}>
-              Pick EITHER a category kind (template applies to every category of that kind) OR a
-              specific category (override). Not both.
+              {messages.t('inspection.template.new.scope_help')}
             </p>
             <label style={{ marginRight: 16 }}>
               <input type="radio" name="scope" value="kind" defaultChecked />
@@ -111,7 +113,7 @@ export default async function NewTemplatePage({
                 ))}
               </select>
               <select name="categoryId" defaultValue="" className="panorama-select">
-                <option value="">— pick a category —</option>
+                <option value="">{messages.t('inspection.template.new.field.category_placeholder')}</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({c.kind})
@@ -122,7 +124,7 @@ export default async function NewTemplatePage({
           </fieldset>
 
           <fieldset style={{ gridColumn: '1 / -1', border: '1px solid #334155', padding: 12, borderRadius: 6 }}>
-            <legend>Items (fill any subset; blank rows are ignored)</legend>
+            <legend>{messages.t('inspection.template.new.items_legend')}</legend>
             <table className="panorama-table">
               <thead>
                 <tr>
@@ -144,7 +146,11 @@ export default async function NewTemplatePage({
                         name={`items[${i}][label]`}
                         maxLength={200}
                         className="panorama-input"
-                        placeholder={i < 3 ? `e.g. Lights working?` : ''}
+                        placeholder={
+                          i < 3
+                            ? messages.t('inspection.template.new.item_label_placeholder')
+                            : ''
+                        }
                       />
                     </td>
                     <td>
@@ -185,8 +191,7 @@ export default async function NewTemplatePage({
               </tbody>
             </table>
             <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 8 }}>
-              0.3 ships fixed-{NUM_ITEM_SLOTS} item slots — need more? Archive + recreate, or use the
-              API directly. A dynamic add/remove UI is queued for 0.4 polish.
+              {messages.t('inspection.template.new.note_fixed_slots', { n: NUM_ITEM_SLOTS })}
             </p>
           </fieldset>
 
@@ -195,7 +200,7 @@ export default async function NewTemplatePage({
               {messages.t('inspection.template.create')}
             </button>
             <Link href="/admin/inspection-templates" className="panorama-button secondary">
-              Cancel
+              {messages.t('actions.cancel')}
             </Link>
           </div>
         </form>

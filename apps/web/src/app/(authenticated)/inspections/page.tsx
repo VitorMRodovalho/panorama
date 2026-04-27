@@ -44,6 +44,7 @@ interface InspectionsPageProps {
     outcome?: string;
     needsReview?: string;
     error?: string;
+    errorItems?: string;
     completed?: string;
     cancelled?: string;
   }>;
@@ -99,36 +100,38 @@ export default async function InspectionsPage({
         </div>
 
         {sp.error ? (
-          <div className="panorama-banner-warning">{sp.error}</div>
+          <div className="panorama-banner-warning">
+            {messages.t(sp.error, sp.errorItems ? { items: sp.errorItems } : undefined)}
+          </div>
         ) : null}
         {sp.completed ? (
-          <div className="panorama-banner-success">Inspection completed.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.completed')}</div>
         ) : null}
         {sp.cancelled ? (
-          <div className="panorama-banner-success">Inspection cancelled.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.cancelled')}</div>
         ) : null}
 
         <form method="GET" className="panorama-card" style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label>
-            Scope:&nbsp;
+            {messages.t('inspection.list.filter.scope_label')}&nbsp;
             <select name="scope" defaultValue={scope} className="panorama-select">
               <option value="mine">{messages.t('inspection.list.filter.scope_mine')}</option>
               {isAdmin ? <option value="tenant">{messages.t('inspection.list.filter.scope_tenant')}</option> : null}
             </select>
           </label>
           <label>
-            Status:&nbsp;
+            {messages.t('inspection.list.filter.status_label')}&nbsp;
             <select name="status" defaultValue={status} className="panorama-select">
-              <option value="all">All</option>
+              <option value="all">{messages.t('common.all')}</option>
               <option value="IN_PROGRESS">{messages.t('inspection.status.IN_PROGRESS')}</option>
               <option value="COMPLETED">{messages.t('inspection.status.COMPLETED')}</option>
               <option value="CANCELLED">{messages.t('inspection.status.CANCELLED')}</option>
             </select>
           </label>
           <label>
-            Outcome:&nbsp;
+            {messages.t('inspection.list.filter.outcome_label')}&nbsp;
             <select name="outcome" defaultValue={outcome} className="panorama-select">
-              <option value="all">All</option>
+              <option value="all">{messages.t('common.all')}</option>
               <option value="PASS">{messages.t('inspection.outcome.PASS')}</option>
               <option value="FAIL">{messages.t('inspection.outcome.FAIL')}</option>
               <option value="NEEDS_MAINTENANCE">{messages.t('inspection.outcome.NEEDS_MAINTENANCE')}</option>
@@ -140,7 +143,7 @@ export default async function InspectionsPage({
               &nbsp;{messages.t('inspection.list.filter.needs_review')}
             </label>
           ) : null}
-          <button type="submit" className="panorama-button secondary">Filter</button>
+          <button type="submit" className="panorama-button secondary">{messages.t('actions.filter')}</button>
         </form>
 
         {items.length === 0 ? (
@@ -150,12 +153,12 @@ export default async function InspectionsPage({
             <table className="panorama-table">
               <thead>
                 <tr>
-                  <th>Asset</th>
-                  <th>Started</th>
-                  <th>Status</th>
-                  <th>Outcome</th>
-                  <th>Reviewed</th>
-                  <th>Note</th>
+                  <th>{messages.t('inspection.list.column.asset')}</th>
+                  <th>{messages.t('inspection.list.column.started')}</th>
+                  <th>{messages.t('inspection.list.column.status')}</th>
+                  <th>{messages.t('inspection.list.column.outcome')}</th>
+                  <th>{messages.t('inspection.list.column.reviewed')}</th>
+                  <th>{messages.t('inspection.list.column.note')}</th>
                   <th />
                 </tr>
               </thead>
@@ -165,7 +168,7 @@ export default async function InspectionsPage({
                   return (
                     <tr key={row.id}>
                       <td>{asset ? `${asset.tag} — ${asset.name}` : row.assetId.slice(0, 8)}</td>
-                      <td>{new Date(row.startedAt).toLocaleString()}</td>
+                      <td>{new Date(row.startedAt).toLocaleString(messages.locale)}</td>
                       <td>
                         <span className="panorama-pill">{messages.t(`inspection.status.${row.status}`)}</span>
                       </td>
@@ -187,13 +190,13 @@ export default async function InspectionsPage({
                           '—'
                         )}
                       </td>
-                      <td>{row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString() : '—'}</td>
+                      <td>{row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString(messages.locale) : '—'}</td>
                       <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row.summaryNote ?? row.reviewNote ?? '—'}
                       </td>
                       <td>
                         <Link href={`/inspections/${row.id}`} className="panorama-button secondary">
-                          Open
+                          {messages.t('actions.open')}
                         </Link>
                       </td>
                     </tr>

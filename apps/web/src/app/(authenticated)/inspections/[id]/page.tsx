@@ -64,6 +64,7 @@ interface InspectionDetailPageProps {
   params: Promise<{ id: string }>;
   searchParams: Promise<{
     error?: string;
+    errorItems?: string;
     saved?: string;
     resumed?: string;
     reviewed?: string;
@@ -88,7 +89,7 @@ export default async function InspectionDetailPage({
 
   const inspectionRes = await apiGet<InspectionDetail>(`/inspections/${p.id}`);
   if (!inspectionRes.ok) {
-    redirect(`/inspections?error=${encodeURIComponent('Inspection not found.')}`);
+    redirect('/inspections?error=inspection.error.inspection_not_found');
   }
   const inspection = inspectionRes.data;
   const isStarter = inspection.startedByUserId === session.userId;
@@ -132,15 +133,15 @@ export default async function InspectionDetailPage({
 
         <div className="panorama-card" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span><strong>Asset:</strong> {asset ? `${asset.tag} — ${asset.name}` : inspection.assetId.slice(0, 8)}</span>
-            <span><strong>Started:</strong> {new Date(inspection.startedAt).toLocaleString()}</span>
+            <span><strong>{messages.t('inspection.detail.label.asset')}</strong> {asset ? `${asset.tag} — ${asset.name}` : inspection.assetId.slice(0, 8)}</span>
+            <span><strong>{messages.t('inspection.detail.label.started')}</strong> {new Date(inspection.startedAt).toLocaleString(messages.locale)}</span>
             <span>
-              <strong>Status:</strong>{' '}
+              <strong>{messages.t('inspection.detail.label.status')}</strong>{' '}
               <span className="panorama-pill">{messages.t(`inspection.status.${inspection.status}`)}</span>
             </span>
             {inspection.outcome ? (
               <span>
-                <strong>Outcome:</strong>{' '}
+                <strong>{messages.t('inspection.detail.label.outcome')}</strong>{' '}
                 <span
                   className="panorama-pill"
                   style={
@@ -157,24 +158,28 @@ export default async function InspectionDetailPage({
             ) : null}
             {inspection.reservationId ? (
               <Link href={`/reservations`} style={{ color: '#7dd3fc' }}>
-                Linked reservation
+                {messages.t('inspection.detail.linked_reservation')}
               </Link>
             ) : null}
           </div>
         </div>
 
-        {sp.error ? <div className="panorama-banner-warning">{sp.error}</div> : null}
+        {sp.error ? (
+          <div className="panorama-banner-warning">
+            {messages.t(sp.error, sp.errorItems ? { items: sp.errorItems } : undefined)}
+          </div>
+        ) : null}
         {sp.resumed ? (
-          <div className="panorama-banner-success">Resumed your in-progress inspection.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.resumed')}</div>
         ) : null}
         {sp.saved ? (
-          <div className="panorama-banner-success">Item saved.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.item_saved')}</div>
         ) : null}
         {sp.reviewed ? (
-          <div className="panorama-banner-success">Inspection reviewed.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.reviewed')}</div>
         ) : null}
         {sp.photo === 'ok' ? (
-          <div className="panorama-banner-success">Photo uploaded.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.banner.photo_uploaded')}</div>
         ) : null}
 
         {snapshotDiverged ? (
@@ -183,7 +188,7 @@ export default async function InspectionDetailPage({
           </div>
         ) : null}
 
-        <h2 style={{ margin: '16px 0 8px 0', fontSize: 18 }}>Items</h2>
+        <h2 style={{ margin: '16px 0 8px 0', fontSize: 18 }}>{messages.t('inspection.detail.items_heading')}</h2>
         {inspection.templateSnapshot.items.map((item) => (
           <ItemCard
             key={item.id}
@@ -203,7 +208,7 @@ export default async function InspectionDetailPage({
               <label>
                 {messages.t('inspection.outcome')}
                 <select name="outcome" required className="panorama-select">
-                  <option value="">— pick —</option>
+                  <option value="">{messages.t('inspection.detail.outcome_pick_placeholder')}</option>
                   <option value="PASS">{messages.t('inspection.outcome.PASS')}</option>
                   <option value="FAIL">{messages.t('inspection.outcome.FAIL')}</option>
                   <option value="NEEDS_MAINTENANCE">
@@ -255,7 +260,8 @@ export default async function InspectionDetailPage({
 
         {inspection.reviewedAt ? (
           <div className="panorama-card" style={{ marginTop: 16 }}>
-            <strong>Reviewed</strong> {new Date(inspection.reviewedAt).toLocaleString()}
+            <strong>{messages.t('inspection.detail.reviewed_label')}</strong>{' '}
+            {new Date(inspection.reviewedAt).toLocaleString(messages.locale)}
             {inspection.reviewNote ? (
               <p style={{ margin: '8px 0 0 0' }}>{inspection.reviewNote}</p>
             ) : null}
@@ -294,7 +300,7 @@ function ItemCard({
             </span>
           ) : null}
         </h3>
-        {justSaved ? <span style={{ color: '#7dd3fc' }}>✓ saved</span> : null}
+        {justSaved ? <span style={{ color: '#7dd3fc' }}>{messages.t('inspection.detail.just_saved')}</span> : null}
       </div>
       {item.helpText ? (
         <p style={{ color: '#94a3b8', fontSize: 13, margin: '4px 0 8px 0' }}>{item.helpText}</p>
@@ -309,9 +315,9 @@ function ItemCard({
           {item.itemType === 'BOOLEAN' ? (
             <label>
               <select name="booleanValue" required defaultValue="" className="panorama-select">
-                <option value="">— pick —</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
+                <option value="">{messages.t('inspection.detail.boolean_pick_placeholder')}</option>
+                <option value="true">{messages.t('common.yes')}</option>
+                <option value="false">{messages.t('common.no')}</option>
               </select>
             </label>
           ) : null}
@@ -355,14 +361,14 @@ function ItemCard({
           {item.itemType !== 'PHOTO' ? (
             <div style={{ gridColumn: '1 / -1' }}>
               <button type="submit" className="panorama-button secondary">
-                Save
+                {messages.t('actions.save')}
               </button>
             </div>
           ) : null}
         </form>
       ) : (
         <p style={{ color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
-          (read-only — inspection is not in progress)
+          {messages.t('inspection.detail.read_only')}
         </p>
       )}
 

@@ -60,20 +60,26 @@ function parseItems(formData: FormData): TemplateItemInput[] {
   return items;
 }
 
-function fmtError(raw: string): string {
+/**
+ * Map raw API error strings to i18n keys (resolved client-side via
+ * `messages.t`). Same pattern as inspections / reservations / blackouts /
+ * invitations actions.
+ */
+function fmtErrorKey(raw: string): string {
   const e = raw.toLowerCase();
   if (e.includes('category_scope_must_be_kind_xor_id'))
-    return 'Pick exactly one scope: either a category kind OR a specific category, not both.';
-  if (e.includes('items_min_1')) return 'Add at least one item.';
-  if (e.includes('items_max_50')) return 'Max 50 items per template.';
+    return 'inspection.template.error.category_scope_must_be_kind_xor_id';
+  if (e.includes('items_min_1')) return 'inspection.template.error.items_min_1';
+  if (e.includes('items_max_50')) return 'inspection.template.error.items_max_50';
   if (e.includes('numeric_bounds_only_for_number'))
-    return 'Min/max bounds only apply to NUMBER items.';
-  if (e.includes('minvalue_must_be_le_maxvalue')) return 'Min must be ≤ Max.';
-  if (e.includes('inspection_template_archived')) return 'This template is archived.';
-  if (e.includes('inspection_template_not_found')) return 'Template not found.';
-  if (e.includes('admin_role_required')) return 'Admin role required.';
-  if (e.includes('category_not_found')) return 'Category not found in this tenant.';
-  return raw;
+    return 'inspection.template.error.numeric_bounds_only_for_number';
+  if (e.includes('minvalue_must_be_le_maxvalue'))
+    return 'inspection.template.error.minvalue_must_be_le_maxvalue';
+  if (e.includes('inspection_template_archived')) return 'inspection.template.error.archived';
+  if (e.includes('inspection_template_not_found')) return 'inspection.template.error.not_found';
+  if (e.includes('admin_role_required')) return 'inspection.template.error.admin_role_required';
+  if (e.includes('category_not_found')) return 'inspection.template.error.category_not_found';
+  return 'inspection.template.error.generic';
 }
 
 // ---------------------------------------------------------------------
@@ -91,13 +97,13 @@ export async function createTemplateAction(formData: FormData): Promise<void> {
   const items = parseItems(formData);
 
   if (!name) {
-    redirect('/admin/inspection-templates/new?error=' + encodeURIComponent('Name is required.'));
+    redirect('/admin/inspection-templates/new?error=inspection.template.error.name_required');
   }
   if (items.length === 0) {
-    redirect('/admin/inspection-templates/new?error=' + encodeURIComponent('Add at least one item.'));
+    redirect('/admin/inspection-templates/new?error=inspection.template.error.items_min_1');
   }
   if (!categoryKind && !categoryId) {
-    redirect('/admin/inspection-templates/new?error=' + encodeURIComponent('Pick a scope.'));
+    redirect('/admin/inspection-templates/new?error=inspection.template.error.pick_scope');
   }
 
   const body: Record<string, unknown> = {
@@ -122,7 +128,7 @@ export async function createTemplateAction(formData: FormData): Promise<void> {
   const payload = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
   redirect(
     '/admin/inspection-templates/new?error=' +
-      encodeURIComponent(fmtError(payload.message ?? 'error')),
+      encodeURIComponent(fmtErrorKey(payload.message ?? 'error')),
   );
 }
 
@@ -145,6 +151,6 @@ export async function archiveTemplateAction(formData: FormData): Promise<void> {
   }
   const payload = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
   redirect(
-    '/admin/inspection-templates?error=' + encodeURIComponent(fmtError(payload.message ?? 'error')),
+    '/admin/inspection-templates?error=' + encodeURIComponent(fmtErrorKey(payload.message ?? 'error')),
   );
 }
