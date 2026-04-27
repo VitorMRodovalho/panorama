@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet } from '../../../../lib/api';
-import { loadMessages } from '../../../../lib/i18n';
-import { getCurrentSession } from '../../../../lib/session';
-import { logoutAction } from '../../../login/actions';
+import { apiGet } from '@/lib/api';
+import { loadMessages } from '@/lib/i18n';
+import { getCurrentSession } from '@/lib/session';
 import { createTemplateAction } from '../actions';
 
 interface CategorySlim {
@@ -66,25 +65,6 @@ export default async function NewTemplatePage({
 
   return (
     <>
-      <header className="panorama-header">
-        <div>
-          <strong>Panorama</strong>
-          <span className="panorama-pill">
-            {session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantDisplayName ??
-              'Unknown tenant'}
-          </span>
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName} <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">Logout</button>
-          </form>
-        </div>
-      </header>
-
-      <section className="panorama-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h1 style={{ margin: 0 }}>{messages.t('inspection.template.create')}</h1>
           <Link href="/admin/inspection-templates" className="panorama-button secondary">
@@ -219,7 +199,6 @@ export default async function NewTemplatePage({
             </Link>
           </div>
         </form>
-      </section>
     </>
   );
 }

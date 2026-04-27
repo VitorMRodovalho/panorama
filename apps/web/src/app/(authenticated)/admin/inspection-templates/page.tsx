@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet } from '../../../lib/api';
-import { loadMessages } from '../../../lib/i18n';
-import { getCurrentSession } from '../../../lib/session';
-import { logoutAction } from '../../login/actions';
+import { apiGet } from '@/lib/api';
+import { loadMessages } from '@/lib/i18n';
+import { getCurrentSession } from '@/lib/session';
 import { archiveTemplateAction } from './actions';
 
 interface TemplateRow {
@@ -56,25 +55,6 @@ export default async function AdminTemplatesPage({
 
   return (
     <>
-      <header className="panorama-header">
-        <div>
-          <strong>Panorama</strong>
-          <span className="panorama-pill">
-            {session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantDisplayName ??
-              'Unknown tenant'}
-          </span>
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName} <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">Logout</button>
-          </form>
-        </div>
-      </header>
-
-      <section className="panorama-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h1 style={{ margin: 0 }}>Inspection templates</h1>
           <div>
@@ -185,7 +165,6 @@ export default async function AdminTemplatesPage({
           Edit isn't shipped in 0.3 — to change a template, archive it and create a new one. Existing
           inspections preserve their snapshot regardless (ADR-0012 §2).
         </p>
-      </section>
     </>
   );
 }

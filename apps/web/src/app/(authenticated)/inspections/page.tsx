@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet } from '../../lib/api';
-import { loadMessages } from '../../lib/i18n';
-import { getCurrentSession } from '../../lib/session';
-import { logoutAction, switchTenantAction } from '../login/actions';
+import { apiGet } from '@/lib/api';
+import { loadMessages } from '@/lib/i18n';
+import { getCurrentSession } from '@/lib/session';
 
 interface InspectionRow {
   id: string;
@@ -90,53 +89,9 @@ export default async function InspectionsPage({
 
   return (
     <>
-      <header className="panorama-header">
-        <div>
-          <strong>Panorama</strong>
-          <span className="panorama-pill">
-            {session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantDisplayName ??
-              'Unknown tenant'}
-          </span>
-          {session.memberships.length > 1 ? (
-            <form action={switchTenantAction} style={{ display: 'inline-block', marginLeft: 12 }}>
-              <select className="panorama-select" name="tenantId" defaultValue={session.currentTenantId}>
-                {session.memberships.map((m) => (
-                  <option key={m.tenantId} value={m.tenantId}>
-                    {m.tenantDisplayName} · {m.role}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" className="panorama-button secondary" style={{ marginLeft: 6 }}>
-                Switch
-              </button>
-            </form>
-          ) : null}
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName} <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">
-              Logout
-            </button>
-          </form>
-        </div>
-      </header>
-
-      <section className="panorama-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h1 style={{ margin: 0 }}>{messages.t('nav.inspections')}</h1>
           <div>
-            <Link href="/assets" className="panorama-button secondary" style={{ marginRight: 8 }}>
-              {messages.t('nav.assets')}
-            </Link>
-            <Link href="/reservations" className="panorama-button secondary" style={{ marginRight: 8 }}>
-              {messages.t('nav.bookings')}
-            </Link>
-            <Link href="/maintenance" className="panorama-button secondary" style={{ marginRight: 8 }}>
-              {messages.t('nav.maintenance')}
-            </Link>
             <Link href="/inspections/new" className="panorama-button">
               {messages.t('inspection.start')}
             </Link>
@@ -248,7 +203,6 @@ export default async function InspectionsPage({
             </table>
           </div>
         )}
-      </section>
     </>
   );
 }

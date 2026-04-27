@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet } from '../../../lib/api';
-import { loadMessages } from '../../../lib/i18n';
-import { getCurrentSession } from '../../../lib/session';
-import { logoutAction } from '../../login/actions';
+import { apiGet } from '@/lib/api';
+import { loadMessages } from '@/lib/i18n';
+import { getCurrentSession } from '@/lib/session';
 import {
   cancelMaintenanceAction,
   completeMaintenanceAction,
@@ -97,30 +96,8 @@ export default async function MaintenanceDetailPage({
   const canTransitionFromOpenOrInProgress = isAdmin || isAssignee;
   const canCancel = isAdmin;
 
-  const currentTenantName =
-    session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantDisplayName ??
-    'Unknown tenant';
-
   return (
     <>
-      <header className="panorama-header">
-        <div>
-          <strong>Panorama</strong>
-          <span className="panorama-pill">{currentTenantName}</span>
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName} <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">
-              Logout
-            </button>
-          </form>
-        </div>
-      </header>
-
-      <section className="panorama-content">
         <div style={{ marginBottom: 8 }}>
           <Link href="/maintenance" className="panorama-button secondary">
             ← {messages.t('maintenance.list.title')}
@@ -463,7 +440,6 @@ export default async function MaintenanceDetailPage({
             ) : null}
           </div>
         ) : null}
-      </section>
     </>
   );
 }

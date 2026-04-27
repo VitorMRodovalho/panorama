@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { apiGet } from '../../lib/api';
-import { loadMessages } from '../../lib/i18n';
-import { getCurrentSession } from '../../lib/session';
-import { logoutAction, switchTenantAction } from '../login/actions';
+import { apiGet } from '@/lib/api';
+import { loadMessages } from '@/lib/i18n';
+import { getCurrentSession } from '@/lib/session';
 import {
   approveBasketAction,
   approveReservationAction,
@@ -139,58 +138,6 @@ export default async function ReservationsPage({
 
   return (
     <>
-      <header className="panorama-header">
-        <div>
-          <strong>Panorama</strong>
-          <span className="panorama-pill">
-            {session.memberships.find((m) => m.tenantId === session.currentTenantId)
-              ?.tenantDisplayName ?? 'Unknown tenant'}
-          </span>
-          {session.memberships.length > 1 ? (
-            <form action={switchTenantAction} style={{ display: 'inline-block', marginLeft: 12 }}>
-              <select
-                className="panorama-select"
-                name="tenantId"
-                defaultValue={session.currentTenantId}
-              >
-                {session.memberships.map((m) => (
-                  <option key={m.tenantId} value={m.tenantId}>
-                    {m.tenantDisplayName} · {m.role}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" className="panorama-button secondary" style={{ marginLeft: 6 }}>
-                Switch
-              </button>
-            </form>
-          ) : null}
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName}{' '}
-            <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
-
-      <section className="panorama-content">
-        <nav style={{ marginBottom: 16, display: 'flex', gap: 8, fontSize: 14 }}>
-          <Link href="/assets">Assets</Link>
-          <span>·</span>
-          <strong>Reservations</strong>
-          <span>·</span>
-          <Link href="/reservations/calendar">Calendar</Link>
-          <span>·</span>
-          <Link href="/inspections">Inspections</Link>
-          <span>·</span>
-          <Link href="/maintenance">Maintenance</Link>
-        </nav>
-
         {sp.error ? (
           <div className="panorama-banner-warning">{sp.error}</div>
         ) : null}
@@ -735,7 +682,6 @@ export default async function ReservationsPage({
             </table>
           )}
         </div>
-      </section>
     </>
   );
 }
