@@ -39,10 +39,14 @@ program
   .option('--page-size <n>', 'Page size for paginated endpoints', (v) => parseInt(v, 10), 100)
   .action(async (opts: InventoryOpts) => {
     try {
+      // `exactOptionalPropertyTypes: true` (tsconfig.base) refuses
+      // `{ out: undefined }` for a `{ out?: string }` parameter; spread
+      // only when defined so the optional/missing distinction stays
+      // crisp at the call site.
       await runInventory({
         snipeitUrl: opts.snipeitUrl,
         snipeitToken: opts.snipeitToken,
-        out: opts.out,
+        ...(opts.out !== undefined ? { out: opts.out } : {}),
         pageSize: opts.pageSize,
       });
     } catch (err) {
@@ -65,7 +69,9 @@ program
       await runMigrate({
         snipeitUrl: opts.snipeitUrl,
         snipeitToken: opts.snipeitToken,
-        fleetmanagerDump: opts.fleetmanagerDump,
+        ...(opts.fleetmanagerDump !== undefined
+          ? { fleetmanagerDump: opts.fleetmanagerDump }
+          : {}),
         out: opts.out,
         dryRun: opts.dryRun,
         pageSize: opts.pageSize,
