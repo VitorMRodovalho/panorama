@@ -18,7 +18,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { Inspection, InspectionOutcome } from '@prisma/client';
+import type { Inspection } from '@prisma/client';
 // `Prisma.sql` + `Prisma.join` build parameterised raw SQL — needed
 // for the respond batch-upsert hot path (#62 / PERF-03).
 import { Prisma } from '@prisma/client';

@@ -1,18 +1,17 @@
 // ESLint flat config for @panorama/core-api (Wave 2d.A / #66 /
-// extends Wave 1 #39).
+// extends Wave 1 #39, ratcheted in #101).
 //
 // Strategy:
 //   - typescript-eslint `recommendedTypeChecked` as the baseline.
-//   - Real-bug catches as `error` — these surface concrete defects
-//     not stylistic preferences.
-//   - Stylistic / "this might be unsound" rules as `warn` initially
-//     so the lint job can land without churning every file. Ratchet
-//     to `error` in follow-up PRs.
+//   - Real-bug catches AND the no-unsafe-* family + `no-explicit-any`
+//     + `no-unused-vars` at `error`. The historical permissive
+//     surface (off-not-warn) was burned down in #101 — every member
+//     of that group now blocks merge.
+//   - Tests relax all of those (partial mocks the type system can't
+//     prove safe; setup-and-discard fixtures common in cross-tenant
+//     cases).
 //   - `--max-warnings=0` (set on the CLI side) makes every warning
-//     a CI fail in steady state — the moment a contributor can't
-//     ignore the warning, it stops accumulating.
-//   - Tests relax `no-unsafe-*` (they construct lots of partial
-//     mocks that the type system can't prove safe).
+//     a CI fail in steady state.
 
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -52,21 +51,29 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/await-thenable': 'error',
       '@typescript-eslint/no-for-in-array': 'error',
-      // Permissive (off, not warn) — large pre-existing surface and
-      // CI uses --max-warnings=0. Ratchet to warn → error in
-      // follow-up cleanup PRs scoped per-module so the ratchet can
-      // bisect cleanly. Tracking issue: TBD.
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-call': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      // Allow `_unused` parameter convention (Nest decorators often
-      // require unused-but-typed params). Off in src for the same
-      // reason as above; the typecheck still flags genuinely-dead
-      // identifiers via `noUnusedLocals` in tsconfig if enabled.
-      '@typescript-eslint/no-unused-vars': 'off',
+      // no-unsafe-* family ratcheted to error in #101. Boundaries
+      // with `unknown`-typed third-party returns (nodemailer, JSON
+      // parse, commander opts) need an explicit cast at the call
+      // site rather than disabling the rule. `no-explicit-any` is
+      // included in the same ratchet — src is clean today; tests
+      // relax for partial-mock shapes.
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-call': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+      // `_`-prefixed identifiers are intentional (Nest decorators
+      // often require unused-but-typed params; some signatures
+      // accept arguments they don't consume).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       // NestJS lifecycle hooks (`onModuleInit`, `onModuleDestroy`)
       // and controller handlers are async by framework contract
       // even when their body needs no await. False-positive density

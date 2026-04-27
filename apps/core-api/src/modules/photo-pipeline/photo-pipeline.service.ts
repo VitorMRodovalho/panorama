@@ -266,11 +266,15 @@ function collectMetadataFieldNames(md: sharp.Metadata): string[] {
   // Catch-all: anything sharp surfaces that isn't a pixel-only
   // property is treated as a metadata block. Forces `exifStripped=true`
   // when an unknown future block ships through.
-  for (const [key, value] of Object.entries(md)) {
+  for (const [key, value] of Object.entries(md) as [string, unknown][]) {
     if (KNOWN_PIXEL_PROPERTIES.has(key)) continue;
     if (value === undefined || value === null) continue;
     if (Buffer.isBuffer(value) && value.length === 0) continue;
-    if (typeof value === 'object' && !Buffer.isBuffer(value) && Object.keys(value).length === 0)
+    if (
+      typeof value === 'object' &&
+      !Buffer.isBuffer(value) &&
+      Object.keys(value).length === 0
+    )
       continue;
     names.add(`unknown:${key}`);
   }

@@ -18,7 +18,7 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { InspectionPhoto, Prisma } from '@prisma/client';
+import type { InspectionPhoto } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ObjectStorageService } from '../object-storage/object-storage.service.js';

@@ -15,7 +15,7 @@ import {
 } from '@panorama/shared';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import type { Prisma, CategoryKind, AssetStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface ImportOptions {
@@ -603,11 +603,11 @@ export class ImportService {
     const path = join(dir, file);
     try {
       const raw = await fs.readFile(path, 'utf8');
-      const parsed = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
         throw new Error(`fixture ${file} must be a JSON array`);
       }
-      return parsed;
+      return parsed as unknown[];
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw err;

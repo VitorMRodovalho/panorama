@@ -26,6 +26,15 @@ jobs:
       # `prisma generate` runs. pnpm's isolation + non-approved build scripts
       # mean the postinstall hook does not fire — do it explicitly.
       - run: pnpm --filter @panorama/core-api prisma:generate
+      # Workspace packages export types from `dist/index.d.ts` per their
+      # package.json `"types"` field. Type-aware lint (`recommendedTypeChecked`)
+      # needs those resolved or it falls back to `any` and trips
+      # `no-unsafe-*`. Build packages whose dist/ feeds the lint type
+      # graph before running lint or typecheck. Mirrors the unit-tests
+      # job's pre-step at line 132. (#101 surfaced this — the Wave 2d.A
+      # ratchet only set `no-unsafe-*` to error and shipped because
+      # dist/ happened to be present locally.)
+      - run: pnpm --filter '!@panorama/core-api' --filter '!@panorama/web' build
       - run: pnpm lint
       - run: pnpm typecheck
       # Closes Wave 1 ARCH-11 / #71 — every Prisma migration folder

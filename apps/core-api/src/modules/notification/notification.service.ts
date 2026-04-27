@@ -4,7 +4,6 @@ import { AuditService } from '../audit/audit.service.js';
 import {
   NOTIFICATION_PAYLOAD_SCHEMAS,
   isRegisteredEventType,
-  type NotificationEventType,
 } from './notification-events.schema.js';
 
 /**
