@@ -7,6 +7,13 @@
  *                   MAINTENANCE if not IN_USE; otherwise the
  *                   reservation is marked stranded and an
  *                   `opened_on_checked_out` audit row records it.
+ *   - openTicketAuto — system-attributed entry point for the
+ *                   MaintenanceTicketSubscriber (ADR-0016 §5). Same
+ *                   ticket-creation + asset-state semantics as
+ *                   openTicket, minus the user-authz checks. Idempotent
+ *                   via the `existing OPEN/IN_PROGRESS` skip rule so
+ *                   dispatcher retries cannot double-open. Caller passes
+ *                   a tx and `tenant.systemActorUserId`.
  *   - list        — paginated, tenant-scoped, optional filters.
  *   - getById     — single ticket within tenant.
  *   - updateStatus — service-layer state machine:
@@ -16,7 +23,6 @@
  *                   no other open tickets remain.
  *
  * Deferred to follow-up PRs (ADR-0016 §4-9):
- *   - Auto-suggest subscriber on FAIL inspection / damage check-in
  *   - PM-due cron / mileage threshold sweep
  *   - Stranded-reservation auto-recovery
  *   - Reopen flow with within-window guard
@@ -34,7 +40,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { AssetMaintenance } from '@prisma/client';
+import type { AssetMaintenance, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { OpenTicketInput, UpdateStatusInput } from './maintenance.dto.js';
@@ -59,6 +65,33 @@ export interface ListTicketsParams {
   limit?: number;
   cursor?: string;
 }
+
+/**
+ * Input for the system-attributed auto-open path consumed by the
+ * MaintenanceTicketSubscriber. Mirrors `OpenTicketInput` but trims the
+ * fields the subscriber never sets (assignee, supplier, cost, …) and
+ * adds the audit-trail metadata required by ADR-0016 §5.
+ */
+export interface AutoOpenTicketParams {
+  tenantId: string;
+  assetId: string;
+  maintenanceType: 'Repair';
+  title: string;
+  notes: string | null;
+  triggeringReservationId?: string;
+  triggeringInspectionId?: string;
+  /** `tenant.systemActorUserId` — the audit row's `actorUserId` is null
+   *  (system-attributed), but the maintenance row needs a real FK. */
+  createdByUserId: string;
+  /** The human who triggered upstream — recorded in audit metadata so the
+   *  chain ties back. ADR-0016 §5 `originalActorUserId`. */
+  originalActorUserId: string;
+  source: 'inspection_subscriber' | 'checkin_subscriber';
+}
+
+export type AutoOpenResult =
+  | { status: 'opened'; ticketId: string }
+  | { status: 'skipped'; reason: 'existing_open_ticket' | 'asset_archived' | 'asset_retired'; existingTicketId: string | null };
 
 @Injectable()
 export class MaintenanceService {
@@ -457,6 +490,182 @@ export class MaintenanceService {
 
       return updated;
     });
+  }
+
+  /**
+   * System-attributed auto-open path (ADR-0016 §5). Called by
+   * `MaintenanceTicketSubscriber` from inside its `runInTenant` scope —
+   * caller supplies the `tx` so this nests, no separate transaction.
+   *
+   * Idempotency model: at most one OPEN/IN_PROGRESS ticket per asset.
+   * If one already exists, this returns `skipped` with the existing
+   * ticket id and audits `panorama.maintenance.auto_suggest_skipped`.
+   * That covers two scenarios:
+   *   1. Dispatcher retry of an event whose first invocation succeeded
+   *      but failed to mark dispatched.
+   *   2. A second upstream signal (e.g. damage check-in then FAIL
+   *      inspection on the same asset) where one ticket is enough —
+   *      ops can amend the existing ticket rather than juggle two.
+   *
+   * Asset-state flip and stranded-reservation marking match the public
+   * `openTicket` shape so auto-suggested and manually-opened tickets are
+   * indistinguishable to downstream consumers (banner UI, dashboards).
+   *
+   * The audit row carries `source` + `originalActorUserId` so the chain
+   * remains traceable — without those fields every auto-suggested ticket
+   * would attribute to "system" with no path back to the human signal.
+   */
+  async openTicketAuto(
+    tx: Prisma.TransactionClient,
+    params: AutoOpenTicketParams,
+  ): Promise<AutoOpenResult> {
+    const asset = await tx.asset.findUnique({
+      where: { id: params.assetId },
+      select: { id: true, tenantId: true, status: true, archivedAt: true },
+    });
+    // tenantId equality is redundant under the subscriber's runInTenant
+    // RLS scope — kept as belt-and-braces so a future refactor does not
+    // silently widen.
+    if (!asset || asset.tenantId !== params.tenantId) {
+      throw new NotFoundException('asset_not_found');
+    }
+    if (asset.archivedAt) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset',
+        resourceId: params.assetId,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'asset_archived',
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+        },
+      });
+      return { status: 'skipped', reason: 'asset_archived', existingTicketId: null };
+    }
+    if (asset.status === 'RETIRED') {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset',
+        resourceId: params.assetId,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'asset_retired',
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+        },
+      });
+      return { status: 'skipped', reason: 'asset_retired', existingTicketId: null };
+    }
+
+    const existingOpen = await tx.assetMaintenance.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        assetId: params.assetId,
+        status: { in: ['OPEN', 'IN_PROGRESS'] },
+      },
+      orderBy: { startedAt: 'desc' },
+      select: { id: true },
+    });
+    if (existingOpen) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset_maintenance',
+        resourceId: existingOpen.id,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'existing_open_ticket',
+          assetId: params.assetId,
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+          originalActorUserId: params.originalActorUserId,
+        },
+      });
+      return { status: 'skipped', reason: 'existing_open_ticket', existingTicketId: existingOpen.id };
+    }
+
+    const escapedNotes = params.notes ? escapeHtml(params.notes) : null;
+    const created = await tx.assetMaintenance.create({
+      data: {
+        tenantId: params.tenantId,
+        assetId: params.assetId,
+        maintenanceType: params.maintenanceType,
+        title: params.title,
+        status: 'OPEN',
+        triggeringReservationId: params.triggeringReservationId ?? null,
+        triggeringInspectionId: params.triggeringInspectionId ?? null,
+        notes: escapedNotes,
+        createdByUserId: params.createdByUserId,
+      },
+    });
+
+    let strandedReservationId: string | null = null;
+    if (asset.status === 'IN_USE') {
+      const inUse = await tx.reservation.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          assetId: params.assetId,
+          lifecycleStatus: 'CHECKED_OUT',
+        },
+        select: { id: true },
+      });
+      if (inUse) {
+        strandedReservationId = inUse.id;
+        await tx.reservation.update({
+          where: { id: inUse.id },
+          data: { isStranded: true },
+        });
+      }
+    } else {
+      await tx.asset.update({
+        where: { id: params.assetId },
+        data: { status: 'MAINTENANCE' },
+      });
+    }
+
+    await this.audit.recordWithin(tx, {
+      action: 'panorama.maintenance.opened',
+      resourceType: 'asset_maintenance',
+      resourceId: created.id,
+      tenantId: params.tenantId,
+      // System-attributed: actorUserId null. The human chain lives in
+      // `metadata.originalActorUserId` per ADR-0016 §5.
+      actorUserId: null,
+      metadata: {
+        assetId: params.assetId,
+        maintenanceType: params.maintenanceType,
+        severity: null,
+        triggeringReservationId: params.triggeringReservationId ?? null,
+        triggeringInspectionId: params.triggeringInspectionId ?? null,
+        assetWasInUse: asset.status === 'IN_USE',
+        strandedReservationId,
+        source: params.source,
+        originalActorUserId: params.originalActorUserId,
+      },
+    });
+    if (asset.status === 'IN_USE' && strandedReservationId) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.opened_on_checked_out',
+        resourceType: 'asset_maintenance',
+        resourceId: created.id,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          assetId: params.assetId,
+          strandedReservationId,
+          source: params.source,
+          originalActorUserId: params.originalActorUserId,
+        },
+      });
+    }
+
+    return { status: 'opened', ticketId: created.id };
   }
 }
 
