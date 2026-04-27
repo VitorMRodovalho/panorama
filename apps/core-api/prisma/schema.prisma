@@ -455,6 +455,15 @@ model Reservation {
   /// the discriminator. Cleared when ops "Recovers stranded
   /// asset" or marks the reservation RETURNED/CANCELLED.
   isStranded         Boolean                 @default(false)
+  /// #77 PILOT-04 — flag set by `ReservationSweepService` when
+  /// lifecycleStatus=CHECKED_OUT past endAt. Discriminator on
+  /// top of lifecycleStatus rather than a new state value
+  /// (mirrors isStranded pattern for the same exclusion-constraint
+  /// reasons). Stays true post-RETURNED as a historical signal;
+  /// the dashboard filter narrows to
+  /// `isOverdue AND lifecycleStatus = CHECKED_OUT` for the
+  /// currently-actionable set.
+  isOverdue          Boolean                 @default(false)
   /// `tsrange('[startAt, endAt)')` — GENERATED ALWAYS STORED column
   /// that backs the `reservations_no_overlap` exclusion constraint
   /// (ADR-0009 §Alternatives, migration 0010). Read-only; set by

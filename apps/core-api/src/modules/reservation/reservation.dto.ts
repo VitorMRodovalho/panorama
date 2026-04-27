@@ -35,7 +35,7 @@ export type CreateBasketInput = z.infer<typeof CreateBasketSchema>;
 export const ListReservationsSchema = z.object({
   scope: z.enum(['mine', 'tenant']).default('mine'),
   status: z
-    .enum(['open', 'pending', 'approved', 'rejected', 'cancelled', 'all'])
+    .enum(['open', 'pending', 'approved', 'rejected', 'cancelled', 'overdue', 'all'])
     .default('open'),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),

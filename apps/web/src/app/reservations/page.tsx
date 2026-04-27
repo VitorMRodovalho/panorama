@@ -36,6 +36,7 @@ interface ReservationView {
   mileageIn: number | null;
   damageFlag: boolean;
   damageNote: string | null;
+  isOverdue: boolean;
   createdAt: string;
 }
 
@@ -330,7 +331,7 @@ export default async function ReservationsPage({
                   Tenant
                 </a>
               ) : null}
-              {['open', 'pending', 'approved', 'cancelled', 'all'].map((s) => (
+              {['open', 'pending', 'approved', 'cancelled', 'overdue', 'all'].map((s) => (
                 <a
                   key={s}
                   href={`/reservations?scope=${scopeParam}&status=${s}`}
@@ -414,6 +415,37 @@ export default async function ReservationsPage({
                     </td>
                     <td>
                       {humaniseLifecycle(messages.t, r.lifecycleStatus)}
+                      {/* #77 PILOT-04 — overdue pill is the visual signal
+                          ops needs to chase a forgotten check-in. Renders
+                          on (a) currently-actionable overdue returns
+                          (CHECKED_OUT past endAt with isOverdue=true) AND
+                          (b) no-show transitions (lifecycleStatus=MISSED
+                          — auto-flipped by ReservationSweepService.runNoShowSweep).
+                          Distinct red palette so it doesn't visually merge
+                          with the amber damage / approval-note callouts
+                          below. */}
+                      {(r.isOverdue && r.lifecycleStatus === 'CHECKED_OUT') ||
+                      r.lifecycleStatus === 'MISSED' ? (
+                        <span
+                          className="panorama-pill"
+                          style={{
+                            marginLeft: 6,
+                            background: '#fde2e0',
+                            border: '1px solid #e07064',
+                            color: '#8c2114',
+                            fontWeight: 600,
+                          }}
+                          title={
+                            r.lifecycleStatus === 'MISSED'
+                              ? messages.t('reservation.overdue.no_show_title')
+                              : messages.t('reservation.overdue.checked_out_title')
+                          }
+                        >
+                          {r.lifecycleStatus === 'MISSED'
+                            ? messages.t('reservation.overdue.no_show_pill')
+                            : messages.t('reservation.overdue.checked_out_pill')}
+                        </span>
+                      ) : null}
                       {/* Damage callout — when the driver flagged damage at
                           check-in, surface the note + a quick path to open a
                           maintenance ticket pre-filled from this reservation

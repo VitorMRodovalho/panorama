@@ -39,6 +39,10 @@
       "budget": 3,
       "rationale": "Three legitimate cross-tenant / pre-tenant paths: previewAcceptance + finalizeAccept (token-driven, pre-tenant); sweepExpired (cross-tenant background sweep). markEmailSent / markEmailFailed / rotateTokenForRescue migrated to runInTenant once tenantId was threaded through the BullMQ payload (#115 closed 2026-04-26)."
     },
+    "apps/core-api/src/modules/reservation/reservation-sweep.service.ts": {
+      "budget": 2,
+      "rationale": "#77 PILOT-04 hourly sweeps. Two cluster-wide tenant-list reads (one per sweep — overdue + no-show) so each sweep can iterate `panorama_app`-invisible tenants. Per-tenant scans + transitions run under runInTenant. Both audit emissions go through audit.record (separate budget, audit.service.ts file)."
+    },
     "apps/core-api/src/modules/notification/notification.dispatcher.ts": {
       "budget": 5,
       "rationale": "Notification dispatcher is by-design cross-tenant — claims jobs across tenants, dispatches, marks. ADR-0011 explicitly authorises."
