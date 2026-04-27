@@ -27,6 +27,10 @@
       "budget": 2,
       "rationale": "Photo retention sweep + stale-IN_PROGRESS sweep each list ALL tenants (cluster-wide read; panorama_app cannot see other tenants in `tenants`). Per-tenant scans + updates that follow run under runInTenant. Closes #29 — ADR-0012 §11 invariant honoured for reads + writes; tenant list is the single allowed cluster-wide path."
     },
+    "apps/core-api/src/modules/maintenance/maintenance-sweep.service.ts": {
+      "budget": 1,
+      "rationale": "PM-due daily sweep (ADR-0016 §9) lists ALL tenants for the per-tenant scan loop (panorama_app cannot see other tenants in `tenants`). Per-tenant candidate query + audit emission run under runInTenant / audit.record. Mirrors the inspection-maintenance pattern."
+    },
     "apps/core-api/src/modules/invitation/invitation-email.queue.ts": {
       "budget": 2,
       "rationale": "Two cross-tenant paths: rescue-query (cluster-wide scan for stuck invitations) + lookupTenantId (legacy-payload fallback for pre-#115 BullMQ jobs). Per-row writes that follow run under runInTenant."

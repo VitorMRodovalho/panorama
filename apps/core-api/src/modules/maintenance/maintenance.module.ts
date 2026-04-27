@@ -19,13 +19,14 @@ import { ChannelRegistry } from '../notification/channel-registry.js';
 import { MaintenanceController } from './maintenance.controller.js';
 import { MaintenanceService } from './maintenance.service.js';
 import { MaintenanceTicketSubscriber } from './maintenance-ticket.subscriber.js';
+import { MaintenanceSweepService } from './maintenance-sweep.service.js';
 
 // PrismaModule + AuditModule are @Global so no explicit import needed.
 @Module({
   imports: [NotificationModule],
   controllers: [MaintenanceController],
-  providers: [MaintenanceService, MaintenanceTicketSubscriber],
-  exports: [MaintenanceService],
+  providers: [MaintenanceService, MaintenanceTicketSubscriber, MaintenanceSweepService],
+  exports: [MaintenanceService, MaintenanceSweepService],
 })
 export class MaintenanceModule implements OnModuleInit {
   constructor(
@@ -40,5 +41,9 @@ export class MaintenanceModule implements OnModuleInit {
     // is loaded eagerly in app.module.ts and registers its own handlers
     // before MaintenanceModule's onModuleInit runs.
     this.registry.register(this.subscriber);
+    // MaintenanceSweepService starts its own BullMQ schedule via
+    // OnModuleInit (gated by NODE_ENV != 'test' AND FEATURE_MAINTENANCE
+    // == 'true'). No explicit start call needed here — Nest's lifecycle
+    // resolves provider OnModuleInit hooks alongside the module's own.
   }
 }
