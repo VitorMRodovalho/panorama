@@ -25,6 +25,7 @@ interface ListResponse {
 interface AdminTemplatesPageProps {
   searchParams: Promise<{
     error?: string;
+    errorItems?: string;
     created?: string;
     archived?: string;
     includeArchived?: string;
@@ -40,7 +41,7 @@ export default async function AdminTemplatesPage({
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   if (!ADMIN_ROLES.has(session.currentRole)) {
-    redirect('/inspections?error=' + encodeURIComponent('Admin role required.'));
+    redirect('/inspections?error=inspection.template.error.admin_role_required');
   }
 
   const tenantLocale =
@@ -56,7 +57,7 @@ export default async function AdminTemplatesPage({
   return (
     <>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>Inspection templates</h1>
+          <h1 style={{ margin: 0 }}>{messages.t('nav.admin_inspection_templates')}</h1>
           <div>
             <Link href="/inspections" className="panorama-button secondary" style={{ marginRight: 8 }}>
               ← {messages.t('nav.inspections')}
@@ -68,13 +69,15 @@ export default async function AdminTemplatesPage({
         </div>
 
         {sp.error ? (
-          <div className="panorama-banner-warning">{sp.error}</div>
+          <div className="panorama-banner-warning">
+            {messages.t(sp.error, sp.errorItems ? { items: sp.errorItems } : undefined)}
+          </div>
         ) : null}
         {sp.created ? (
-          <div className="panorama-banner-success">Template created.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.template.banner.created')}</div>
         ) : null}
         {sp.archived ? (
-          <div className="panorama-banner-success">Template archived.</div>
+          <div className="panorama-banner-success">{messages.t('inspection.template.banner.archived')}</div>
         ) : null}
 
         <form method="GET" className="panorama-card" style={{ marginBottom: 16 }}>
@@ -85,10 +88,10 @@ export default async function AdminTemplatesPage({
               value="true"
               defaultChecked={includeArchived}
             />
-            &nbsp;Include archived
+            &nbsp;{messages.t('inspection.template.list.filter.include_archived')}
           </label>
           <button type="submit" className="panorama-button secondary" style={{ marginLeft: 12 }}>
-            Filter
+            {messages.t('actions.filter')}
           </button>
         </form>
 
@@ -99,11 +102,11 @@ export default async function AdminTemplatesPage({
             <table className="panorama-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Scope</th>
-                  <th>Items</th>
-                  <th>Order</th>
-                  <th>Status</th>
+                  <th>{messages.t('inspection.template.list.column.name')}</th>
+                  <th>{messages.t('inspection.template.list.column.scope')}</th>
+                  <th>{messages.t('inspection.template.list.column.items')}</th>
+                  <th>{messages.t('inspection.template.list.column.order')}</th>
+                  <th>{messages.t('inspection.template.list.column.status')}</th>
                   <th />
                 </tr>
               </thead>
@@ -118,11 +121,19 @@ export default async function AdminTemplatesPage({
                     </td>
                     <td>
                       {row.categoryKind ? (
-                        <span className="panorama-pill">kind: {row.categoryKind}</span>
+                        <span className="panorama-pill">
+                          {messages.t('inspection.template.scope.kind_pill', {
+                            kind: row.categoryKind,
+                          })}
+                        </span>
                       ) : row.categoryId ? (
-                        <span className="panorama-pill">category-id</span>
+                        <span className="panorama-pill">
+                          {messages.t('inspection.template.scope.category_id_pill')}
+                        </span>
                       ) : (
-                        <span style={{ color: '#fca5a5' }}>(no scope?)</span>
+                        <span style={{ color: '#fca5a5' }}>
+                          {messages.t('inspection.template.scope.none')}
+                        </span>
                       )}
                     </td>
                     <td>
@@ -136,10 +147,12 @@ export default async function AdminTemplatesPage({
                     <td>
                       {row.archivedAt ? (
                         <span className="panorama-pill" style={{ background: '#374151' }}>
-                          archived
+                          {messages.t('inspection.template.status.archived')}
                         </span>
                       ) : (
-                        <span className="panorama-pill">active</span>
+                        <span className="panorama-pill">
+                          {messages.t('inspection.template.status.active')}
+                        </span>
                       )}
                     </td>
                     <td>
@@ -162,8 +175,7 @@ export default async function AdminTemplatesPage({
         )}
 
         <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 12 }}>
-          Edit isn't shipped in 0.3 — to change a template, archive it and create a new one. Existing
-          inspections preserve their snapshot regardless (ADR-0012 §2).
+          {messages.t('inspection.template.list.note_no_edit')}
         </p>
     </>
   );

@@ -14,36 +14,48 @@ async function cookieHeader(): Promise<string> {
 }
 
 /**
- * Maps backend error codes to user-facing copy. Missing keys fall
- * back to the raw message so a regression is visible on screen.
- * Mirrors the pattern in reservations/actions.ts.
+ * Map raw API error strings to i18n keys (resolved client-side via
+ * `messages.t`). Same pattern as reservations / blackouts /
+ * invitations actions. The `required_items_missing:<labels>` path
+ * carries item labels through a sibling `errorItems` URL param —
+ * see `maybeErrorItemsParam` below.
  */
-function fmtError(raw: string): string {
+function fmtErrorKey(raw: string): string {
   const e = raw.toLowerCase();
-  if (e.includes('asset_not_found')) return 'Asset not found in your tenant.';
-  if (e.includes('reservation_not_found')) return 'Reservation not found.';
-  if (e.includes('reservation_asset_mismatch')) return 'Reservation belongs to a different asset.';
-  if (e.includes('no_template_for_asset')) return 'No inspection template exists for this asset category. Ask an admin to create one.';
-  if (e.includes('template_not_found')) return 'Template not found.';
-  if (e.includes('template_archived')) return 'This template is archived. Pick another or unarchive it.';
-  if (e.includes('inspection_not_found')) return 'Inspection not found.';
-  if (e.includes('inspection_not_in_progress')) return 'This inspection has already been completed or cancelled.';
-  if (e.includes('inspection_already_reviewed')) return 'This inspection was already reviewed.';
-  if (e.includes('inspection_already_completed')) return 'Cannot cancel a completed inspection — review it instead.';
-  if (e.includes('inspection_not_completed')) return 'Inspection must be completed before review.';
-  if (e.includes('not_inspection_starter')) return 'Only the driver who started this inspection (or an admin) can edit it.';
-  if (e.startsWith('required_items_missing:')) {
-    const tail = raw.split(':').slice(1).join(':');
-    return `Some required items are missing answers: ${tail.split('|').join(', ')}.`;
-  }
-  if (e.startsWith('snapshot_item_id_not_in_snapshot')) return "Internal error — item id doesn't match the inspection's snapshot.";
-  if (e.startsWith('response_missing_booleanvalue')) return 'A yes/no item is missing an answer.';
-  if (e.startsWith('response_missing_numbervalue')) return 'A number item is missing a value.';
-  if (e.startsWith('response_missing_textvalue')) return 'A required text item is missing a value.';
-  if (e.startsWith('response_below_min')) return 'A number value is below the allowed minimum.';
-  if (e.startsWith('response_above_max')) return 'A number value is above the allowed maximum.';
-  if (e.includes('admin_role_required')) return 'Admin role required for this action.';
-  return raw;
+  if (e.includes('asset_not_found')) return 'inspection.error.asset_not_found';
+  if (e.includes('reservation_not_found')) return 'inspection.error.reservation_not_found';
+  if (e.includes('reservation_asset_mismatch')) return 'inspection.error.reservation_asset_mismatch';
+  if (e.includes('no_template_for_asset')) return 'inspection.error.no_template_for_asset';
+  if (e.includes('template_not_found')) return 'inspection.error.template_not_found';
+  if (e.includes('template_archived')) return 'inspection.error.template_archived';
+  if (e.includes('inspection_not_found')) return 'inspection.error.inspection_not_found';
+  if (e.includes('inspection_not_in_progress')) return 'inspection.error.inspection_not_in_progress';
+  if (e.includes('inspection_already_reviewed')) return 'inspection.error.inspection_already_reviewed';
+  if (e.includes('inspection_already_completed')) return 'inspection.error.inspection_already_completed';
+  if (e.includes('inspection_not_completed')) return 'inspection.error.inspection_not_completed';
+  if (e.includes('not_inspection_starter')) return 'inspection.error.not_inspection_starter';
+  if (e.startsWith('required_items_missing:')) return 'inspection.error.required_items_missing_named';
+  if (e.startsWith('snapshot_item_id_not_in_snapshot')) return 'inspection.error.snapshot_item_id_not_in_snapshot';
+  if (e.startsWith('response_missing_booleanvalue')) return 'inspection.error.response_missing_boolean';
+  if (e.startsWith('response_missing_numbervalue')) return 'inspection.error.response_missing_number';
+  if (e.startsWith('response_missing_textvalue')) return 'inspection.error.response_missing_text';
+  if (e.startsWith('response_below_min')) return 'inspection.error.response_below_min';
+  if (e.startsWith('response_above_max')) return 'inspection.error.response_above_max';
+  if (e.includes('admin_role_required')) return 'inspection.error.admin_role_required';
+  return 'inspection.error.generic';
+}
+
+/**
+ * For `required_items_missing:<labels>` the backend ships pipe-joined
+ * item labels in the message body. We carry them through a sibling
+ * `errorItems` URL param so the page-side `messages.t(...)` can
+ * substitute `{{items}}` at render time. Empty string for any other
+ * error path.
+ */
+function maybeErrorItemsParam(raw: string): string {
+  if (!raw.toLowerCase().startsWith('required_items_missing:')) return '';
+  const tail = raw.split(':').slice(1).join(':');
+  return '&errorItems=' + encodeURIComponent(tail.split('|').join(', '));
 }
 
 // ---------------------------------------------------------------------
@@ -56,7 +68,7 @@ export async function startInspectionAction(formData: FormData): Promise<void> {
   const assetId = String(formData.get('assetId') ?? '').trim();
   const reservationId = String(formData.get('reservationId') ?? '').trim() || undefined;
   if (!assetId) {
-    redirect('/inspections/new?error=' + encodeURIComponent('Pick an asset.'));
+    redirect('/inspections/new?error=inspection.error.pick_asset');
   }
 
   const res = await fetch(`${CORE_API}/inspections`, {
@@ -71,7 +83,10 @@ export async function startInspectionAction(formData: FormData): Promise<void> {
     redirect(`/inspections/${body.id}${body.resumed ? '?resumed=1' : ''}`);
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-  redirect(`/inspections/new?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  const msg = body.message ?? 'error';
+  redirect(
+    `/inspections/new?error=${encodeURIComponent(fmtErrorKey(msg))}${maybeErrorItemsParam(msg)}`,
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -86,7 +101,7 @@ export async function respondInspectionAction(formData: FormData): Promise<void>
   const snapshotItemId = String(formData.get('snapshotItemId') ?? '').trim();
   const itemType = String(formData.get('itemType') ?? '').trim();
   if (!inspectionId || !snapshotItemId) {
-    redirect(`/inspections/${inspectionId}?error=${encodeURIComponent('Internal error: missing item id.')}`);
+    redirect(`/inspections/${inspectionId}?error=inspection.error.missing_item_id`);
   }
 
   const payload: Record<string, unknown> = { snapshotItemId };
@@ -114,7 +129,10 @@ export async function respondInspectionAction(formData: FormData): Promise<void>
     redirect(`/inspections/${inspectionId}?saved=${encodeURIComponent(snapshotItemId)}`);
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-  redirect(`/inspections/${inspectionId}?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  const msg = body.message ?? 'error';
+  redirect(
+    `/inspections/${inspectionId}?error=${encodeURIComponent(fmtErrorKey(msg))}${maybeErrorItemsParam(msg)}`,
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -127,7 +145,7 @@ export async function completeInspectionAction(formData: FormData): Promise<void
   const outcome = String(formData.get('outcome') ?? '').trim();
   const summaryNote = String(formData.get('summaryNote') ?? '').trim() || undefined;
   if (!inspectionId || !outcome) {
-    redirect(`/inspections/${inspectionId}?error=missing_outcome`);
+    redirect(`/inspections/${inspectionId}?error=inspection.error.missing_outcome`);
   }
 
   const res = await fetch(`${CORE_API}/inspections/${inspectionId}/complete`, {
@@ -141,7 +159,10 @@ export async function completeInspectionAction(formData: FormData): Promise<void
     redirect(`/inspections?completed=${inspectionId}`);
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-  redirect(`/inspections/${inspectionId}?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  const msg = body.message ?? 'error';
+  redirect(
+    `/inspections/${inspectionId}?error=${encodeURIComponent(fmtErrorKey(msg))}${maybeErrorItemsParam(msg)}`,
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -164,7 +185,10 @@ export async function cancelInspectionAction(formData: FormData): Promise<void> 
     redirect(`/inspections?cancelled=${inspectionId}`);
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-  redirect(`/inspections/${inspectionId}?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  const msg = body.message ?? 'error';
+  redirect(
+    `/inspections/${inspectionId}?error=${encodeURIComponent(fmtErrorKey(msg))}${maybeErrorItemsParam(msg)}`,
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -194,5 +218,8 @@ export async function reviewInspectionAction(formData: FormData): Promise<void> 
     redirect(`/inspections/${inspectionId}?reviewed=1`);
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-  redirect(`/inspections/${inspectionId}?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+  const msg = body.message ?? 'error';
+  redirect(
+    `/inspections/${inspectionId}?error=${encodeURIComponent(fmtErrorKey(msg))}${maybeErrorItemsParam(msg)}`,
+  );
 }
