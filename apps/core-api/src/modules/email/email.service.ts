@@ -41,14 +41,18 @@ export class EmailService implements OnModuleDestroy {
       throw new Error(`email_recipient_rejected: malformed shape`);
     }
     const transporter = this.transporter();
-    const info = await transporter.sendMail({
+    // nodemailer's `sendMail` types the resolved value as `SentMessageInfo`
+    // which is `unknown`-shaped (transport-specific); only `messageId` is
+    // contractually present across SMTP/JSON/Stream transports. Cast at
+    // the boundary so the rest of the function stays under `no-unsafe-*`.
+    const info = (await transporter.sendMail({
       from: `"${this.cfg.config.fromName}" <${this.cfg.config.fromAddress}>`,
       to: input.to,
       subject: input.subject,
       text: input.text,
       html: input.html,
       headers: input.headers,
-    });
+    })) as { messageId?: string };
     this.log.debug({ to: input.to, messageId: info.messageId }, 'email_sent');
     return { messageId: String(info.messageId ?? '') };
   }
