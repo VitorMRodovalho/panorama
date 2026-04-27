@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { apiGet } from '../../../lib/api';
-import { getCurrentSession } from '../../../lib/session';
+import { apiGet } from '@/lib/api';
+import { getCurrentSession } from '@/lib/session';
 
 interface ReservationView {
   id: string;
@@ -98,14 +98,7 @@ export default async function ReservationCalendarPage({
   const globalBlackouts = blackouts.filter((b) => b.assetId === null);
 
   return (
-    <section className="panorama-content">
-      <nav style={{ marginBottom: 16, display: 'flex', gap: 8, fontSize: 14 }}>
-        <a href="/assets">Assets</a>
-        <span>·</span>
-        <a href="/reservations">Reservations list</a>
-        <span>·</span>
-        <strong>Calendar</strong>
-      </nav>
+    <>
 
       <div className="panorama-card">
         <div
@@ -230,7 +223,7 @@ export default async function ReservationCalendarPage({
           </p>
         ) : null}
       </div>
-    </section>
+    </>
   );
 }
 
