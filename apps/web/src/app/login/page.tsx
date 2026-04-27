@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { loadMessages, resolveRequestLocale } from '@/lib/i18n';
 import { loginAction, discoveryAction } from './actions';
 import type { DiscoveryResult } from './actions';
 
@@ -14,6 +15,9 @@ interface LoginPageProps {
  * email in the URL so the provider buttons appear in the right order.
  * Password + OIDC (Google/Microsoft) are all offered — unwired providers
  * simply 400 at /auth/oidc/:provider/start which the UI handles.
+ *
+ * #44 UX-02: locale resolved via cookie → Accept-Language → en before
+ * the session exists.
  */
 export default async function LoginPage({ searchParams }: LoginPageProps): Promise<ReactNode> {
   const sp = await searchParams;
@@ -21,6 +25,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
   const jar = await cookies();
   const existing = jar.get('panorama_session');
   if (existing) redirect(sp.next ?? '/assets');
+
+  const locale = await resolveRequestLocale();
+  const messages = loadMessages(locale);
 
   const email = (sp.email ?? '').trim();
   const discovery: DiscoveryResult = email
@@ -35,30 +42,32 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
     sp.next ??
     (inviteToken ? `/invitations/accept?t=${encodeURIComponent(inviteToken)}` : '');
 
+  const subtitle = inviteToken
+    ? messages.t('login.subtitle.invitation')
+    : discovery.tenantHint
+      ? messages.t('login.subtitle.tenant_hint', {
+          tenantName: discovery.tenantHint.displayName,
+        })
+      : messages.t('login.subtitle.default');
+
   return (
     <div className="panorama-login">
-      <h1>Sign in to Panorama</h1>
-      <p className="muted">
-        {inviteToken
-          ? 'Sign in to accept your invitation.'
-          : discovery.tenantHint
-            ? `You'll sign in to ${discovery.tenantHint.displayName}.`
-            : 'Trilingual fleet + IT asset management.'}
-      </p>
+      <h1>{messages.t('login.title')}</h1>
+      <p className="muted">{subtitle}</p>
 
       <div className="panorama-card">
         {sp.error ? (
           <p className="panorama-error">
             {sp.error === 'invalid_credentials'
-              ? 'Email or password is incorrect.'
-              : 'Sign-in failed. Please try again.'}
+              ? messages.t('login.error.invalid_credentials')
+              : messages.t('login.error.generic')}
           </p>
         ) : null}
 
         <form action={loginAction}>
           <input type="hidden" name="next" value={nextParam} />
           <div className="panorama-field">
-            <label htmlFor="email">Work email</label>
+            <label htmlFor="email">{messages.t('login.field.email')}</label>
             <input
               id="email"
               name="email"
@@ -70,7 +79,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
             />
           </div>
           <div className="panorama-field">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">{messages.t('login.field.password')}</label>
             <input
               id="password"
               name="password"
@@ -80,7 +89,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
             />
           </div>
           <button type="submit" className="panorama-button" style={{ width: '100%' }}>
-            Sign in
+            {messages.t('login.action.sign_in')}
           </button>
         </form>
 
@@ -92,7 +101,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
                 className="panorama-provider-btn"
                 href={`/api/auth/oidc/google/start${nextParam ? `?redirect=${encodeURIComponent(nextParam)}` : ''}`}
               >
-                Continue with Google
+                {messages.t('login.provider.google')}
               </a>
             ) : null}
             {discovery.providers.includes('microsoft') ? (
@@ -100,7 +109,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
                 className="panorama-provider-btn"
                 href={`/api/auth/oidc/microsoft/start${nextParam ? `?redirect=${encodeURIComponent(nextParam)}` : ''}`}
               >
-                Continue with Microsoft
+                {messages.t('login.provider.microsoft')}
               </a>
             ) : null}
           </>
