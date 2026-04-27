@@ -38,6 +38,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { AssetMaintenance, Prisma } from '@prisma/client';
@@ -95,6 +96,8 @@ export type AutoOpenResult =
 
 @Injectable()
 export class MaintenanceService {
+  private readonly log = new Logger('MaintenanceService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -649,23 +652,31 @@ export class MaintenanceService {
       // per-asset semantics) and convert to a `skipped` result so
       // the dispatcher marks the event DISPATCHED.
       if (isMaintenanceOpenUniqueViolation(err)) {
-        // Look up the conflicting ticket by trigger ID. Each event has
-        // exactly one of triggeringInspectionId / triggeringReservationId
-        // set per the publisher contracts (inspection.completed populates
-        // inspection; reservation.checked_in_with_damage populates
-        // reservation). At least one is non-null on every auto-suggest
-        // call site; this branch finds whichever the partial UNIQUE
-        // index actually rejected.
+        // Look up the conflicting ticket by trigger ID. The two
+        // partial UNIQUE indexes are independent: an event can populate
+        // both `triggeringInspectionId` and `triggeringReservationId`
+        // (the inspection subscriber sets both when the inspection is
+        // tied to a reservation), and Postgres surfaces only the FIRST
+        // unique violation it encounters. Use OR so the recovery
+        // findFirst matches the existing ticket whichever index
+        // rejected — including the cross-trigger collapse case where
+        // a second FAIL inspection on the same reservation conflicts
+        // on the per-reservation UNIQUE rather than the per-inspection
+        // one (ADR-0016 v3 §5: distinct triggers within the same
+        // reservation collapse to one ticket — same-root-cause ops
+        // semantics).
         const winner = await tx.assetMaintenance.findFirst({
           where: {
             tenantId: params.tenantId,
             status: { in: ['OPEN', 'IN_PROGRESS'] },
-            ...(params.triggeringInspectionId
-              ? { triggeringInspectionId: params.triggeringInspectionId }
-              : {}),
-            ...(params.triggeringReservationId
-              ? { triggeringReservationId: params.triggeringReservationId }
-              : {}),
+            OR: [
+              ...(params.triggeringInspectionId
+                ? [{ triggeringInspectionId: params.triggeringInspectionId }]
+                : []),
+              ...(params.triggeringReservationId
+                ? [{ triggeringReservationId: params.triggeringReservationId }]
+                : []),
+            ],
           },
           select: { id: true },
         });
@@ -674,8 +685,22 @@ export class MaintenanceService {
         // the original error if the committed snapshot somehow hides
         // the winner. (Could happen if the partial predicate excludes
         // the existing row — e.g. it transitioned to COMPLETED between
-        // the conflict and this lookup.)
-        if (!winner) throw err;
+        // the conflict and this lookup.) Log so an SRE seeing a raw
+        // 23505 in prod can correlate to which event payload tripped
+        // the unreachable branch.
+        if (!winner) {
+          this.log.warn(
+            {
+              tenantId: params.tenantId,
+              assetId: params.assetId,
+              triggeringInspectionId: params.triggeringInspectionId ?? null,
+              triggeringReservationId: params.triggeringReservationId ?? null,
+              source: params.source,
+            },
+            'maintenance_open_unique_violation_no_winner_found',
+          );
+          throw err;
+        }
         await this.audit.recordWithin(tx, {
           action: 'panorama.maintenance.auto_suggest_skipped',
           resourceType: 'asset_maintenance',
@@ -766,20 +791,23 @@ export class MaintenanceService {
 
 /**
  * Returns true iff `err` looks like a Postgres unique-violation that
- * would have come from `asset_maintenances_open_per_asset_unique`
- * (ADR-0016 v3 migration 0016). Used by both `openTicket` and
- * `openTicketAuto` to convert the multi-pod race into a controlled
- * skip / 409 instead of bubbling a Prisma error to the controller.
+ * would have come from one of the two per-trigger partial UNIQUE
+ * indexes shipped in ADR-0016 v3 migration 0016
+ * (`asset_maintenances_open_per_inspection_unique` /
+ * `asset_maintenances_open_per_reservation_unique`). Used by both
+ * `openTicket` and `openTicketAuto` to convert the multi-pod retry
+ * race into a controlled `skipped` / 409 instead of bubbling a
+ * Prisma error to the controller.
  *
  * Mirrors the helper in `notification.service.ts`: Prisma surfaces
  * unique violations as `P2002` on the typed error, and the underlying
  * Postgres `23505` is in `meta.code` for the raw-SQL paths.
  *
- * No constraint-name check: `asset_maintenances` has only one unique
- * index on this row shape (the photo unique lives on a separate
- * table), so any P2002 reaching this catch block came from the
- * open-per-asset rule. If a future migration adds a second unique
- * constraint to this table, narrow with `meta.target`.
+ * Both per-trigger UNIQUEs are handled identically by the catch path
+ * (the recovery `findFirst` filters by whichever trigger field this
+ * call site populated), so no constraint-name disambiguation is
+ * needed. If a future migration adds a per-asset or per-photo unique
+ * to this table, narrow with `meta.target`.
  */
 function isMaintenanceOpenUniqueViolation(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;

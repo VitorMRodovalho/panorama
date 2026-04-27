@@ -903,6 +903,40 @@ tickets — preserving the existing behaviour, with the close-
 ticket count-aware update flipping the asset back to READY only
 once the last open ticket transitions terminal.
 
+#### Cross-trigger collapse (intentional)
+
+The inspection subscriber populates **both** `triggeringInspectionId`
+AND `triggeringReservationId` on the auto-suggested ticket when the
+inspection is tied to a reservation (so the web maintenance detail
+page can deep-link to the reservation without a derived join). The
+two partial UNIQUE indexes are independent — Postgres surfaces
+whichever conflict it sees first.
+
+The notable consequence is a **cross-trigger collapse**: a second
+FAIL inspection on the **same reservation** but a different
+inspection ID conflicts on the per-reservation UNIQUE (both rows
+share `triggeringReservationId`), even though the per-inspection
+UNIQUE would not fire (different inspection IDs). The catch path's
+`OR` lookup finds the existing ticket via the reservation match and
+audits a `concurrent_open_race_lost` skip.
+
+This is the desired ops semantic: two FAIL inspections on the same
+reservation are almost always the same physical issue (driver
+re-runs the inspection after attempting a fix; the original problem
+recurs). One ticket per reservation per OPEN window is what
+persona-fleet-ops asks for; the audit row preserves the second
+inspection's `triggeringInspectionId` in metadata so ops can trace
+it. Distinct-reservation FAIL inspections (different vehicles or
+different bookings on the same vehicle) still produce distinct
+tickets — only the same-reservation case collapses.
+
+A damage check-in followed by a FAIL inspection on the same
+reservation collapses identically: the damage event creates the
+ticket, the inspection event finds an existing OPEN at the friendly-
+path step (any OPEN on this asset) under serial dispatch, or the
+per-reservation UNIQUE under parallel-pod dispatch. Either way:
+one ticket, one audit chain back to both signals.
+
 ### Why not a separate domain-event primitive?
 
 - The proven outbox dispatcher already has retry, backoff, DEAD,
