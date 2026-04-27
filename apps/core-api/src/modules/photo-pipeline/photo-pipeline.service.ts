@@ -242,6 +242,12 @@ const KNOWN_PIXEL_PROPERTIES = new Set<string>([
   'hasAlpha',
   'isPalette',
   'bitsPerSample',
+  // sharp 0.34+ surfaces `autoOrient: { width, height }` describing the
+  // dimensions the image would take after applying EXIF orientation —
+  // a derived pixel-property, not a strippable metadata block. Without
+  // this, every plain JPEG round-trip wrongly reports exifStripped=true.
+  // (#120 closes the 0.33 → 0.34 bump.)
+  'autoOrient',
 ]);
 
 function collectMetadataFieldNames(md: sharp.Metadata): string[] {
