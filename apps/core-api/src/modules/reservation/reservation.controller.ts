@@ -305,6 +305,7 @@ export class ReservationController {
     conditionIn: string | null;
     damageFlag: boolean;
     damageNote: string | null;
+    isOverdue: boolean;
     createdAt: Date;
   }): unknown {
     return {
@@ -335,6 +336,7 @@ export class ReservationController {
       conditionIn: r.conditionIn,
       damageFlag: r.damageFlag,
       damageNote: r.damageNote,
+      isOverdue: r.isOverdue,
       createdAt: r.createdAt,
     };
   }

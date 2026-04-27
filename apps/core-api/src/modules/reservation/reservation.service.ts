@@ -64,7 +64,7 @@ export interface CreateBasketResult {
 export interface ListReservationsParams {
   actor: ReservationContext;
   scope: 'mine' | 'tenant';
-  status: 'open' | 'pending' | 'approved' | 'rejected' | 'cancelled' | 'all';
+  status: 'open' | 'pending' | 'approved' | 'rejected' | 'cancelled' | 'overdue' | 'all';
   from?: Date;
   to?: Date;
   limit: number;
@@ -1219,6 +1219,19 @@ export class ReservationService {
         return { approvalStatus: 'REJECTED' };
       case 'cancelled':
         return { lifecycleStatus: 'CANCELLED' };
+      case 'overdue':
+        // #77 PILOT-04 — surface "needs admin attention" rows: either
+        // currently-actionable overdue returns (CHECKED_OUT past
+        // endAt with the sweep flag set) OR no-show reservations
+        // (auto-flipped to MISSED). Both are downstream of
+        // ReservationSweepService.runOnce; ops dashboards filter
+        // here.
+        return {
+          OR: [
+            { isOverdue: true, lifecycleStatus: 'CHECKED_OUT' },
+            { lifecycleStatus: 'MISSED' },
+          ],
+        };
     }
   }
 }

@@ -22,6 +22,15 @@ export interface ReservationRules {
    * a redeploy.
    */
   enableBasketBatch: boolean;
+  /**
+   * #77 PILOT-04 — grace window past `startAt` after which a BOOKED
+   * reservation that hasn't been checked out flips to `MISSED` via
+   * `ReservationSweepService.runNoShowSweep`. Default 1 h. Tenants
+   * with strict pickup windows (rental fleets) lower it; informal
+   * fleets (long pickup windows) raise it. 0 = never auto-flag
+   * no-show.
+   */
+  pickupWindowHours: number;
 }
 
 export const DEFAULT_AUTO_APPROVE_ROLES = ['owner', 'fleet_admin', 'fleet_staff'];
@@ -37,12 +46,14 @@ export class ReservationConfigService {
       ? (obj['auto_approve_roles'] as unknown[]).filter((v): v is string => typeof v === 'string')
       : DEFAULT_AUTO_APPROVE_ROLES;
     const enableBasketBatch = coerceBool(obj['enable_basket_batch'], true);
+    const pickupWindowHours = coerceInt(obj['pickup_window_hours'], 1);
     return {
       minNoticeHours: Math.max(0, minNoticeHours),
       maxDurationHours: Math.max(0, maxDurationHours),
       maxConcurrentPerUser: Math.max(0, maxConcurrentPerUser),
       autoApproveRoles: autoApproveRoles.length > 0 ? autoApproveRoles : DEFAULT_AUTO_APPROVE_ROLES,
       enableBasketBatch,
+      pickupWindowHours: Math.max(0, pickupWindowHours),
     };
   }
 }
