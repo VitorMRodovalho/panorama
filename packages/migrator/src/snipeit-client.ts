@@ -50,11 +50,18 @@ export class SnipeItClient {
     this.maxRetries = opts.maxRetries ?? 3;
   }
 
-  async get<T = unknown>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
+  async get<T = unknown>(
+    endpoint: string,
+    params?: Record<string, string | number | boolean>,
+  ): Promise<T> {
+    // Narrowed from `unknown` so `String(v)` here is safe — non-primitive
+    // values would have stringified to "[object Object]" and produced a
+    // silent garbage URL. ESLint `no-base-to-string` would catch the
+    // unknown-typed variant.
     const url = new URL(this.baseUrl + '/api/v1/' + endpoint.replace(/^\/+/, ''));
     if (params) {
       for (const [k, v] of Object.entries(params)) {
-        if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+        url.searchParams.set(k, String(v));
       }
     }
 
@@ -103,13 +110,13 @@ export class SnipeItClient {
   /** Fetch every page of a paginated endpoint. Uses the Snipe-IT shape {total, rows}. */
   async fetchAll<T = unknown>(
     endpoint: string,
-    extraParams: Record<string, unknown> = {},
+    extraParams: Record<string, string | number | boolean> = {},
   ): Promise<T[]> {
     const collected: T[] = [];
     let offset = 0;
     while (true) {
       const params = { ...extraParams, limit: this.pageSize, offset };
-      const res = (await this.get(endpoint, params)) as { total?: number; rows?: unknown[] };
+      const res = await this.get<{ rows?: unknown[]; total?: number }>(endpoint, params);
       const rows = (res.rows ?? []) as T[];
       collected.push(...rows);
       const total = typeof res.total === 'number' ? res.total : collected.length;
@@ -121,10 +128,15 @@ export class SnipeItClient {
   }
 
   /** Light-weight count probe — reads one page with limit=1 and returns the `total`. */
-  async count(endpoint: string, extraParams: Record<string, unknown> = {}): Promise<number> {
-    const res = (await this.get(endpoint, { ...extraParams, limit: 1, offset: 0 })) as {
-      total?: number;
-    };
+  async count(
+    endpoint: string,
+    extraParams: Record<string, string | number | boolean> = {},
+  ): Promise<number> {
+    const res = await this.get<{ total?: number }>(endpoint, {
+      ...extraParams,
+      limit: 1,
+      offset: 0,
+    });
     return typeof res.total === 'number' ? res.total : 0;
   }
 

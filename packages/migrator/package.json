@@ -17,7 +17,7 @@
     "dev": "tsx src/cli.ts",
     "cli": "tsx src/cli.ts",
     "test": "vitest run",
-    "lint": "echo 'nothing to lint yet'",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },

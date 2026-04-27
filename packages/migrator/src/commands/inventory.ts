@@ -76,9 +76,10 @@ export async function runInventory(opts: InventoryOptions): Promise<InventoryRep
   const users = await client.fetchAll<unknown>('users');
   const duplicateEmails = findDuplicateEmails(users);
 
-  const statusLabelsResp = (await client.get('statuslabels', { limit: 500 })) as {
-    rows?: Array<{ name?: string | null }>;
-  };
+  const statusLabelsResp = await client.get<{ rows?: { name?: string }[] }>(
+    'statuslabels',
+    { limit: 500 },
+  );
   const unknownStatusLabels = (statusLabelsResp.rows ?? [])
     .map((row) => row.name ?? '')
     .filter((name) => name && !KNOWN_STATUS_LABEL_NAMES.has(name));

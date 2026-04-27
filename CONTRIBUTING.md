@@ -54,8 +54,11 @@ Never force-push to `main` or `release/*`.
 pnpm test                 # all packages
 pnpm --filter @panorama/core-api test
 # pnpm e2e                # Playwright lands in 0.4+ — task removed pending first spec
-pnpm lint                 # ESLint + Prettier + markdownlint
-pnpm typecheck
+pnpm lint                 # ESLint (typescript-eslint recommendedTypeChecked) across
+                          # core-api, web (next lint), migrator, shared, plugin-sdk,
+                          # ui-kit. i18n bundles use pnpm i18n:check + i18n:jsx-gate.
+                          # No Prettier or markdownlint enforcement today.
+pnpm typecheck            # tsc --noEmit across the monorepo
 ```
 
 ## Reporting security issues

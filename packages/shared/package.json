@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "test": "echo 'shared — types only, no runtime tests yet'",
-    "lint": "echo 'nothing to lint yet'",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },
