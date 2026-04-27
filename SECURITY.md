@@ -33,8 +33,15 @@ Panorama ships with sane defaults (see `apps/core-api/src/config/security.ts`):
 
 - Secure/HttpOnly/SameSite=Lax session cookies, with `Secure` enforced when the
   deployment has `NODE_ENV=production`
-- CSRF tokens rotated per session, with double-submit support for APIs
-  _(NOTE: audit-flagged as not yet implemented — see issue [#34](https://github.com/VitorMRodovalho/panorama/issues/34))_
+- CSRF defense — layered:
+  - `SameSite=Lax` session cookies block the dominant cross-site form-POST vector
+  - `CsrfOriginMiddleware` validates `Origin` (or `Referer` fallback) against a
+    trusted-origin allowlist on every state-changing request (POST/PUT/PATCH/
+    DELETE). Configure via `WEB_ORIGIN` (comma-separated). Server-to-server
+    fetches that omit both headers are allowed and rely on the `HttpOnly`
+    cookie chain. _Tracked in [#34](https://github.com/VitorMRodovalho/panorama/issues/34) — full double-submit cookie + per-session CSRF token is a
+    future M effort if the threat model grows beyond what SameSite + Origin
+    cover._
 - HSTS + CSP + X-Content-Type-Options + Referrer-Policy set via middleware
 - Argon2id password hashing (with bcrypt fallback for Snipe-IT migrations)
 - OIDC logins refused unless the IdP asserts `email_verified=true`.
@@ -81,8 +88,12 @@ Primary threats we defend against:
    see company B's vehicles. Enforced at the query layer via Prisma middleware
    AND at the Postgres layer via row-level security (RLS) policies that read a
    per-transaction GUC. See [`docs/adr/0003-multi-tenancy.md`](./docs/adr/0003-multi-tenancy.md).
-2. **CSRF on state changes** — session cookies are SameSite=Lax and every POST
-   requires a token.
+2. **CSRF on state changes** — `SameSite=Lax` session cookies + `CsrfOriginMiddleware`
+   validating `Origin`/`Referer` against the configured trusted-origin allowlist
+   on every state-changing request. Server-to-server fetches (no Origin) are
+   allowed because they cannot impersonate a user without the `HttpOnly`
+   session cookie. See `apps/core-api/src/modules/auth/csrf-origin.middleware.ts`
+   and #34.
 3. **SSRF on proxy endpoints** — any outbound fetch whose target is derived
    from user input goes through an allowlist + redirect-disabled fetcher.
    The object-storage `S3_ENDPOINT` is DNS-resolved at boot and rejected if
