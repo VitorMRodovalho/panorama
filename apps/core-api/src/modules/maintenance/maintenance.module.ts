@@ -19,13 +19,14 @@ import { ChannelRegistry } from '../notification/channel-registry.js';
 import { MaintenanceController } from './maintenance.controller.js';
 import { MaintenanceService } from './maintenance.service.js';
 import { MaintenanceTicketSubscriber } from './maintenance-ticket.subscriber.js';
+import { MaintenanceSweepService } from './maintenance-sweep.service.js';
 
 // PrismaModule + AuditModule are @Global so no explicit import needed.
 @Module({
   imports: [NotificationModule],
   controllers: [MaintenanceController],
-  providers: [MaintenanceService, MaintenanceTicketSubscriber],
-  exports: [MaintenanceService],
+  providers: [MaintenanceService, MaintenanceTicketSubscriber, MaintenanceSweepService],
+  exports: [MaintenanceService, MaintenanceSweepService],
 })
 export class MaintenanceModule implements OnModuleInit {
   constructor(
@@ -40,5 +41,14 @@ export class MaintenanceModule implements OnModuleInit {
     // is loaded eagerly in app.module.ts and registers its own handlers
     // before MaintenanceModule's onModuleInit runs.
     this.registry.register(this.subscriber);
+    // MaintenanceSweepService self-starts its BullMQ schedule from its
+    // own OnModuleInit hook (gated by NODE_ENV != 'test' AND
+    // FEATURE_MAINTENANCE == 'true'). Nest resolves provider hooks
+    // before the owning module's hook, so the sweep is up by the time
+    // this method runs. Consider centralising the lifecycle here in a
+    // future refactor if a fourth ChannelHandler / sweep lands and the
+    // self-init pattern starts adding cognitive load — for now,
+    // mirroring InspectionMaintenanceService's self-init is the path
+    // of least surprise.
   }
 }
