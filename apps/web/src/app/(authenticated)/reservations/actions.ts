@@ -13,29 +13,34 @@ async function cookieHeader(): Promise<string> {
     .join('; ');
 }
 
-function fmtError(raw: string): string {
+/**
+ * Map raw API error strings to i18n keys (resolved client-side via
+ * `messages.t`). Same pattern as the inspection-templates / blackouts /
+ * invitations actions.
+ */
+function fmtErrorKey(raw: string): string {
   const e = raw.toLowerCase();
-  if (e.includes('reservation_conflict')) return 'This asset is already booked for an overlapping time.';
-  if (e.includes('blackout_conflict')) return 'This time falls inside a blackout window.';
-  if (e.includes('asset_not_bookable')) return "This asset isn't bookable.";
-  if (e.includes('asset_not_available')) return "This asset isn't available (maintenance or retired).";
-  if (e.startsWith('min_notice_hours:')) return 'Reservation is too soon — check the notice policy.';
-  if (e.startsWith('max_duration_hours:')) return 'Reservation exceeds the maximum allowed duration.';
-  if (e.startsWith('max_concurrent_reservations:')) return 'You already have the maximum active reservations.';
-  if (e.includes('cannot_reserve_on_behalf')) return 'You cannot reserve on behalf of another user.';
-  if (e.includes('start_must_be_before_end')) return 'Start must be before end.';
-  if (e.includes('cannot_checkout_when_approval')) return 'Reservation must be approved before check-out.';
-  if (e.includes('cannot_checkout_when_lifecycle')) return 'Reservation is not in a bookable state.';
-  if (e.includes('asset_not_ready')) return "Asset isn't ready (in use, maintenance, or retired).";
-  if (e.includes('cannot_checkin_when_lifecycle')) return 'Reservation must be checked-out before check-in.';
-  if (e.includes('mileage_required')) return 'Mileage is required (DOT 49 CFR + maintenance scheduling).';
-  if (e.includes('mileage_not_monotonic')) return 'Check-in mileage must be ≥ check-out mileage.';
-  if (e.includes('not_allowed')) return "You aren't allowed to perform this action.";
-  if (e.includes('basket_not_found')) return 'Basket not found (it may have been fully cancelled or deleted).';
-  if (e.includes('basket_batch_disabled')) return 'Basket batch actions are disabled for this tenant.';
-  if (e.includes('admin_role_required')) return 'Admin role required for this action.';
-  if (e.includes('note_required')) return 'A reason is required when rejecting.';
-  return raw;
+  if (e.includes('reservation_conflict')) return 'reservation.error.reservation_conflict';
+  if (e.includes('blackout_conflict')) return 'reservation.error.blackout_conflict';
+  if (e.includes('asset_not_bookable')) return 'reservation.error.asset_not_bookable';
+  if (e.includes('asset_not_available')) return 'reservation.error.asset_not_available';
+  if (e.startsWith('min_notice_hours:')) return 'reservation.error.min_notice_hours';
+  if (e.startsWith('max_duration_hours:')) return 'reservation.error.max_duration_hours';
+  if (e.startsWith('max_concurrent_reservations:')) return 'reservation.error.max_concurrent_reservations';
+  if (e.includes('cannot_reserve_on_behalf')) return 'reservation.error.cannot_reserve_on_behalf';
+  if (e.includes('start_must_be_before_end')) return 'reservation.error.start_must_be_before_end';
+  if (e.includes('cannot_checkout_when_approval')) return 'reservation.error.cannot_checkout_when_approval';
+  if (e.includes('cannot_checkout_when_lifecycle')) return 'reservation.error.cannot_checkout_when_lifecycle';
+  if (e.includes('asset_not_ready')) return 'reservation.error.asset_not_ready';
+  if (e.includes('cannot_checkin_when_lifecycle')) return 'reservation.error.cannot_checkin_when_lifecycle';
+  if (e.includes('mileage_required')) return 'reservation.error.mileage_required';
+  if (e.includes('mileage_not_monotonic')) return 'reservation.error.mileage_not_monotonic';
+  if (e.includes('not_allowed')) return 'reservation.error.not_allowed';
+  if (e.includes('basket_not_found')) return 'reservation.error.basket_not_found';
+  if (e.includes('basket_batch_disabled')) return 'reservation.error.basket_batch_disabled';
+  if (e.includes('admin_role_required')) return 'reservation.error.admin_role_required';
+  if (e.includes('note_required')) return 'reservation.error.note_required';
+  return 'reservation.error.generic';
 }
 
 export async function createReservationAction(formData: FormData): Promise<void> {
@@ -43,7 +48,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const startAt = String(formData.get('startAt') ?? '').trim();
   const endAt = String(formData.get('endAt') ?? '').trim();
   const purpose = String(formData.get('purpose') ?? '').trim() || undefined;
-  if (!startAt || !endAt) redirect('/reservations?error=missing_datetime');
+  if (!startAt || !endAt) redirect('/reservations?error=reservation.error.missing_datetime');
 
   const res = await fetch(`${CORE_API}/reservations`, {
     method: 'POST',
@@ -62,7 +67,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
   redirect(
-    `/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`,
+    `/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`,
   );
 }
 
@@ -75,9 +80,9 @@ export async function createBasketAction(formData: FormData): Promise<void> {
   const endAt = String(formData.get('endAt') ?? '').trim();
   const purpose = String(formData.get('purpose') ?? '').trim() || undefined;
   if (assetIds.length === 0) {
-    redirect('/reservations?error=' + encodeURIComponent('Select at least one asset.'));
+    redirect('/reservations?error=reservation.error.basket_no_assets');
   }
-  if (!startAt || !endAt) redirect('/reservations?error=missing_datetime');
+  if (!startAt || !endAt) redirect('/reservations?error=reservation.error.missing_datetime');
 
   const res = await fetch(`${CORE_API}/reservations/basket`, {
     method: 'POST',
@@ -99,7 +104,7 @@ export async function createBasketAction(formData: FormData): Promise<void> {
   }
   const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
   redirect(
-    `/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`,
+    `/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`,
   );
 }
 
@@ -116,7 +121,7 @@ export async function cancelReservationAction(formData: FormData): Promise<void>
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   redirect('/reservations?cancelled=1');
 }
@@ -134,7 +139,7 @@ export async function approveReservationAction(formData: FormData): Promise<void
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   redirect('/reservations?approved=1');
 }
@@ -152,7 +157,7 @@ export async function rejectReservationAction(formData: FormData): Promise<void>
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   redirect('/reservations?rejected=1');
 }
@@ -181,7 +186,7 @@ async function runBatchAction(
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   const body = (await res.json().catch(() => ({}))) as {
     processed?: unknown[];
@@ -246,7 +251,7 @@ export async function checkoutReservationAction(formData: FormData): Promise<voi
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   redirect('/reservations?checkedout=1');
 }
@@ -275,7 +280,7 @@ export async function checkinReservationAction(formData: FormData): Promise<void
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ message: 'error' }))) as { message?: string };
-    redirect(`/reservations?error=${encodeURIComponent(fmtError(body.message ?? 'error'))}`);
+    redirect(`/reservations?error=${encodeURIComponent(fmtErrorKey(body.message ?? 'error'))}`);
   }
   redirect('/reservations?checkedin=1');
 }

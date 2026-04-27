@@ -139,29 +139,33 @@ export default async function ReservationsPage({
   return (
     <>
         {sp.error ? (
-          <div className="panorama-banner-warning">{sp.error}</div>
+          <div className="panorama-banner-warning">{messages.t(sp.error)}</div>
         ) : null}
         {sp.created ? (
-          <div className="panorama-banner-success">Reservation created.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.created')}</div>
         ) : null}
         {sp.cancelled ? (
-          <div className="panorama-banner-success">Reservation cancelled.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.cancelled')}</div>
         ) : null}
         {sp.approved ? (
-          <div className="panorama-banner-success">Reservation approved.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.approved')}</div>
         ) : null}
         {sp.rejected ? (
-          <div className="panorama-banner-success">Reservation rejected.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.rejected')}</div>
         ) : null}
         {sp.checkedout ? (
-          <div className="panorama-banner-success">Reservation checked out.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.checked_out')}</div>
         ) : null}
         {sp.checkedin ? (
-          <div className="panorama-banner-success">Reservation checked in.</div>
+          <div className="panorama-banner-success">{messages.t('reservation.banner.checked_in')}</div>
         ) : null}
         {sp.basket ? (
           <div className="panorama-banner-success">
-            Basket created{sp.basketId ? ` (basket ${sp.basketId.slice(0, 8)}…).` : '.'}
+            {sp.basketId
+              ? messages.t('reservation.banner.basket_created_with_id', {
+                  id: sp.basketId.slice(0, 8),
+                })
+              : messages.t('reservation.banner.basket_created')}
           </div>
         ) : null}
         {sp.batch ? (
@@ -183,12 +187,12 @@ export default async function ReservationsPage({
         ) : null}
 
         <div className="panorama-card">
-          <h2 style={{ margin: '0 0 12px' }}>New reservation</h2>
+          <h2 style={{ margin: '0 0 12px' }}>{messages.t('reservation.create.title')}</h2>
           <form action={createReservationAction} className="panorama-form-grid">
             <div className="panorama-field">
-              <label htmlFor="assetId">Asset</label>
+              <label htmlFor="assetId">{messages.t('reservation.field.asset')}</label>
               <select id="assetId" name="assetId" required>
-                <option value="">Select a bookable asset…</option>
+                <option value="">{messages.t('reservation.field.asset.placeholder')}</option>
                 {assets.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.tag} — {a.name}
@@ -197,34 +201,34 @@ export default async function ReservationsPage({
               </select>
             </div>
             <div className="panorama-field">
-              <label htmlFor="startAt">Start</label>
+              <label htmlFor="startAt">{messages.t('reservation.field.start')}</label>
               <input id="startAt" name="startAt" type="datetime-local" required />
             </div>
             <div className="panorama-field">
-              <label htmlFor="endAt">End</label>
+              <label htmlFor="endAt">{messages.t('reservation.field.end')}</label>
               <input id="endAt" name="endAt" type="datetime-local" required />
             </div>
             <div className="panorama-field" style={{ gridColumn: '1 / -1' }}>
-              <label htmlFor="purpose">Purpose (optional)</label>
+              <label htmlFor="purpose">{messages.t('reservation.field.purpose_optional')}</label>
               <input id="purpose" name="purpose" type="text" maxLength={2000} />
             </div>
             <button type="submit" className="panorama-button" style={{ gridColumn: '1 / -1' }}>
-              Create reservation
+              {messages.t('reservation.create.submit')}
             </button>
           </form>
         </div>
 
         <details className="panorama-card" style={{ marginTop: 16 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 16 }}>
-            New basket (multiple assets, same window)
+            {messages.t('reservation.basket.create.title')}
           </summary>
           <form action={createBasketAction} className="panorama-form-grid" style={{ marginTop: 12 }}>
             <div className="panorama-field" style={{ gridColumn: '1 / -1' }}>
-              <label>Assets (pick up to 20)</label>
+              <label>{messages.t('reservation.basket.field.assets')}</label>
               <div className="panorama-basket-assets">
                 {assets.length === 0 ? (
                   <p className="panorama-empty" style={{ margin: 0 }}>
-                    No bookable assets in this tenant.
+                    {messages.t('reservation.basket.empty.no_bookable_assets')}
                   </p>
                 ) : (
                   assets.map((a) => (
@@ -239,19 +243,19 @@ export default async function ReservationsPage({
               </div>
             </div>
             <div className="panorama-field">
-              <label htmlFor="basketStart">Start</label>
+              <label htmlFor="basketStart">{messages.t('reservation.field.start')}</label>
               <input id="basketStart" name="startAt" type="datetime-local" required />
             </div>
             <div className="panorama-field">
-              <label htmlFor="basketEnd">End</label>
+              <label htmlFor="basketEnd">{messages.t('reservation.field.end')}</label>
               <input id="basketEnd" name="endAt" type="datetime-local" required />
             </div>
             <div className="panorama-field">
-              <label htmlFor="basketPurpose">Purpose (optional)</label>
+              <label htmlFor="basketPurpose">{messages.t('reservation.field.purpose_optional')}</label>
               <input id="basketPurpose" name="purpose" type="text" maxLength={2000} />
             </div>
             <button type="submit" className="panorama-button" style={{ gridColumn: '1 / -1' }}>
-              Create basket
+              {messages.t('reservation.basket.create.submit')}
             </button>
           </form>
         </details>
@@ -261,21 +265,22 @@ export default async function ReservationsPage({
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}
           >
             <h2 style={{ margin: 0 }}>
-              Reservations <span className="panorama-pill">{items.length}</span>
+              {messages.t('reservation.list.title')}{' '}
+              <span className="panorama-pill">{items.length}</span>
             </h2>
             <nav style={{ display: 'flex', gap: 10, fontSize: 13 }}>
               <a
                 href={`/reservations?scope=mine&status=${statusParam}`}
                 style={{ fontWeight: scopeParam === 'mine' ? 600 : 400 }}
               >
-                Mine
+                {messages.t('reservation.list.scope.mine')}
               </a>
               {isAdmin ? (
                 <a
                   href={`/reservations?scope=tenant&status=${statusParam}`}
                   style={{ fontWeight: scopeParam === 'tenant' ? 600 : 400 }}
                 >
-                  Tenant
+                  {messages.t('reservation.list.scope.tenant')}
                 </a>
               ) : null}
               {['open', 'pending', 'approved', 'cancelled', 'overdue', 'all'].map((s) => (
@@ -284,27 +289,29 @@ export default async function ReservationsPage({
                   href={`/reservations?scope=${scopeParam}&status=${s}`}
                   style={{ fontWeight: statusParam === s ? 600 : 400 }}
                 >
-                  {s}
+                  {messages.t(`reservation.list.filter.${s}`)}
                 </a>
               ))}
             </nav>
           </div>
 
           {!resList.ok ? (
-            <p className="panorama-error">Failed to load reservations (HTTP {resList.status}).</p>
+            <p className="panorama-error">
+              {messages.t('reservation.list.failed', { status: resList.status })}
+            </p>
           ) : items.length === 0 ? (
-            <p className="panorama-empty">No reservations in this view.</p>
+            <p className="panorama-empty">{messages.t('reservation.list.empty')}</p>
           ) : (
             <table className="panorama-table">
               <thead>
                 <tr>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Asset</th>
-                  <th>Approval</th>
-                  <th>Lifecycle</th>
-                  <th>Purpose</th>
-                  <th>Actions</th>
+                  <th>{messages.t('reservation.list.column.start')}</th>
+                  <th>{messages.t('reservation.list.column.end')}</th>
+                  <th>{messages.t('reservation.list.column.asset')}</th>
+                  <th>{messages.t('reservation.list.column.approval')}</th>
+                  <th>{messages.t('reservation.list.column.lifecycle')}</th>
+                  <th>{messages.t('reservation.list.column.purpose')}</th>
+                  <th>{messages.t('reservation.list.column.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -313,8 +320,8 @@ export default async function ReservationsPage({
                   const isBasketAnchor = meta !== undefined && meta.firstRowId === r.id;
                   return (
                   <tr key={r.id} data-basket={r.basketId ?? undefined}>
-                    <td>{new Date(r.startAt).toLocaleString()}</td>
-                    <td>{new Date(r.endAt).toLocaleString()}</td>
+                    <td>{new Date(r.startAt).toLocaleString(messages.locale)}</td>
+                    <td>{new Date(r.endAt).toLocaleString(messages.locale)}</td>
                     <td>
                       {r.assetId
                         ? assets.find((a) => a.id === r.assetId)?.tag ?? r.assetId.slice(0, 8)
@@ -322,9 +329,9 @@ export default async function ReservationsPage({
                       {r.basketId ? (
                         <span
                           className="panorama-pill panorama-basket-pill"
-                          title={`Part of basket ${r.basketId}`}
+                          title={messages.t('reservation.basket.pill.title', { id: r.basketId })}
                         >
-                          basket {r.basketId.slice(0, 6)}
+                          {messages.t('reservation.basket.pill', { id: r.basketId.slice(0, 6) })}
                         </span>
                       ) : null}
                     </td>
@@ -441,9 +448,13 @@ export default async function ReservationsPage({
                                 <summary
                                   className="panorama-button"
                                   style={{ cursor: 'pointer' }}
-                                  title={`Approve all ${meta.pending} pending reservations in this basket`}
+                                  title={messages.t('reservation.batch.approve_n_pending.title', {
+                                    n: meta.pending,
+                                  })}
                                 >
-                                  Approve {meta.pending} pending
+                                  {messages.t('reservation.batch.approve_n_pending', {
+                                    n: meta.pending,
+                                  })}
                                 </summary>
                                 <form
                                   action={approveBasketAction}
@@ -453,11 +464,13 @@ export default async function ReservationsPage({
                                   <input
                                     type="text"
                                     name="note"
-                                    placeholder="Note (optional, attached to each row)"
+                                    placeholder={messages.t(
+                                      'reservation.batch.approve.note_placeholder',
+                                    )}
                                     maxLength={500}
                                   />
                                   <button type="submit" className="panorama-button">
-                                    Approve basket
+                                    {messages.t('reservation.batch.approve.submit')}
                                   </button>
                                 </form>
                               </details>
@@ -465,9 +478,13 @@ export default async function ReservationsPage({
                                 <summary
                                   className="panorama-button secondary"
                                   style={{ cursor: 'pointer' }}
-                                  title={`Reject all ${meta.pending} pending reservations in this basket`}
+                                  title={messages.t('reservation.batch.reject_n_pending.title', {
+                                    n: meta.pending,
+                                  })}
                                 >
-                                  Reject {meta.pending} pending
+                                  {messages.t('reservation.batch.reject_n_pending', {
+                                    n: meta.pending,
+                                  })}
                                 </summary>
                                 <form
                                   action={rejectBasketAction}
@@ -488,7 +505,7 @@ export default async function ReservationsPage({
                                     )}
                                   />
                                   <button type="submit" className="panorama-button secondary">
-                                    Reject basket
+                                    {messages.t('reservation.batch.reject.submit')}
                                   </button>
                                 </form>
                               </details>
@@ -499,9 +516,15 @@ export default async function ReservationsPage({
                               <summary
                                 className="panorama-button secondary"
                                 style={{ cursor: 'pointer' }}
-                                title={`Cancel ${meta.cancellable} of ${meta.size} reservations in this basket (terminal rows like checked-out are skipped)`}
+                                title={messages.t('reservation.batch.cancel_n_of_m.title', {
+                                  n: meta.cancellable,
+                                  m: meta.size,
+                                })}
                               >
-                                Cancel {meta.cancellable} of {meta.size}
+                                {messages.t('reservation.batch.cancel_n_of_m', {
+                                  n: meta.cancellable,
+                                  m: meta.size,
+                                })}
                               </summary>
                               <form
                                 action={cancelBasketAction}
@@ -511,11 +534,13 @@ export default async function ReservationsPage({
                                 <input
                                   type="text"
                                   name="reason"
-                                  placeholder="Reason (optional, attached to each row)"
+                                  placeholder={messages.t(
+                                    'reservation.batch.cancel.note_placeholder',
+                                  )}
                                   maxLength={500}
                                 />
                                 <button type="submit" className="panorama-button secondary">
-                                  Cancel basket
+                                  {messages.t('reservation.batch.cancel.submit')}
                                 </button>
                               </form>
                             </details>
@@ -526,7 +551,7 @@ export default async function ReservationsPage({
                         <form action={cancelReservationAction} style={{ display: 'inline' }}>
                           <input type="hidden" name="id" value={r.id} />
                           <button type="submit" className="panorama-button secondary">
-                            Cancel
+                            {messages.t('reservation.action.cancel')}
                           </button>
                         </form>
                       ) : null}
@@ -629,21 +654,30 @@ export default async function ReservationsPage({
                       {canCheckout(r) ? (
                         <details style={{ display: 'inline-block', marginLeft: 6 }}>
                           <summary className="panorama-button" style={{ cursor: 'pointer' }}>
-                            Check out
+                            {messages.t('reservation.action.checkout.cta')}
                           </summary>
                           <form action={checkoutReservationAction} className="panorama-inline-form">
                             <input type="hidden" name="id" value={r.id} />
                             <input
                               type="number"
                               name="mileage"
-                              placeholder="Mileage out"
+                              placeholder={messages.t(
+                                'reservation.action.checkout.mileage_placeholder',
+                              )}
                               min={0}
                               required
                               aria-required="true"
                             />
-                            <input type="text" name="condition" placeholder="Condition" maxLength={200} />
+                            <input
+                              type="text"
+                              name="condition"
+                              placeholder={messages.t(
+                                'reservation.action.checkout.condition_placeholder',
+                              )}
+                              maxLength={200}
+                            />
                             <button type="submit" className="panorama-button">
-                              Confirm
+                              {messages.t('reservation.action.checkout.confirm')}
                             </button>
                           </form>
                         </details>
@@ -651,25 +685,42 @@ export default async function ReservationsPage({
                       {canCheckin(r) ? (
                         <details style={{ display: 'inline-block', marginLeft: 6 }}>
                           <summary className="panorama-button" style={{ cursor: 'pointer' }}>
-                            Check in
+                            {messages.t('reservation.action.checkin.cta')}
                           </summary>
                           <form action={checkinReservationAction} className="panorama-inline-form">
                             <input type="hidden" name="id" value={r.id} />
                             <input
                               type="number"
                               name="mileage"
-                              placeholder="Mileage in"
+                              placeholder={messages.t(
+                                'reservation.action.checkin.mileage_placeholder',
+                              )}
                               min={r.mileageOut ?? 0}
                               required
                               aria-required="true"
                             />
-                            <input type="text" name="condition" placeholder="Condition" maxLength={200} />
+                            <input
+                              type="text"
+                              name="condition"
+                              placeholder={messages.t(
+                                'reservation.action.checkin.condition_placeholder',
+                              )}
+                              maxLength={200}
+                            />
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <input type="checkbox" name="damageFlag" /> Damage?
+                              <input type="checkbox" name="damageFlag" />{' '}
+                              {messages.t('reservation.action.checkin.damage_label')}
                             </label>
-                            <input type="text" name="damageNote" placeholder="Damage note (if any)" maxLength={500} />
+                            <input
+                              type="text"
+                              name="damageNote"
+                              placeholder={messages.t(
+                                'reservation.action.checkin.damage_note_placeholder',
+                              )}
+                              maxLength={500}
+                            />
                             <button type="submit" className="panorama-button">
-                              Confirm
+                              {messages.t('reservation.action.checkin.confirm')}
                             </button>
                           </form>
                         </details>
@@ -735,7 +786,7 @@ function humaniseBatchReason(t: (k: string) => string, raw: string): string {
 }
 
 function renderBatchBanner(
-  t: (key: string) => string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
   opts: {
     verb: string;
     processed: number;
@@ -744,10 +795,12 @@ function renderBatchBanner(
   },
 ): ReactNode {
   const { verb, processed, skipped, skippedReasons } = opts;
-  const verbPast =
-    verb === 'cancel' ? 'cancelled' : verb === 'approve' ? 'approved' : 'rejected';
+  // Only the three verbs the batch endpoints expose are valid; anything
+  // else falls through to "cancel" so we never crash on a malformed URL.
+  const v: 'cancel' | 'approve' | 'reject' =
+    verb === 'approve' ? 'approve' : verb === 'reject' ? 'reject' : 'cancel';
   if (processed === 0 && skipped === 0) {
-    return <>Basket {verb}: nothing to apply — the basket was empty or all rows were terminal.</>;
+    return <>{t(`reservation.batch.banner.${v}.empty`)}</>;
   }
   const reasons = skippedReasons
     .split('|')
@@ -759,27 +812,24 @@ function renderBatchBanner(
       const count = Number(pair.slice(idx + 1));
       return { reason, count: Number.isFinite(count) ? count : 1 };
     });
+  if (skipped === 0) {
+    return <>{t(`reservation.batch.banner.${v}.processed`, { processed })}</>;
+  }
+  if (reasons.length === 0) {
+    return (
+      <>{t(`reservation.batch.banner.${v}.processed_skipped`, { processed, skipped })}</>
+    );
+  }
+  const reasonsText = reasons
+    .map((r) => `${r.count} ${humaniseBatchReason(t, r.reason)}`)
+    .join('; ');
   return (
     <>
-      Basket {verb}: <strong>{processed}</strong> {verbPast}
-      {skipped > 0 ? (
-        <>
-          , <strong>{skipped}</strong> skipped
-          {reasons.length > 0 ? (
-            <>
-              {' '}(
-              {reasons.map((r, i) => (
-                <span key={r.reason}>
-                  {i > 0 ? '; ' : ''}
-                  {r.count} {humaniseBatchReason(t, r.reason)}
-                </span>
-              ))}
-              )
-            </>
-          ) : null}
-        </>
-      ) : null}
-      .
+      {t(`reservation.batch.banner.${v}.processed_skipped_reasons`, {
+        processed,
+        skipped,
+        reasons: reasonsText,
+      })}
     </>
   );
 }
