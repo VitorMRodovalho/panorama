@@ -8,6 +8,7 @@ import type {
   MaintenanceService,
 } from '../src/modules/maintenance/maintenance.service.js';
 import type { PrismaService } from '../src/modules/prisma/prisma.service.js';
+import type { AuditEventInput, AuditService } from '../src/modules/audit/audit.service.js';
 
 /**
  * Unit coverage for the ADR-0016 §5 auto-suggest subscriber.
@@ -69,6 +70,28 @@ function makeMaintenance(fix: MaintenanceFixture): MaintenanceService & {
   );
 }
 
+interface AuditFixture {
+  /** Set to true to make `audit.record` reject on call (covers the
+   *  `auto_suggest_audit_failed` log path). */
+  failOnRecord?: boolean;
+}
+
+function makeAudit(fix: AuditFixture = {}): AuditService & {
+  records: AuditEventInput[];
+} {
+  const records: AuditEventInput[] = [];
+  const record = vi.fn(async (event: AuditEventInput) => {
+    records.push(event);
+    if (fix.failOnRecord) {
+      throw new Error('audit_db_unreachable');
+    }
+  });
+  return Object.assign(
+    { record } as unknown as AuditService,
+    { records },
+  );
+}
+
 function makeEvent(
   overrides: Partial<NotificationEvent> & { eventType: string; payload: object },
 ): NotificationEvent {
@@ -125,15 +148,17 @@ const OPENED_RESULT: AutoOpenResult = { status: 'opened', ticketId: 'tkt-001' };
 
 let prismaFixture: PrismaFixture;
 let maintenance: ReturnType<typeof makeMaintenance>;
+let audit: ReturnType<typeof makeAudit>;
 let subscriber: MaintenanceTicketSubscriber;
 
 beforeEach(() => {
   prismaFixture = FIXTURE_FLAG_ON;
   maintenance = makeMaintenance({ result: OPENED_RESULT });
+  audit = makeAudit();
 });
 
 function build(): MaintenanceTicketSubscriber {
-  return new MaintenanceTicketSubscriber(makePrisma(prismaFixture), maintenance);
+  return new MaintenanceTicketSubscriber(makePrisma(prismaFixture), maintenance, audit);
 }
 
 describe('MaintenanceTicketSubscriber — supports()', () => {
@@ -354,5 +379,140 @@ describe('MaintenanceTicketSubscriber — defensive guards', () => {
     // marks the event dispatched, which is the desired retry-idempotent
     // contract.
     expect(maintenance.calls).toHaveLength(1);
+  });
+});
+
+describe('MaintenanceTicketSubscriber — audit on throw + skip', () => {
+  // ADR-0016 §5 v3 / security-reviewer pass-1 soft (#139): every
+  // throw path emits an immediate audit row before re-raising, so
+  // ops gets a forensic trail without waiting for the dispatcher's
+  // MAX_ATTEMPTS=5 DEAD-letter (~31 min backoff). The flag-off
+  // skip is similarly audited so a flag-flip backfill can recover
+  // the dropped events.
+
+  it('audits + re-throws on missing_tenant_id', async () => {
+    subscriber = build();
+    await expect(
+      subscriber.handle(
+        makeEvent({
+          tenantId: null,
+          eventType: 'panorama.inspection.completed',
+          payload: FAIL_INSPECTION_PAYLOAD,
+        }),
+      ),
+    ).rejects.toThrow(/missing_tenant_id/);
+    expect(audit.records).toHaveLength(1);
+    const row = audit.records[0]!;
+    expect(row.action).toBe('panorama.maintenance.auto_suggest_failed');
+    expect(row.tenantId).toBeNull();
+    expect(row.metadata).toMatchObject({ reason: 'missing_tenant_id' });
+  });
+
+  it('audits + re-throws on asset_not_found, with assetId resourceId', async () => {
+    prismaFixture = { ...FIXTURE_FLAG_ON, asset: null };
+    subscriber = build();
+    await expect(
+      subscriber.handle(
+        makeEvent({
+          eventType: 'panorama.reservation.checked_in_with_damage',
+          payload: DAMAGE_CHECKIN_PAYLOAD,
+        }),
+      ),
+    ).rejects.toThrow(/asset_not_found/);
+    expect(audit.records).toHaveLength(1);
+    const row = audit.records[0]!;
+    expect(row.action).toBe('panorama.maintenance.auto_suggest_failed');
+    expect(row.resourceType).toBe('asset');
+    expect(row.resourceId).toBe(ASSET_ID);
+    expect(row.tenantId).toBe(TENANT_A);
+    expect(row.metadata).toMatchObject({ reason: 'asset_not_found' });
+  });
+
+  it('audits + re-throws on asset_cross_tenant', async () => {
+    prismaFixture = {
+      ...FIXTURE_FLAG_ON,
+      asset: { tag: 'V-100', tenantId: TENANT_B },
+    };
+    subscriber = build();
+    await expect(
+      subscriber.handle(
+        makeEvent({
+          eventType: 'panorama.inspection.completed',
+          payload: FAIL_INSPECTION_PAYLOAD,
+        }),
+      ),
+    ).rejects.toThrow(/asset_cross_tenant/);
+    expect(audit.records).toHaveLength(1);
+    expect(audit.records[0]!.metadata).toMatchObject({
+      reason: 'asset_cross_tenant',
+    });
+  });
+
+  it('audits the flag-off skip path so a flag-flip backfill is recoverable', async () => {
+    prismaFixture = FIXTURE_FLAG_OFF;
+    subscriber = build();
+    await subscriber.handle(
+      makeEvent({
+        eventType: 'panorama.inspection.completed',
+        payload: FAIL_INSPECTION_PAYLOAD,
+      }),
+    );
+    expect(maintenance.calls).toEqual([]);
+    expect(audit.records).toHaveLength(1);
+    const row = audit.records[0]!;
+    expect(row.action).toBe('panorama.maintenance.auto_suggest_skipped');
+    expect(row.metadata).toMatchObject({
+      reason: 'flag_off',
+      assetId: ASSET_ID,
+      eventType: 'panorama.inspection.completed',
+    });
+  });
+
+  it('does NOT audit the happy path or PASS-outcome short-circuit', async () => {
+    subscriber = build();
+    await subscriber.handle(
+      makeEvent({
+        eventType: 'panorama.inspection.completed',
+        payload: FAIL_INSPECTION_PAYLOAD,
+      }),
+    );
+    // Happy path → openTicketAuto fired, no failure audit, no flag-off
+    // audit. (The `panorama.maintenance.opened` audit fires inside
+    // openTicketAuto itself, exercised by the maintenance.e2e suite.)
+    expect(audit.records).toEqual([]);
+  });
+
+  it('does NOT audit on PASS outcome (PASS short-circuit is healthy)', async () => {
+    subscriber = build();
+    await subscriber.handle(
+      makeEvent({
+        eventType: 'panorama.inspection.completed',
+        payload: { ...FAIL_INSPECTION_PAYLOAD, outcome: 'PASS' },
+      }),
+    );
+    expect(audit.records).toEqual([]);
+  });
+
+  it('does NOT mask the original error if the audit itself throws', async () => {
+    audit = makeAudit({ failOnRecord: true });
+    // Asset-cross-tenant throw + audit-record throw → the original
+    // `asset_cross_tenant` must surface to the dispatcher (the
+    // dispatcher's eventual DEAD-letter is the backstop).
+    prismaFixture = {
+      ...FIXTURE_FLAG_ON,
+      asset: { tag: 'V-100', tenantId: TENANT_B },
+    };
+    subscriber = build();
+    await expect(
+      subscriber.handle(
+        makeEvent({
+          eventType: 'panorama.inspection.completed',
+          payload: FAIL_INSPECTION_PAYLOAD,
+        }),
+      ),
+    ).rejects.toThrow(/asset_cross_tenant/);
+    // audit.record was attempted (and threw) — the throw didn't
+    // bubble up to mask the asset_cross_tenant.
+    expect(audit.records).toHaveLength(1);
   });
 });
