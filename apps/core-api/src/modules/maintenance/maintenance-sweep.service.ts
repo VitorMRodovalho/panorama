@@ -462,9 +462,24 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
   private async releaseDedup(key: string): Promise<void> {
     if (!this.dedupRedis) return;
     try {
-      await this.dedupRedis.del(key);
+      const removed = await this.dedupRedis.del(key);
+      if (removed === 0) {
+        // Key vanished between `acquireDedup` (winning SETNX) and this
+        // release. Possible causes: Redis partition + replica catch-up,
+        // a parallel sweep tick already released, or the 24 h TTL
+        // fired (unlikely within one tick). Worth surfacing to
+        // alerting because under healthy operation this branch
+        // shouldn't fire — silently logging at debug let a real
+        // partition slip through unnoticed (security-reviewer pass-1
+        // soft on #140).
+        this.log.warn({ key }, 'pm_due_dedup_release_returned_zero');
+      }
     } catch (err) {
-      this.log.debug({ err: String(err), key }, 'pm_due_dedup_release_failed');
+      // Promoted from debug to warn for the same reason: a failure to
+      // release the dedup key after a batch failure means the next
+      // tick can't dedup against this asset until TTL fires (24 h),
+      // and ops should know.
+      this.log.warn({ err: String(err), key }, 'pm_due_dedup_release_failed');
     }
   }
 

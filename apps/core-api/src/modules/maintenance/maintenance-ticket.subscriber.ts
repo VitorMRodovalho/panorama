@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationEvent, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ChannelHandler } from '../notification/channel-registry.js';
+import { AuditService } from '../audit/audit.service.js';
 import { MaintenanceService, type AutoOpenTicketParams } from './maintenance.service.js';
 
 /**
@@ -69,6 +70,7 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly maintenance: MaintenanceService,
+    private readonly audit: AuditService,
   ) {}
 
   supports(eventType: string): boolean {
@@ -82,61 +84,139 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
     if (!event.tenantId) {
       // Auto-suggest is strictly tenant-scoped — refuse rather than fall
       // through to runAsSuperAdmin and write under the wrong tenant.
+      // Audit the failure before the throw so a flag-flip backfill or
+      // a forensic walkthrough has an immediate trail; the dispatcher's
+      // retry path will still fire and eventually DEAD-letter after
+      // MAX_ATTEMPTS=5 (~31 min backoff) — this audit just doesn't
+      // make ops wait for it.
+      await this.recordFailureAudit(event, 'missing_tenant_id', null);
       throw new Error('missing_tenant_id');
     }
     const tenantId = event.tenantId;
 
-    await this.prisma.runInTenant(tenantId, async (tx) => {
-      const tenant = await tx.tenant.findUnique({
-        where: { id: tenantId },
-        select: {
-          autoOpenMaintenanceFromInspection: true,
-          systemActorUserId: true,
+    // Set inside `runInTenant` and consumed AFTER it returns. The
+    // flag-off audit cannot be written from within the tenant tx
+    // (audit_events writes need super-admin); lifting it out keeps
+    // the privilege boundary clean.
+    let flagOff = false;
+
+    try {
+      await this.prisma.runInTenant(tenantId, async (tx) => {
+        const tenant = await tx.tenant.findUnique({
+          where: { id: tenantId },
+          select: {
+            autoOpenMaintenanceFromInspection: true,
+            systemActorUserId: true,
+          },
+        });
+        if (!tenant) {
+          // Stale event for a deleted tenant. Throwing would loop the
+          // dispatcher's retry path. Return cleanly so the row marks
+          // dispatched and the issue (deleted-tenant residual events)
+          // surfaces via the cleanup audit trail elsewhere.
+          this.log.warn(
+            { eventId: event.id, eventType: event.eventType, tenantId },
+            'auto_suggest_tenant_missing',
+          );
+          return;
+        }
+        if (!tenant.autoOpenMaintenanceFromInspection) {
+          // Per-tenant opt-in — log + return cleanly so the event marks
+          // dispatched on first attempt instead of accumulating retries.
+          flagOff = true;
+          this.log.log(
+            { eventId: event.id, eventType: event.eventType, tenantId },
+            'auto_suggest_skipped_flag_off',
+          );
+          return;
+        }
+
+        const params = await this.buildParams(tx, event, tenant.systemActorUserId);
+        if (!params) {
+          // PASS outcome on inspection.completed → no ticket. The event
+          // itself still dispatches successfully.
+          return;
+        }
+
+        const result = await this.maintenance.openTicketAuto(tx, params);
+        this.log.log(
+          {
+            eventId: event.id,
+            eventType: event.eventType,
+            tenantId,
+            source: params.source,
+            result: result.status,
+            ...(result.status === 'opened'
+              ? { ticketId: result.ticketId }
+              : { reason: result.reason, existingTicketId: result.existingTicketId }),
+          },
+          'auto_suggest_processed',
+        );
+      });
+    } catch (err) {
+      // The runInTenant tx has already rolled back at this point, so
+      // an audit row written here lands cleanly outside it. Don't
+      // mask the original error if the audit itself fails — re-throw
+      // either way so the dispatcher's retry/DEAD-letter path stays
+      // authoritative.
+      const reason = err instanceof Error ? err.message : 'unknown';
+      await this.recordFailureAudit(event, reason, extractAssetId(event));
+      throw err;
+    }
+
+    if (flagOff) {
+      // Backfill-recoverable trail: when a tenant flips the flag from
+      // false → true, ops needs to know which events were dropped on
+      // the floor so they can decide whether to replay or accept the
+      // gap. The dispatcher already marks the event dispatched
+      // successfully; this is the second leg.
+      await this.audit.record({
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'notification_event',
+        resourceId: event.id,
+        tenantId,
+        actorUserId: null,
+        metadata: {
+          eventType: event.eventType,
+          reason: 'flag_off',
+          assetId: extractAssetId(event),
         },
       });
-      if (!tenant) {
-        // Stale event for a deleted tenant. Throwing would loop the
-        // dispatcher's retry path. Return cleanly so the row marks
-        // dispatched and the issue (deleted-tenant residual events)
-        // surfaces via the cleanup audit trail elsewhere.
-        this.log.warn(
-          { eventId: event.id, eventType: event.eventType, tenantId },
-          'auto_suggest_tenant_missing',
-        );
-        return;
-      }
-      if (!tenant.autoOpenMaintenanceFromInspection) {
-        // Per-tenant opt-in — log + return cleanly so the event marks
-        // dispatched on first attempt instead of accumulating retries.
-        this.log.log(
-          { eventId: event.id, eventType: event.eventType, tenantId },
-          'auto_suggest_skipped_flag_off',
-        );
-        return;
-      }
+    }
+  }
 
-      const params = await this.buildParams(tx, event, tenant.systemActorUserId);
-      if (!params) {
-        // PASS outcome on inspection.completed → no ticket. The event
-        // itself still dispatches successfully.
-        return;
-      }
-
-      const result = await this.maintenance.openTicketAuto(tx, params);
-      this.log.log(
-        {
-          eventId: event.id,
+  private async recordFailureAudit(
+    event: NotificationEvent,
+    reason: string,
+    assetId: string | null,
+  ): Promise<void> {
+    try {
+      await this.audit.record({
+        action: 'panorama.maintenance.auto_suggest_failed',
+        resourceType: assetId ? 'asset' : 'notification_event',
+        resourceId: assetId ?? event.id,
+        tenantId: event.tenantId ?? null,
+        actorUserId: null,
+        metadata: {
           eventType: event.eventType,
-          tenantId,
-          source: params.source,
-          result: result.status,
-          ...(result.status === 'opened'
-            ? { ticketId: result.ticketId }
-            : { reason: result.reason, existingTicketId: result.existingTicketId }),
+          eventId: event.id,
+          reason,
         },
-        'auto_suggest_processed',
+      });
+    } catch (auditErr) {
+      // If audit itself fails, log + continue. The dispatcher's
+      // eventual DEAD-letter audit (MAX_ATTEMPTS=5) is the
+      // backstop; this is the soft trail.
+      this.log.error(
+        {
+          err: String(auditErr),
+          originalReason: reason,
+          eventId: event.id,
+          tenantId: event.tenantId,
+        },
+        'auto_suggest_audit_failed',
       );
-    });
+    }
   }
 
   /**
@@ -241,4 +321,20 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
     // supports() should have filtered these out, but defence-in-depth.
     throw new Error(`unsupported_event_type:${event.eventType}`);
   }
+}
+
+/**
+ * Pull `assetId` out of the event payload when present. Both supported
+ * event types carry it; an unrecognised event type returns null and
+ * the audit row falls back to `notification_event` resource scope.
+ */
+function extractAssetId(event: NotificationEvent): string | null {
+  if (
+    event.eventType !== 'panorama.inspection.completed' &&
+    event.eventType !== 'panorama.reservation.checked_in_with_damage'
+  ) {
+    return null;
+  }
+  const payload = event.payload as { assetId?: string } | null;
+  return payload?.assetId ?? null;
 }
