@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "test": "echo 'ui-kit — scaffold only, first components land in 0.2'",
-    "lint": "echo 'nothing to lint yet'",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },

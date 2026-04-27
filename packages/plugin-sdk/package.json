@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "test": "echo 'plugin-sdk — runtime + tests land with first plugin in 0.4'",
-    "lint": "echo 'plugin-sdk lint — no ESLint config yet, gated by typecheck'",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },

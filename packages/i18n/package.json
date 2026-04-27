@@ -8,7 +8,7 @@
   "scripts": {
     "build": "echo 'i18n — json bundles only, no build step'",
     "test": "echo 'i18n — coverage gate runs from root via scripts/i18n-check.ts'",
-    "lint": "echo 'i18n — no lint, bundles are json'",
+    "lint": "echo 'i18n — no lint (JSON bundles only); coverage + JSX gate run from root via pnpm i18n:check + i18n:jsx-gate. #39 ARCH-05.'",
     "typecheck": "echo 'i18n — no typecheck, bundles are json'"
   }
 }
