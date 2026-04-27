@@ -41,9 +41,14 @@ export class MaintenanceModule implements OnModuleInit {
     // is loaded eagerly in app.module.ts and registers its own handlers
     // before MaintenanceModule's onModuleInit runs.
     this.registry.register(this.subscriber);
-    // MaintenanceSweepService starts its own BullMQ schedule via
-    // OnModuleInit (gated by NODE_ENV != 'test' AND FEATURE_MAINTENANCE
-    // == 'true'). No explicit start call needed here — Nest's lifecycle
-    // resolves provider OnModuleInit hooks alongside the module's own.
+    // MaintenanceSweepService self-starts its BullMQ schedule from its
+    // own OnModuleInit hook (gated by NODE_ENV != 'test' AND
+    // FEATURE_MAINTENANCE == 'true'). Nest resolves provider hooks
+    // before the owning module's hook, so the sweep is up by the time
+    // this method runs. Consider centralising the lifecycle here in a
+    // future refactor if a fourth ChannelHandler / sweep lands and the
+    // self-init pattern starts adding cognitive load — for now,
+    // mirroring InspectionMaintenanceService's self-init is the path
+    // of least surprise.
   }
 }

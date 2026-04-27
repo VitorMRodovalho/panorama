@@ -61,7 +61,14 @@ const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 // the sweep's "approaching due" warning band).
 const MILEAGE_WARNING_BAND_MILES = 500;
 const DATE_WARNING_BAND_DAYS = 14;
-const PER_TENANT_BATCH_SIZE = 500;
+// Circuit-breaker bound on the per-tenant scan. Migration 0014 +
+// 0017 give both arms of the UNION a partial index, so the typical
+// candidate set is bounded by `assets-with-PM-due-this-cycle`
+// (single-digit % of fleet on a typical day). The 10 000 ceiling
+// would only fire under a planner regression / unexpected data shape
+// — log + alert path picks it up rather than silently dropping
+// signals like the previous LIMIT 500 did (data-architect Q3).
+const PER_TENANT_CIRCUIT_BREAKER = 10_000;
 
 interface PmDueCandidate {
   id: string;
@@ -214,13 +221,24 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
     // has at most a handful of PM-due assets per day, so the JS-side
     // grouping is cheap. Avoids a SQL window function for portability.
     const candidatesByAsset = new Map<string, PmDueCandidate[]>();
+    let tenantsScanned = 0;
     for (const tenant of tenants) {
+      tenantsScanned++;
       const rows = await this.prisma.runInTenant(tenant.id, async (tx) => {
-        // Raw SQL because Prisma's relational query API doesn't
-        // express the `a.lastReadMileage + 500 >= am.nextServiceMileage`
-        // join-condition predicate naturally. The CHECK constraint
-        // `nextServiceMileage > mileageAtService` from migration 0014
-        // makes the comparison meaningful (no NULL drift).
+        // Raw SQL: each arm of the UNION uses its own partial index
+        // — date-arm via `next_service_due_partial` (migration 0014),
+        // mileage-arm via `next_service_mileage_due_partial`
+        // (migration 0017). UNION (not UNION ALL) deduplicates the
+        // overlap row when both triggers fire on the same ticket
+        // — JS-side aggregation per asset still groups multiple
+        // tickets correctly because each (id, …) tuple is unique.
+        //
+        // Postgres's BitmapOr cannot apply across these two arms
+        // because the mileage arm joins `assets.lastReadMileage` —
+        // the OR predicate would have driven the planner to either
+        // a heap scan or an awkward merge. UNION rewrites it as two
+        // independent sub-queries the planner optimises separately
+        // (data-architect Q6).
         return tx.$queryRaw<
           Array<{
             id: string;
@@ -231,29 +249,54 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
             assetLastReadMileage: number | null;
           }>
         >`
-          SELECT am.id,
-                 am."assetId" AS "assetId",
-                 am."tenantId" AS "tenantId",
-                 am."nextServiceDate" AS "nextServiceDate",
-                 am."nextServiceMileage" AS "nextServiceMileage",
-                 a."lastReadMileage" AS "assetLastReadMileage"
-            FROM asset_maintenances am
-            JOIN assets a
-              ON a.id = am."assetId"
-             AND a."tenantId" = am."tenantId"
-           WHERE am.status = 'COMPLETED'
-             AND am."tenantId" = ${tenant.id}::uuid
-             AND (
-               (am."nextServiceDate" IS NOT NULL
-                  AND am."nextServiceDate" <= ${dateCutoff})
-               OR (am."nextServiceMileage" IS NOT NULL
-                   AND a."lastReadMileage" IS NOT NULL
-                   AND a."lastReadMileage" + ${MILEAGE_WARNING_BAND_MILES} >= am."nextServiceMileage")
-             )
-           ORDER BY am."assetId", am."completedAt" DESC
-           LIMIT ${PER_TENANT_BATCH_SIZE}
+          (
+            SELECT am.id,
+                   am."assetId" AS "assetId",
+                   am."tenantId" AS "tenantId",
+                   am."nextServiceDate" AS "nextServiceDate",
+                   am."nextServiceMileage" AS "nextServiceMileage",
+                   a."lastReadMileage" AS "assetLastReadMileage"
+              FROM asset_maintenances am
+              JOIN assets a
+                ON a.id = am."assetId"
+               AND a."tenantId" = am."tenantId"
+             WHERE am.status = 'COMPLETED'
+               AND am."tenantId" = ${tenant.id}::uuid
+               AND am."nextServiceDate" IS NOT NULL
+               AND am."nextServiceDate" <= ${dateCutoff}
+          )
+          UNION
+          (
+            SELECT am.id,
+                   am."assetId" AS "assetId",
+                   am."tenantId" AS "tenantId",
+                   am."nextServiceDate" AS "nextServiceDate",
+                   am."nextServiceMileage" AS "nextServiceMileage",
+                   a."lastReadMileage" AS "assetLastReadMileage"
+              FROM asset_maintenances am
+              JOIN assets a
+                ON a.id = am."assetId"
+               AND a."tenantId" = am."tenantId"
+             WHERE am.status = 'COMPLETED'
+               AND am."tenantId" = ${tenant.id}::uuid
+               AND am."nextServiceMileage" IS NOT NULL
+               AND a."lastReadMileage" IS NOT NULL
+               AND a."lastReadMileage" + ${MILEAGE_WARNING_BAND_MILES} >= am."nextServiceMileage"
+          )
+          LIMIT ${PER_TENANT_CIRCUIT_BREAKER}
         `;
       });
+
+      if (rows.length === PER_TENANT_CIRCUIT_BREAKER) {
+        // Hard cap fired — log loudly so an SRE seeing it can either
+        // raise the cap or chase a planner regression. Without this
+        // log we'd be back to the silent-drop failure mode of the
+        // pre-data-architect-Q3 code.
+        this.log.error(
+          { tenantId: tenant.id, cap: PER_TENANT_CIRCUIT_BREAKER },
+          'pm_due_circuit_breaker_fired',
+        );
+      }
 
       for (const row of rows) {
         const key = `${row.tenantId}:${row.assetId}`;
@@ -266,13 +309,29 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    if (candidatesByAsset.size === 0) return 0;
+    if (candidatesByAsset.size === 0) {
+      this.log.debug(
+        { tenantsScanned, candidates: 0 },
+        'pm_due_swept_no_candidates',
+      );
+      return 0;
+    }
 
-    // Step 4 + 5: per-asset Redis SETNX dedup + audit emit.
-    let emitted = 0;
+    // Step 4: per-asset Redis SETNX dedup BEFORE the batched audit
+    // tx. SETNX is atomic so two concurrent sweep ticks (e.g. across
+    // pods) won't both pass — the loser sees `acquired === false`
+    // and skips. Build the audit-emit list from the survivors.
+    interface PendingAudit {
+      assetId: string;
+      tenantId: string;
+      tickets: PmDueCandidate[];
+      dedupKey: string;
+    }
+    const pending: PendingAudit[] = [];
     for (const [key, tickets] of candidatesByAsset) {
       const first = tickets[0]!;
-      const acquired = await this.acquireDedup(`pm_due:${key}`);
+      const dedupKey = `pm_due:${key}`;
+      const acquired = await this.acquireDedup(dedupKey);
       if (!acquired) {
         this.log.debug(
           { tenantId: first.tenantId, assetId: first.assetId },
@@ -280,62 +339,104 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
         );
         continue;
       }
-      const triggers = computeTriggers(tickets);
-      try {
-        await this.audit.record({
-          action: 'panorama.maintenance.next_service_due',
-          resourceType: 'asset',
-          resourceId: first.assetId,
-          tenantId: first.tenantId,
-          actorUserId: null,
-          metadata: {
-            assetId: first.assetId,
-            ticketIds: tickets.map((t) => t.id),
-            ticketCount: tickets.length,
-            triggeredBy: triggers.triggeredBy,
-            // Earliest date / smallest mileage among matching tickets —
-            // useful for dashboards rendering "soonest due" without a
-            // re-query.
-            earliestNextServiceDate: triggers.earliestDate
-              ? triggers.earliestDate.toISOString()
-              : null,
-            smallestNextServiceMileage: triggers.smallestMileage,
-            assetLastReadMileage: first.assetLastReadMileage,
-            // Captures whichever derived metric is meaningful to ops:
-            //   - days until earliest date (negative if overdue)
-            //   - miles until smallest mileage (negative if overdue)
-            daysUntilDue: triggers.earliestDate
-              ? Math.round(
-                  (triggers.earliestDate.getTime() - Date.now()) /
-                    (24 * 60 * 60 * 1000),
-                )
-              : null,
-            milesUntilDue:
-              triggers.smallestMileage !== null && first.assetLastReadMileage !== null
-                ? triggers.smallestMileage - first.assetLastReadMileage
-                : null,
-          },
-        });
-        emitted++;
-      } catch (err) {
-        // If audit emission fails, release the dedup so the next
-        // sweep can retry. Without the release, a transient audit
-        // failure would silently suppress the audit for 24 h.
-        this.log.warn(
-          {
-            tenantId: first.tenantId,
-            assetId: first.assetId,
-            err: String(err),
-          },
-          'pm_due_audit_failed',
-        );
-        await this.releaseDedup(`pm_due:${key}`);
+      pending.push({
+        assetId: first.assetId,
+        tenantId: first.tenantId,
+        tickets,
+        dedupKey,
+      });
+    }
+
+    if (pending.length === 0) {
+      this.log.debug(
+        { tenantsScanned, candidates: candidatesByAsset.size, dedupSkipped: candidatesByAsset.size },
+        'pm_due_swept_all_dedup',
+      );
+      return 0;
+    }
+
+    // Step 5: emit all audit rows in a SINGLE super-admin tx via
+    // `recordWithin`. Previously each `audit.record` opened its own
+    // tx (data-architect Q5) — at 100 audits per pass that was 100
+    // BEGIN/COMMIT round-trips on the audit hash chain. Batching
+    // also gets us all-or-nothing semantics: if one row fails, the
+    // whole batch rolls back, and the dedup-release path below
+    // releases ALL the keys consistently.
+    //
+    // `recordWithin` chains hash-of-prev within the tx, so the
+    // chain-reading pattern stays correct under batched inserts —
+    // each row reads the prior chain head from the same tx-local
+    // snapshot, the inserts commit atomically.
+    try {
+      await this.prisma.runAsSuperAdmin(
+        async (tx) => {
+          for (const p of pending) {
+            const triggers = computeTriggers(p.tickets);
+            await this.audit.recordWithin(tx, {
+              action: 'panorama.maintenance.next_service_due',
+              resourceType: 'asset',
+              resourceId: p.assetId,
+              tenantId: p.tenantId,
+              actorUserId: null,
+              metadata: {
+                assetId: p.assetId,
+                ticketIds: p.tickets.map((t) => t.id),
+                ticketCount: p.tickets.length,
+                triggeredBy: triggers.triggeredBy,
+                // Earliest date / smallest mileage among matching
+                // tickets — useful for dashboards rendering
+                // "soonest due" without a re-query.
+                earliestNextServiceDate: triggers.earliestDate
+                  ? triggers.earliestDate.toISOString()
+                  : null,
+                smallestNextServiceMileage: triggers.smallestMileage,
+                assetLastReadMileage: p.tickets[0]!.assetLastReadMileage,
+                daysUntilDue: triggers.earliestDate
+                  ? Math.round(
+                      (triggers.earliestDate.getTime() - Date.now()) /
+                        (24 * 60 * 60 * 1000),
+                    )
+                  : null,
+                milesUntilDue:
+                  triggers.smallestMileage !== null &&
+                  p.tickets[0]!.assetLastReadMileage !== null
+                    ? triggers.smallestMileage - p.tickets[0]!.assetLastReadMileage
+                    : null,
+              },
+            });
+          }
+        },
+        { reason: 'maintenance:pm_due_sweep:emit_audits' },
+      );
+    } catch (err) {
+      // Batch failed — release ALL the dedup keys we acquired so the
+      // next sweep tick can retry. A missed-then-recovered PM-due
+      // signal in a regulated domain (DOT 49 CFR §396.3 PM tracking
+      // lineage) is worse than the duplicate-audit risk if the
+      // release races against a concurrent sweep tick — log at error
+      // level so the alerting pipeline picks it up.
+      this.log.error(
+        {
+          assetCount: pending.length,
+          err: String(err),
+        },
+        'pm_due_audit_batch_failed',
+      );
+      for (const p of pending) {
+        await this.releaseDedup(p.dedupKey);
       }
+      return 0;
     }
-    if (emitted > 0) {
-      this.log.log({ emitted }, 'pm_due_swept');
-    }
-    return emitted;
+
+    this.log.log(
+      {
+        tenantsScanned,
+        candidates: candidatesByAsset.size,
+        emitted: pending.length,
+      },
+      'pm_due_swept',
+    );
+    return pending.length;
   }
 
   /**
