@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { apiGet } from '@/lib/api';
+import { loadMessages, type SupportedLocale } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
 
 interface ReservationView {
@@ -64,6 +65,11 @@ export default async function ReservationCalendarPage({
   const session = await getCurrentSession();
   if (!session) redirect('/login');
   const isAdmin = ADMIN_ROLES.has(session.currentRole);
+  const tenantLocale =
+    session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantLocale ??
+    'en';
+  const messages = loadMessages(tenantLocale);
+  const localeForDates = messages.locale;
 
   const requestedScope = sp.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
   const days = clampDays(Number(sp.days ?? DEFAULT_DAYS));
@@ -113,7 +119,10 @@ export default async function ReservationCalendarPage({
           }}
         >
           <h2 style={{ margin: 0 }}>
-            {days}-day calendar <span className="panorama-pill">{assetsToShow.length} assets</span>
+            {messages.t('calendar.title', { days })}{' '}
+            <span className="panorama-pill">
+              {messages.t('calendar.asset_count', { count: assetsToShow.length })}
+            </span>
           </h2>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {/* #76 PILOT-05: deep-link from calendar to the blackout admin
@@ -121,7 +130,7 @@ export default async function ReservationCalendarPage({
                 the page itself re-checks the role + redirects. */}
             {isAdmin ? (
               <Link href="/admin/blackouts" className="panorama-button secondary">
-                + Add blackout
+                {messages.t('calendar.add_blackout')}
               </Link>
             ) : null}
           <nav style={{ display: 'flex', gap: 10, fontSize: 13 }}>
@@ -129,14 +138,14 @@ export default async function ReservationCalendarPage({
               href={`/reservations/calendar?scope=mine&days=${days}`}
               style={{ fontWeight: requestedScope === 'mine' ? 600 : 400 }}
             >
-              Mine
+              {messages.t('calendar.scope.mine')}
             </a>
             {isAdmin ? (
               <a
                 href={`/reservations/calendar?scope=tenant&days=${days}`}
                 style={{ fontWeight: requestedScope === 'tenant' ? 600 : 400 }}
               >
-                Tenant
+                {messages.t('calendar.scope.tenant')}
               </a>
             ) : null}
             <span>·</span>
@@ -146,24 +155,26 @@ export default async function ReservationCalendarPage({
                 href={`/reservations/calendar?scope=${requestedScope}&days=${d}`}
                 style={{ fontWeight: days === d ? 600 : 400 }}
               >
-                {d}d
+                {messages.t('calendar.days_label', { days: d })}
               </a>
             ))}
           </nav>
           </div>
         </div>
 
-        <CalendarLegend />
+        <CalendarLegend t={messages.t} />
 
         <div className="panorama-calendar">
           <div className="panorama-calendar-header">
-            <div className="panorama-calendar-assetcol">Asset</div>
+            <div className="panorama-calendar-assetcol">
+              {messages.t('calendar.column.asset')}
+            </div>
             <div className="panorama-calendar-days">
               {Array.from({ length: days }).map((_, i) => {
                 const day = new Date(windowStart.getTime() + i * DAY_MS);
                 return (
                   <div key={i} className="panorama-calendar-daylabel">
-                    {day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    {day.toLocaleDateString(localeForDates, { month: 'short', day: 'numeric' })}
                   </div>
                 );
               })}
@@ -172,7 +183,7 @@ export default async function ReservationCalendarPage({
 
           {assetsToShow.length === 0 ? (
             <p className="panorama-empty" style={{ margin: '16px 0' }}>
-              No bookable assets in this tenant.
+              {messages.t('calendar.empty')}
             </p>
           ) : (
             assetsToShow.map((asset) => (
@@ -215,7 +226,7 @@ export default async function ReservationCalendarPage({
                       <Block
                         key={`r-${r.id}`}
                         kind={reservationKind(r)}
-                        label={labelForReservation(r)}
+                        label={labelForReservation(r, localeForDates)}
                         startMs={Date.parse(r.startAt)}
                         endMs={Date.parse(r.endAt)}
                         windowStartMs={windowStart.getTime()}
@@ -230,7 +241,7 @@ export default async function ReservationCalendarPage({
 
         {!reservationsRes.ok ? (
           <p className="panorama-error">
-            Couldn't load reservations (HTTP {reservationsRes.status}).
+            {messages.t('calendar.error.load_failed', { status: reservationsRes.status })}
           </p>
         ) : null}
       </div>
@@ -238,14 +249,14 @@ export default async function ReservationCalendarPage({
   );
 }
 
-function CalendarLegend(): ReactNode {
+function CalendarLegend({ t }: { t: (k: string) => string }): ReactNode {
   return (
     <div className="panorama-calendar-legend">
-      <Swatch kind="pending" label="Pending" />
-      <Swatch kind="approved" label="Approved" />
-      <Swatch kind="checkedout" label="Checked out" />
-      <Swatch kind="returned" label="Returned" />
-      <Swatch kind="blackout" label="Blackout" />
+      <Swatch kind="pending" label={t('calendar.legend.pending')} />
+      <Swatch kind="approved" label={t('calendar.legend.approved')} />
+      <Swatch kind="checkedout" label={t('calendar.legend.checkedout')} />
+      <Swatch kind="returned" label={t('calendar.legend.returned')} />
+      <Swatch kind="blackout" label={t('calendar.legend.blackout')} />
     </div>
   );
 }
@@ -300,10 +311,10 @@ function reservationKind(r: ReservationView): string {
   return 'approved';
 }
 
-function labelForReservation(r: ReservationView): string {
-  const t = (d: string): string =>
-    new Date(d).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: 'numeric' });
-  return `${t(r.startAt)}–${t(r.endAt)}`;
+function labelForReservation(r: ReservationView, locale: SupportedLocale): string {
+  const fmt = (d: string): string =>
+    new Date(d).toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: 'numeric' });
+  return `${fmt(r.startAt)}–${fmt(r.endAt)}`;
 }
 
 function atStartOfDay(d: Date): Date {

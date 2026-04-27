@@ -51,32 +51,35 @@ export default async function AssetsPage(): Promise<ReactNode> {
     <>
       {showOwnerBanner ? (
           <div className="panorama-banner-warning">
-            <strong>This tenant has a single Owner.</strong> Invite a second
-            Owner so access isn't lost if this account becomes unavailable.
+            <strong>{messages.t('asset.spof_banner.title')}</strong>{' '}
+            {messages.t('asset.spof_banner.body')}
           </div>
         ) : null}
         <div className="panorama-card">
           <h2 style={{ margin: '0 0 16px' }}>
-            Assets <span className="panorama-pill">{items.length}</span>
+            {messages.t('nav.assets')}{' '}
+            <span className="panorama-pill">{items.length}</span>
           </h2>
           {!assetsRes.ok ? (
-            <p className="panorama-error">Failed to load assets (HTTP {assetsRes.status}).</p>
+            <p className="panorama-error">
+              {messages.t('asset.list.failed', { status: assetsRes.status })}
+            </p>
           ) : items.length === 0 ? (
             <p className="panorama-empty">
-              This tenant has no assets yet. Seed some via{' '}
-              <code>pnpm --filter @panorama/core-api prisma:seed</code> or run the Snipe-IT
-              migrator.
+              {messages.t('asset.list.empty.prefix')}{' '}
+              <code>pnpm --filter @panorama/core-api prisma:seed</code>{' '}
+              {messages.t('asset.list.empty.suffix')}
             </p>
           ) : (
             <table className="panorama-table">
               <thead>
                 <tr>
-                  <th>Tag</th>
-                  <th>Name</th>
-                  <th>Model</th>
-                  <th>Category</th>
-                  <th>Status</th>
-                  <th>Bookable</th>
+                  <th>{messages.t('asset.column.tag')}</th>
+                  <th>{messages.t('asset.column.name')}</th>
+                  <th>{messages.t('asset.column.model')}</th>
+                  <th>{messages.t('asset.column.category')}</th>
+                  <th>{messages.t('asset.column.status')}</th>
+                  <th>{messages.t('asset.column.bookable')}</th>
                   {isAdmin ? <th /> : null}
                 </tr>
               </thead>
@@ -87,8 +90,12 @@ export default async function AssetsPage(): Promise<ReactNode> {
                     <td>{asset.name}</td>
                     <td>{asset.modelName ?? '—'}</td>
                     <td>{asset.categoryName ?? '—'}</td>
-                    <td>{asset.status}</td>
-                    <td>{asset.bookable ? 'Yes' : 'No'}</td>
+                    <td>{messages.t(`asset.status.${asset.status}`)}</td>
+                    <td>
+                      {asset.bookable
+                        ? messages.t('common.yes')
+                        : messages.t('common.no')}
+                    </td>
                     {isAdmin ? (
                       <td>
                         <Link
