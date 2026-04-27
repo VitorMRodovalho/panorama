@@ -134,7 +134,10 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
       { connection: this.makeRedis(), concurrency: 1 },
     );
     this.pmDueWorker.on('failed', (_job, err) =>
-      this.log.warn({ err: String(err) }, 'pm_due_sweep_job_failed'),
+      // BullMQ-job-failure is the OUTER frame; mirroring the audit-batch-
+      // failure log level (error) so an SRE seeing the cron's lifecycle
+      // failures has consistent severity across the same file.
+      this.log.error({ err: String(err) }, 'pm_due_sweep_job_failed'),
     );
     await this.pmDueQueue.add(
       PM_DUE_JOB_NAME,
