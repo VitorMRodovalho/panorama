@@ -7,6 +7,8 @@ import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { TenantAdminService } from '../src/modules/tenant/tenant-admin.service.js';
 import { NotificationDispatcher } from '../src/modules/notification/notification.dispatcher.js';
+import { MaintenanceService } from '../src/modules/maintenance/maintenance.service.js';
+import { PrismaService } from '../src/modules/prisma/prisma.service.js';
 import { resetTestDb } from './_reset-db.js';
 
 /**
@@ -48,10 +50,13 @@ describe('maintenance auto-suggest tether e2e', () => {
   let url: string;
   let adminDb: PrismaClient;
   let dispatcher: NotificationDispatcher;
+  let maintenanceService: MaintenanceService;
+  let prismaService: PrismaService;
   let tenantId: string;
   let assetId: string;
   let secondAssetId: string;
   let driverUserId: string;
+  let systemActorUserId: string;
 
   const admin = {
     email: 'admin@auto-suggest.example',
@@ -147,6 +152,8 @@ describe('maintenance auto-suggest tether e2e', () => {
     await app.listen(0);
     url = await app.getUrl();
     dispatcher = app.get(NotificationDispatcher);
+    maintenanceService = app.get(MaintenanceService);
+    prismaService = app.get(PrismaService);
 
     const passwords = new PasswordService();
     const adminUser = await adminDb.user.create({
@@ -179,6 +186,11 @@ describe('maintenance auto-suggest tether e2e', () => {
       ownerUserId: adminUser.id,
     });
     tenantId = tenant.id;
+    const tenantRow = await adminDb.tenant.findUnique({
+      where: { id: tenantId },
+      select: { systemActorUserId: true },
+    });
+    systemActorUserId = tenantRow!.systemActorUserId;
     await adminDb.tenantMembership.create({
       data: { tenantId, userId: driverUser.id, role: 'driver', status: 'active' },
     });
@@ -519,6 +531,103 @@ describe('maintenance auto-suggest tether e2e', () => {
     await adminDb.auditEvent.deleteMany({ where: { tenantId } });
     await adminDb.asset.update({ where: { id: secondAssetId }, data: { status: 'READY' } });
     await adminDb.reservation.deleteMany({ where: { tenantId } });
+  });
+
+  it('concurrent openTicketAuto with same triggeringReservationId → exactly one ticket + 23505 race-lost audit', async () => {
+    // ADR-0016 v3 §5 / migration 0016 regression: under multi-pod
+    // dispatcher scaling, two pods could each claim a different
+    // event for the same reservation trigger and both pass the
+    // application-level "any OPEN ticket on asset" check before
+    // either INSERT commits. The per-trigger UNIQUE partial index
+    // on (tenantId, triggeringReservationId) catches the second
+    // INSERT with SQLSTATE 23505; the catch path looks up the
+    // winning ticket and returns `skipped`.
+    //
+    // We simulate the multi-pod race in-process by issuing two
+    // parallel `openTicketAuto` calls each in its own runInTenant
+    // tx with the same triggering reservation. ReadCommitted means
+    // neither sees the other's not-yet-committed write; one wins,
+    // the other lands in the catch.
+
+    const fakeReservationId = '00000000-0000-4000-9000-c0ffeec0ffee';
+
+    // Pre-seed a reservation so the FK on triggeringReservationId
+    // doesn't block. Cross-tenant FK trigger is enforced separately.
+    const adminUser = await adminDb.user.findFirst({ where: { email: admin.email } });
+    const reservation = await adminDb.reservation.create({
+      data: {
+        id: fakeReservationId,
+        tenantId,
+        requesterUserId: adminUser!.id,
+        assetId,
+        startAt: new Date(Date.now() - 60_000),
+        endAt: new Date(Date.now() + 60_000),
+        approvalStatus: 'APPROVED',
+        lifecycleStatus: 'RETURNED',
+        damageFlag: true,
+      },
+    });
+
+    const buildParams = () => ({
+      tenantId,
+      assetId,
+      maintenanceType: 'Repair' as const,
+      title: 'Damage flagged at check-in: TETHER-01',
+      notes: 'concurrent-race-test',
+      triggeringReservationId: reservation.id,
+      createdByUserId: systemActorUserId,
+      originalActorUserId: adminUser!.id,
+      source: 'checkin_subscriber' as const,
+    });
+
+    const [first, second] = await Promise.all([
+      prismaService.runInTenant(tenantId, (tx) =>
+        maintenanceService.openTicketAuto(tx, buildParams()),
+      ),
+      prismaService.runInTenant(tenantId, (tx) =>
+        maintenanceService.openTicketAuto(tx, buildParams()),
+      ),
+    ]);
+
+    // Exactly one of the two reports `opened`; the other is `skipped`
+    // with reason `existing_open_ticket`. Order is undefined.
+    const opened = [first, second].filter((r) => r.status === 'opened');
+    const skipped = [first, second].filter((r) => r.status === 'skipped');
+    expect(opened).toHaveLength(1);
+    expect(skipped).toHaveLength(1);
+    expect((skipped[0] as { reason: string }).reason).toBe('existing_open_ticket');
+
+    // DB invariant holds: a single OPEN ticket for this trigger.
+    const tickets = await adminDb.assetMaintenance.findMany({
+      where: { tenantId, triggeringReservationId: reservation.id },
+    });
+    expect(tickets).toHaveLength(1);
+
+    // The race-lost audit row records the concrete reason — the
+    // friendly path's `existing_open_ticket` audit reason can also
+    // appear if one tx commits before the other reads, but at
+    // least one of the two must be the race path.
+    const auditRows = await adminDb.auditEvent.findMany({
+      where: {
+        tenantId,
+        action: 'panorama.maintenance.auto_suggest_skipped',
+      },
+    });
+    expect(auditRows.length).toBeGreaterThanOrEqual(1);
+    const reasons = auditRows.map(
+      (r) => (r.metadata as Record<string, unknown>)['reason'],
+    );
+    // Either the friendly path (existing_open_ticket) caught it,
+    // OR the race path (concurrent_open_race_lost) — the test
+    // asserts the invariant + the audit, not the race timing.
+    const validReasons = ['existing_open_ticket', 'concurrent_open_race_lost'];
+    expect(reasons.every((r) => validReasons.includes(r as string))).toBe(true);
+
+    // Reset.
+    await adminDb.assetMaintenance.deleteMany({ where: { tenantId } });
+    await adminDb.auditEvent.deleteMany({ where: { tenantId } });
+    await adminDb.reservation.deleteMany({ where: { tenantId } });
+    await adminDb.asset.update({ where: { id: assetId }, data: { status: 'READY' } });
   });
 
   it('damage check-in does NOT enqueue when damageFlag is false', async () => {

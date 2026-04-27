@@ -1,6 +1,6 @@
 # ADR-0016: Asset maintenance flow (Snipe-IT-compatible)
 
-- Status: Accepted (v2, 2026-04-19). Review log:
+- Status: Accepted (v3, 2026-04-26). Review log:
   - v1 (2026-04-19) → tech-lead REQUEST-CHANGES (3 blockers, 7
     concerns; counter-proposals for KeyShape registry,
     DomainEventBus, isStranded boolean), product-lead REVISE
@@ -14,7 +14,44 @@
     surprise), persona-fleet-ops CHANGES-REQUESTED (1 blocker —
     auto-suggest also needed on check-in damageFlag = 70% of
     tickets — plus 7 ops concerns).
-  - v2 (this doc) closes:
+  - v3 (2026-04-26) closes (post-implementation, during the
+    auto-suggest landing review):
+    - tech-lead BLOCKER + security-reviewer BLOCKER convergent
+      (multi-pod concurrent-open race): the idempotency invariant
+      was promoted from compare-then-act to a DB-level uniqueness
+      constraint — but **per-trigger** rather than per-asset, to
+      preserve ADR §3's intentional multi-ticket-per-asset
+      semantics + the manual `openTicket` path's existing behaviour
+      (the reviewers' first-draft proposal of `(tenantId, assetId)`
+      UNIQUE conflicted with both). Migration 0016 adds two
+      partial UNIQUE indexes:
+      `(tenantId, triggeringInspectionId) WHERE NOT NULL AND status IN ('OPEN','IN_PROGRESS')`
+      and the matching `triggeringReservationId` index.
+      `openTicketAuto` catches 23505 and converts to a `skipped`
+      result with `reason: 'concurrent_open_race_lost'`; the manual
+      `openTicket` path is unaffected because manual opens have
+      null trigger fields (no clash possible). The same approach
+      keeps dispatcher rescues / multi-pod claim races for the
+      same event idempotent without forbidding distinct-trigger
+      multi-ticket flows that persona-fleet-ops's "WRONG by my
+      ops reality" feedback explicitly wanted preserved.
+    - tech-lead BLOCKER (ADR-vs-code drift): v2 §5's
+      `DomainEventSubscriber` primitive is **superseded**.
+      The implementation reuses the existing ADR-0011
+      `ChannelHandler` + outbox pattern with idempotency at the
+      DB-invariant layer. Rationale documented in the new §5; the
+      v1 "silent drop on 40001" concern was materially false
+      because the existing dispatcher retries to DEAD with audit.
+      Coupled fate (sync, in-publisher-tx) was also undesirable
+      for this surface — a buggy subscriber would refuse driver
+      check-ins on every replay. Step 4 of execution order is
+      removed; step 11's "DomainEventSubscriber rollback"
+      regression replaces with "concurrent-open same-trigger
+      uniqueness regression."
+    - persona-fleet-ops nit: inspection title prefixes outcome
+      (`Inspection FAIL: <tag>` / `Inspection NEEDS-MAINT: <tag>`)
+      so dispatchers triage at a glance.
+  - v2 (2026-04-19) closes:
     - tech-lead B1 + data-architect B4 + security-reviewer C1 (photo
       key shape: `tenants/<uuid>/maintenance/<uuid>/<uuid>.<ext>`
       plural + regex+LIKE CHECK; KeyShape registry pattern in §6).
@@ -214,12 +251,15 @@ notification subscriber that auto-suggests a maintenance ticket on
   delivered) but reuse is via a new **`KeyShape` registry** + a
   `subjectKind: 'inspection' | 'maintenance'` discriminator —
   v1's "100% reuse" claim was materially false (per tech-lead B1).
-- The `MaintenanceTicketSubscriber` is a new abstraction
-  (`DomainEventSubscriber`) **distinct from** ADR-0011's
-  `ChannelRegistry` — that registry is for write-side fan-out
-  (event → email), not for cross-aggregate state mutation. The new
-  abstraction runs the maintenance write inside the publishing
-  service's own transaction via `recordWithin(tx, …)` semantics.
+- The `MaintenanceTicketSubscriber` registers as an existing
+  ADR-0011 `ChannelHandler` (v3 supersedes v2's `DomainEventSubscriber`
+  primitive — see §5). Idempotency is enforced by per-trigger
+  partial UNIQUE indexes (`(tenantId, triggeringInspectionId)` and
+  `(tenantId, triggeringReservationId)` where NOT NULL and status
+  IN OPEN/IN_PROGRESS) rather than transaction-coupled rollback
+  semantics. The per-trigger shape preserves §3's multi-ticket-
+  per-asset semantics (a manual "rotate tires" + an auto-suggested
+  "cracked windshield" can coexist on the same vehicle).
 - `autoOpenMaintenanceFromInspection` defaults to `false` (security-
   reviewer blocker + product-lead P0 + persona concern converge);
   pilot tenants opt in after 30 d of stable inspection signal.
@@ -566,6 +606,12 @@ CREATE POLICY maintenance_photos_super_admin_bypass ON "maintenance_photos"
 -- Hot path: "last open ticket on this asset?" query inside the
 -- close-ticket tx (§3) AND the hourly stale sweep (§9). One
 -- partial covers both at low storage cost.
+--
+-- KEPT NON-UNIQUE: ADR §3's "count-aware update on close" assumes
+-- multi-ticket-per-asset is allowed (see §5 v3 supersede note for
+-- why the reviewer-suggested per-asset UNIQUE was rejected). The
+-- per-trigger UNIQUE indexes below close the actual idempotency
+-- hole (event-layer retry), not this asset-layer aggregation.
 CREATE INDEX "asset_maintenances_open_per_asset_partial"
   ON "asset_maintenances" ("tenantId", "assetId", "startedAt")
   WHERE status IN ('OPEN', 'IN_PROGRESS');
@@ -575,6 +621,26 @@ CREATE INDEX "asset_maintenances_open_per_asset_partial"
 CREATE INDEX "asset_maintenances_next_service_due_partial"
   ON "asset_maintenances" ("tenantId", "nextServiceDate")
   WHERE status = 'COMPLETED' AND "nextServiceDate" IS NOT NULL;
+```
+
+### Per-trigger UNIQUE partial indexes (v3 / migration 0016)
+
+```sql
+-- "At most one OPEN/IN_PROGRESS ticket per triggering inspection."
+-- Closes the auto-suggest dispatcher-rescue / multi-pod retry race
+-- by making the trigger ID the idempotency key. See §5 v3 for the
+-- rationale (per-trigger preserves multi-ticket-per-asset).
+CREATE UNIQUE INDEX "asset_maintenances_open_per_inspection_unique"
+  ON "asset_maintenances" ("tenantId", "triggeringInspectionId")
+  WHERE "triggeringInspectionId" IS NOT NULL
+    AND status IN ('OPEN', 'IN_PROGRESS');
+
+-- "At most one OPEN/IN_PROGRESS ticket per triggering reservation."
+-- Closes the damage-check-in retry race.
+CREATE UNIQUE INDEX "asset_maintenances_open_per_reservation_unique"
+  ON "asset_maintenances" ("tenantId", "triggeringReservationId")
+  WHERE "triggeringReservationId" IS NOT NULL
+    AND status IN ('OPEN', 'IN_PROGRESS');
 ```
 
 ### Migration 0014 single file (no enum-bump split needed)
@@ -751,29 +817,106 @@ implement auto-rebook if a tenant requests it.
 
 ## 5. Notification subscriber — `MaintenanceTicketSubscriber`
 
-### Abstraction: `DomainEventSubscriber` (new, distinct from `ChannelRegistry`)
+### Abstraction: existing `ChannelHandler` + outbox + DB-invariant idempotency (v3 supersedes v2)
 
-`ChannelRegistry` (ADR-0011) is for **write-side fan-out**: an
-event becomes an outbound side-effect (email, webhook). It is fire-
-and-log; subscribers do not participate in the publishing tx. That
-shape is wrong for cross-aggregate state mutation (creating a
-maintenance row in response to an inspection completion):
+> **v3 supersedes v2 (2026-04-26).** v2 specced a new
+> `DomainEventSubscriber` primitive that ran **inside** the
+> publisher's transaction with coupled-fate rollback semantics. The
+> stated v2 motivation — "if the maintenance write throws SQLSTATE
+> 40001, ChannelHandler would silently drop the ticket creation" —
+> was materially false against the actually-shipped dispatcher
+> (ADR-0011): handler failures get retried with exponential backoff
+> up to MAX_ATTEMPTS=5, then DEAD with `panorama.notification.dead`
+> audit. Nothing is silently dropped.
+>
+> v3 also recognises that **coupled fate is undesirable** for this
+> surface. A buggy `MaintenanceTicketSubscriber` under v2's design
+> would refuse driver check-ins on every replay attempt — the
+> primary user-facing flow held hostage to a bonus signal. The
+> outbox pattern keeps the user-facing flow committing successfully
+> and surfaces subscriber failures via the dispatcher's retry/DEAD
+> audit trail. Operationally equivalent without the user-visible
+> blast.
 
-- If the maintenance write throws SQLSTATE 40001 (serialisation
-  conflict), the email channel pattern would silently drop the
-  ticket creation while the audit + email proceed.
-- Failure semantics ambiguous (does the inspection completion
-  rollback if the ticket creation fails?).
+`MaintenanceTicketSubscriber` is registered as a `ChannelHandler`
+on the existing ADR-0011 bus. It runs **after** the publisher's tx
+commits (outbox semantics), in its own `runInTenant(event.tenantId,
+…)` scope. Each invocation:
 
-v2 introduces `DomainEventSubscriber` as a separate primitive.
-Subscribers are registered in `OnModuleInit`, run **inside the
-publishing service's transaction** via `recordWithin(tx, …)`
-semantics, and roll back together with the publisher on any error.
-This is the same shape `audit.recordWithin(tx, …)` uses today.
+1. Reads `tenant.autoOpenMaintenanceFromInspection` — flag-off is
+   logged + clean-return so the event still marks DISPATCHED.
+2. For `panorama.inspection.completed`, short-circuits on PASS
+   (clean return; future subscribers can opt in).
+3. Calls `MaintenanceService.openTicketAuto(tx, params)`, which
+   creates the draft ticket (system-attributed via
+   `tenant.systemActorUserId`) and flips asset state.
 
-The channel registry stays exclusively for outbound communication
-(email, webhook, etc.). Intra-domain state mutation goes through
-domain subscribers.
+### Idempotency — per-trigger DB invariant, not per-asset
+
+The "at most one OPEN/IN_PROGRESS ticket per **trigger**" rule is
+enforced by two partial UNIQUE indexes (§1):
+
+```sql
+CREATE UNIQUE INDEX asset_maintenances_open_per_inspection_unique
+    ON asset_maintenances ("tenantId", "triggeringInspectionId")
+    WHERE "triggeringInspectionId" IS NOT NULL
+      AND status IN ('OPEN', 'IN_PROGRESS');
+
+CREATE UNIQUE INDEX asset_maintenances_open_per_reservation_unique
+    ON asset_maintenances ("tenantId", "triggeringReservationId")
+    WHERE "triggeringReservationId" IS NOT NULL
+      AND status IN ('OPEN', 'IN_PROGRESS');
+```
+
+The idempotency key is the **event identity** (trigger ID), not
+the asset. A dispatcher rescue or multi-pod claim race
+re-processes the same notification event → the second create
+fails with SQLSTATE 23505 → the catch path in `openTicketAuto`
+looks up the existing trigger-keyed ticket and returns
+`skipped` so the dispatcher marks the row DISPATCHED.
+
+Per-asset UNIQUE was the first-draft proposal under the v3
+review but was rejected: §3 explicitly designs for multi-ticket-
+per-asset ("count-aware update on close"), and persona-fleet-ops
+explicitly wants distinct triggers to produce distinct tickets
+("manual rotate-tires + auto-suggested cracked-windshield should
+coexist"). Per-trigger uniqueness closes the retry race exactly
+where it lives without forbidding the multi-trigger flows.
+
+The application-level `findFirst` for "any OPEN ticket on this
+asset" stays as the friendly skip path (one round-trip for the
+99% case, no exception caught). It is persona-acknowledged
+SHIPPABLE-WITH-NIT — the v1.x friction-fix is to surface
+auto_suggest_skipped audits in the maintenance UI as "additional
+reports" so the new signal is not buried; tracked as a follow-
+up.
+
+The previous v2 plan to wrap the cross-aggregate write in
+Serializable isolation is no longer needed: per-trigger UNIQUE
+catches the retry race at lower runtime cost than retrying the
+whole transaction.
+
+The manual `openTicket` path is unaffected by these indexes:
+manual opens have null trigger fields, so the partial predicate
+excludes them. Two admins racing on the manual path produce two
+tickets — preserving the existing behaviour, with the close-
+ticket count-aware update flipping the asset back to READY only
+once the last open ticket transitions terminal.
+
+### Why not a separate domain-event primitive?
+
+- The proven outbox dispatcher already has retry, backoff, DEAD,
+  and rescue semantics. A second registry would duplicate that.
+- Module-boundary cleanliness is preserved: `NotificationModule`
+  stays domain-agnostic; `MaintenanceModule` registers its own
+  subscriber in `OnModuleInit` (inverse of inspection-outcome-email
+  which is transport-only and lives in NotificationModule).
+- A future cross-aggregate auto-mutation that genuinely needs
+  publisher-coupled fate (e.g. "inspection auto-cancel on lost
+  reservation must roll back the lost-reservation write") can
+  introduce the separate primitive then. v2's "second consumer
+  pays for the abstraction" reasoning is preserved as a forward-
+  flag, not pre-built.
 
 ### Subscription scope (closes persona-fleet-ops blocker)
 
@@ -1313,11 +1456,15 @@ machine).
   maintenance-config defaults). Schema surface grows. Mitigated by
   reusing ADR-0012 patterns (RLS, photos, audit, notification) and
   by the v2 collapsing of STRANDED enum value to a boolean.
-- Introduces `DomainEventSubscriber` as a new primitive parallel to
-  `ChannelRegistry` — small abstraction surface to maintain. Pays
-  for itself with the first cross-aggregate auto-suggest; second
-  consumer (e.g. inspection auto-cancel on lost reservation) lands
-  cheaper.
+- v2's `DomainEventSubscriber` primitive is not introduced (v3
+  supersedes — §5). The existing `ChannelHandler` + outbox
+  pattern is reused with a partial UNIQUE index closing the
+  multi-pod race that v2 had hoped to solve via in-tx
+  rollback. Trade-off: a future cross-aggregate auto-mutation
+  that genuinely needs publisher-coupled fate (e.g. "this
+  derived write MUST roll back the publisher on failure") will
+  re-open the abstraction question — at which point a second
+  consumer is the right cost basis to introduce the primitive.
 - The `KeyShape` registry adds one indirection to the photo
   pipeline call sites. Worth it: every future photo-bearing subject
   ships with one entry, not a whole new code path.
@@ -1386,10 +1533,11 @@ machine).
    call sites updated to pass `subjectKind: 'inspection'` (or rely
    on prefix inference for back-compat). Existing tests must stay
    green.
-4. **`DomainEventSubscriber` abstraction** — new primitive in
-   `apps/core-api/src/modules/event-bus/` (or extend the existing
-   notification module). Sample test demonstrates `recordWithin(tx,
-   …)` rollback semantics.
+4. ~~`DomainEventSubscriber` abstraction~~ — **removed in v3**.
+   The existing ADR-0011 `ChannelHandler` is reused for
+   `MaintenanceTicketSubscriber`; idempotency is enforced by a
+   partial UNIQUE index added in migration 0016 (§1) rather than
+   a separate primitive. See §5 for the v3 rationale.
 5. **MaintenanceService** — CRUD + state-machine + asset-status
    integration + reservation-strand action + recover-stranded
    action + re-open window enforcement + per-requester rate limit.
@@ -1425,8 +1573,11 @@ machine).
     damageFlag → auto-suggest, Snipe-IT compat read round-trip,
     asset status flip on open / close (with multi-ticket case),
     re-open within window vs. outside, photo upload + cross-link
-    to inspection photos under `runInTenant` only,
-    DomainEventSubscriber rollback semantics.
+    to inspection photos under `runInTenant` only, **concurrent-
+    open uniqueness** (two parallel `openTicketAuto` calls on the
+    same asset → exactly one ticket + one skipped audit; v3
+    replacement for v2's removed DomainEventSubscriber rollback
+    test).
 12. **Web UI** — list, detail, strand confirm, asset-tab + recover
     action, reservation side panel + in-app banner on close,
     inspection cross-link line. i18n bundles.

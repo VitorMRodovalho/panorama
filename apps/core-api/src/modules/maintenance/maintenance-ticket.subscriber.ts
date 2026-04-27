@@ -53,6 +53,12 @@ import { MaintenanceService, type AutoOpenTicketParams } from './maintenance.ser
  * (tx-local) does not decide the contract — same defensive pattern
  * as `InspectionOutcomeEmailChannel`. `runAsSuperAdmin` is **forbidden**
  * in MaintenanceModule per ADR-0016 §1.4 / §7.2 + the #58 allowlist.
+ *
+ * XSS surface: `payload.summaryNote` and `payload.damageNote` are
+ * passed through to `params.notes` raw — the escape happens at write
+ * inside `MaintenanceService.openTicketAuto` via `escapeHtml(params.notes)`,
+ * matching the public `openTicket` path. Single chokepoint per ADR-0016
+ * security-reviewer blocker #3.
  */
 @Injectable()
 export class MaintenanceTicketSubscriber implements ChannelHandler {
@@ -139,9 +145,22 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
    *
    * Asset.tag is read here so the title carries a human-readable
    * vehicle identifier — same convention as the inspection-outcome
-   * email subject. A missing asset throws, since both events came
-   * from a publisher that already wrote a row keyed on assetId; an
-   * absence here means cross-tenant or schema corruption.
+   * email subject. A null `asset` here means **schema corruption**
+   * (assetId in the event payload no longer references a row): under
+   * `runInTenant(event.tenantId)`, RLS already filters out cross-
+   * tenant rows so the assetId-belongs-to-other-tenant case lands as
+   * null, indistinguishable from "row was deleted." The explicit
+   * `asset_cross_tenant` check below remains as belt-and-braces
+   * against an RLS-misconfiguration regression — under healthy RLS
+   * it is dead code.
+   *
+   * The interpolated `asset.tag` is NOT HTML-escaped. Title is
+   * plain-text-by-contract: REST consumers render via JSX (auto-
+   * escape) and the column carries the literal tag string. Notes
+   * by contrast carry user-typed multi-line content and ARE escaped
+   * at write inside `MaintenanceService.openTicketAuto`. The
+   * asymmetry is intentional — single chokepoint per
+   * security-reviewer blocker #3.
    */
   private async buildParams(
     tx: Prisma.TransactionClient,
@@ -170,11 +189,16 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
       });
       if (!asset) throw new Error('asset_not_found');
       if (asset.tenantId !== event.tenantId) throw new Error('asset_cross_tenant');
+      // persona-fleet-ops: prefix the title with the outcome so a
+      // coordinator scanning the maintenance dashboard can triage FAIL
+      // (vehicle won't pull out) vs NEEDS-MAINT (deferrable) at a
+      // glance — three characters of difference, big triage value.
+      const outcomeTag = payload.outcome === 'FAIL' ? 'FAIL' : 'NEEDS-MAINT';
       const params: AutoOpenTicketParams = {
         tenantId: event.tenantId,
         assetId: payload.assetId,
         maintenanceType: 'Repair',
-        title: `Inspection follow-up: ${asset.tag}`,
+        title: `Inspection ${outcomeTag}: ${asset.tag}`,
         notes: payload.summaryNote ?? null,
         triggeringInspectionId: payload.inspectionId,
         createdByUserId: systemActorUserId,

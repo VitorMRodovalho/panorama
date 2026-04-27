@@ -194,7 +194,7 @@ describe('MaintenanceTicketSubscriber — tenant gate', () => {
 });
 
 describe('MaintenanceTicketSubscriber — inspection.completed', () => {
-  it('opens a ticket for FAIL outcome with the right title + trigger fields', async () => {
+  it('opens a ticket for FAIL outcome with FAIL-prefixed title + trigger fields', async () => {
     subscriber = build();
     await subscriber.handle(
       makeEvent({
@@ -207,7 +207,8 @@ describe('MaintenanceTicketSubscriber — inspection.completed', () => {
     expect(params.tenantId).toBe(TENANT_A);
     expect(params.assetId).toBe(ASSET_ID);
     expect(params.maintenanceType).toBe('Repair');
-    expect(params.title).toBe('Inspection follow-up: V-100');
+    // persona-fleet-ops nit: outcome prefix in title for at-a-glance triage.
+    expect(params.title).toBe('Inspection FAIL: V-100');
     expect(params.notes).toBe('brake light intermittent');
     expect(params.triggeringInspectionId).toBe(INSPECTION_ID);
     expect(params.triggeringReservationId).toBe(RESERVATION_ID);
@@ -216,7 +217,7 @@ describe('MaintenanceTicketSubscriber — inspection.completed', () => {
     expect(params.source).toBe('inspection_subscriber');
   });
 
-  it('opens a ticket for NEEDS_MAINTENANCE outcome (parity with FAIL)', async () => {
+  it('opens a ticket for NEEDS_MAINTENANCE outcome with NEEDS-MAINT-prefixed title', async () => {
     subscriber = build();
     await subscriber.handle(
       makeEvent({
@@ -225,6 +226,7 @@ describe('MaintenanceTicketSubscriber — inspection.completed', () => {
       }),
     );
     expect(maintenance.calls).toHaveLength(1);
+    expect(maintenance.calls[0]!.title).toBe('Inspection NEEDS-MAINT: V-100');
     expect(maintenance.calls[0]!.source).toBe('inspection_subscriber');
   });
 
