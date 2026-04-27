@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { apiGet } from '../../lib/api';
 import { loadMessages } from '../../lib/i18n';
 import { getCurrentSession } from '../../lib/session';
@@ -178,11 +179,15 @@ export default async function ReservationsPage({
 
       <section className="panorama-content">
         <nav style={{ marginBottom: 16, display: 'flex', gap: 8, fontSize: 14 }}>
-          <a href="/assets">Assets</a>
+          <Link href="/assets">Assets</Link>
           <span>·</span>
           <strong>Reservations</strong>
           <span>·</span>
-          <a href="/reservations/calendar">Calendar</a>
+          <Link href="/reservations/calendar">Calendar</Link>
+          <span>·</span>
+          <Link href="/inspections">Inspections</Link>
+          <span>·</span>
+          <Link href="/maintenance">Maintenance</Link>
         </nav>
 
         {sp.error ? (
@@ -407,7 +412,46 @@ export default async function ReservationsPage({
                         </div>
                       ) : null}
                     </td>
-                    <td>{humaniseLifecycle(messages.t, r.lifecycleStatus)}</td>
+                    <td>
+                      {humaniseLifecycle(messages.t, r.lifecycleStatus)}
+                      {/* Damage callout — when the driver flagged damage at
+                          check-in, surface the note + a quick path to open a
+                          maintenance ticket pre-filled from this reservation
+                          (#74 PILOT-03 web slice). */}
+                      {r.damageFlag && r.assetId ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            padding: '6px 8px',
+                            fontSize: 13,
+                            lineHeight: 1.4,
+                            color: '#7a3a00',
+                            background: '#fff4e0',
+                            border: '1px solid #f0c890',
+                            borderRadius: 4,
+                            whiteSpace: 'normal',
+                            maxWidth: 320,
+                          }}
+                        >
+                          <strong style={{ display: 'block', marginBottom: 2 }}>
+                            {messages.t('reservation.damage.flagged')}
+                          </strong>
+                          {r.damageNote ?? '—'}
+                          {isAdmin ? (
+                            <div style={{ marginTop: 4 }}>
+                              <Link
+                                href={`/maintenance?assetId=${r.assetId}`}
+                                className="panorama-link"
+                                style={{ fontSize: 12 }}
+                              >
+                                {messages.t('reservation.action.open_maintenance_for_damage')}
+                                {' →'}
+                              </Link>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>{r.purpose ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {isBasketAnchor && meta ? (

@@ -1,8 +1,12 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { apiGet } from '../../lib/api';
+import { loadMessages } from '../../lib/i18n';
 import { getCurrentSession } from '../../lib/session';
 import { logoutAction, switchTenantAction } from '../login/actions';
+
+const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
 interface AssetListItem {
   id: string;
@@ -28,6 +32,12 @@ interface OwnershipSummary {
 export default async function AssetsPage(): Promise<ReactNode> {
   const session = await getCurrentSession();
   if (!session) redirect('/login');
+
+  const isAdmin = ADMIN_ROLES.has(session.currentRole);
+  const tenantLocale =
+    session.memberships.find((m) => m.tenantId === session.currentTenantId)?.tenantLocale ??
+    'en';
+  const messages = loadMessages(tenantLocale);
 
   const [assetsRes, ownershipRes] = await Promise.all([
     apiGet<AssetsResponse>('/assets?limit=100'),
@@ -80,6 +90,15 @@ export default async function AssetsPage(): Promise<ReactNode> {
       </header>
 
       <section className="panorama-content">
+        <nav style={{ marginBottom: 16, display: 'flex', gap: 8, fontSize: 14 }}>
+          <strong>Assets</strong>
+          <span>·</span>
+          <Link href="/reservations">Reservations</Link>
+          <span>·</span>
+          <Link href="/inspections">Inspections</Link>
+          <span>·</span>
+          <Link href="/maintenance">Maintenance</Link>
+        </nav>
         {showOwnerBanner ? (
           <div className="panorama-banner-warning">
             <strong>This tenant has a single Owner.</strong> Invite a second
@@ -108,6 +127,7 @@ export default async function AssetsPage(): Promise<ReactNode> {
                   <th>Category</th>
                   <th>Status</th>
                   <th>Bookable</th>
+                  {isAdmin ? <th /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -119,6 +139,17 @@ export default async function AssetsPage(): Promise<ReactNode> {
                     <td>{asset.categoryName ?? '—'}</td>
                     <td>{asset.status}</td>
                     <td>{asset.bookable ? 'Yes' : 'No'}</td>
+                    {isAdmin ? (
+                      <td>
+                        <Link
+                          href={`/maintenance?assetId=${asset.id}`}
+                          className="panorama-button secondary"
+                          style={{ fontSize: 12 }}
+                        >
+                          {messages.t('asset.action.open_maintenance')}
+                        </Link>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

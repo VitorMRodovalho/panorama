@@ -134,6 +134,9 @@ export default async function InspectionsPage({
             <Link href="/reservations" className="panorama-button secondary" style={{ marginRight: 8 }}>
               {messages.t('nav.bookings')}
             </Link>
+            <Link href="/maintenance" className="panorama-button secondary" style={{ marginRight: 8 }}>
+              {messages.t('nav.maintenance')}
+            </Link>
             <Link href="/inspections/new" className="panorama-button">
               {messages.t('inspection.start')}
             </Link>
