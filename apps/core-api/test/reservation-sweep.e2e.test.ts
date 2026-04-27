@@ -133,7 +133,7 @@ describe('reservation overdue + no-show sweep e2e', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await sweep?.stop();
+    sweep?.stop();
     await adminDb?.$disconnect();
     await app?.close();
   }, 30_000);
