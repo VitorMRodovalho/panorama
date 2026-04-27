@@ -7,6 +7,13 @@
  *                   MAINTENANCE if not IN_USE; otherwise the
  *                   reservation is marked stranded and an
  *                   `opened_on_checked_out` audit row records it.
+ *   - openTicketAuto — system-attributed entry point for the
+ *                   MaintenanceTicketSubscriber (ADR-0016 §5). Same
+ *                   ticket-creation + asset-state semantics as
+ *                   openTicket, minus the user-authz checks. Idempotent
+ *                   via the `existing OPEN/IN_PROGRESS` skip rule so
+ *                   dispatcher retries cannot double-open. Caller passes
+ *                   a tx and `tenant.systemActorUserId`.
  *   - list        — paginated, tenant-scoped, optional filters.
  *   - getById     — single ticket within tenant.
  *   - updateStatus — service-layer state machine:
@@ -16,7 +23,6 @@
  *                   no other open tickets remain.
  *
  * Deferred to follow-up PRs (ADR-0016 §4-9):
- *   - Auto-suggest subscriber on FAIL inspection / damage check-in
  *   - PM-due cron / mileage threshold sweep
  *   - Stranded-reservation auto-recovery
  *   - Reopen flow with within-window guard
@@ -32,9 +38,10 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { AssetMaintenance } from '@prisma/client';
+import type { AssetMaintenance, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { OpenTicketInput, UpdateStatusInput } from './maintenance.dto.js';
@@ -60,8 +67,37 @@ export interface ListTicketsParams {
   cursor?: string;
 }
 
+/**
+ * Input for the system-attributed auto-open path consumed by the
+ * MaintenanceTicketSubscriber. Mirrors `OpenTicketInput` but trims the
+ * fields the subscriber never sets (assignee, supplier, cost, …) and
+ * adds the audit-trail metadata required by ADR-0016 §5.
+ */
+export interface AutoOpenTicketParams {
+  tenantId: string;
+  assetId: string;
+  maintenanceType: 'Repair';
+  title: string;
+  notes: string | null;
+  triggeringReservationId?: string;
+  triggeringInspectionId?: string;
+  /** `tenant.systemActorUserId` — the audit row's `actorUserId` is null
+   *  (system-attributed), but the maintenance row needs a real FK. */
+  createdByUserId: string;
+  /** The human who triggered upstream — recorded in audit metadata so the
+   *  chain ties back. ADR-0016 §5 `originalActorUserId`. */
+  originalActorUserId: string;
+  source: 'inspection_subscriber' | 'checkin_subscriber';
+}
+
+export type AutoOpenResult =
+  | { status: 'opened'; ticketId: string }
+  | { status: 'skipped'; reason: 'existing_open_ticket' | 'asset_archived' | 'asset_retired'; existingTicketId: string | null };
+
 @Injectable()
 export class MaintenanceService {
+  private readonly log = new Logger('MaintenanceService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -167,28 +203,47 @@ export class MaintenanceService {
       // needed but the column should never carry live HTML.
       const escapedNotes = input.notes ? escapeHtml(input.notes) : null;
 
-      const created = await tx.assetMaintenance.create({
-        data: {
-          tenantId: actor.tenantId,
-          assetId: input.assetId,
-          maintenanceType: input.maintenanceType,
-          title: input.title,
-          status: 'OPEN',
-          severity: input.severity ?? null,
-          triggeringReservationId: input.triggeringReservationId ?? null,
-          triggeringInspectionId: input.triggeringInspectionId ?? null,
-          assigneeUserId: input.assigneeUserId ?? null,
-          supplierName: input.supplierName ?? null,
-          mileageAtService: input.mileageAtService ?? null,
-          expectedReturnAt: input.expectedReturnAt
-            ? new Date(input.expectedReturnAt)
-            : null,
-          cost: input.cost ?? null,
-          isWarranty: input.isWarranty ?? false,
-          notes: escapedNotes,
-          createdByUserId: actor.userId,
-        },
-      });
+      // Per-trigger UNIQUE indexes (migration 0016) reject a manual
+      // open whose trigger matches an already-OPEN auto-suggested
+      // ticket. Convert to a 409 with a clear code so the UI can
+      // surface "ticket already exists for this inspection /
+      // reservation" instead of a generic Prisma error. Manual opens
+      // with null trigger fields never hit this branch — the partial
+      // predicate excludes them — so the existing multi-ticket-per-
+      // asset behaviour is unchanged.
+      let created;
+      try {
+        created = await tx.assetMaintenance.create({
+          data: {
+            tenantId: actor.tenantId,
+            assetId: input.assetId,
+            maintenanceType: input.maintenanceType,
+            title: input.title,
+            status: 'OPEN',
+            severity: input.severity ?? null,
+            triggeringReservationId: input.triggeringReservationId ?? null,
+            triggeringInspectionId: input.triggeringInspectionId ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
+            supplierName: input.supplierName ?? null,
+            mileageAtService: input.mileageAtService ?? null,
+            expectedReturnAt: input.expectedReturnAt
+              ? new Date(input.expectedReturnAt)
+              : null,
+            cost: input.cost ?? null,
+            isWarranty: input.isWarranty ?? false,
+            notes: escapedNotes,
+            createdByUserId: actor.userId,
+          },
+        });
+      } catch (err) {
+        if (
+          isMaintenanceOpenUniqueViolation(err) &&
+          (input.triggeringInspectionId || input.triggeringReservationId)
+        ) {
+          throw new ConflictException('open_ticket_for_trigger_exists');
+        }
+        throw err;
+      }
 
       // Asset state integration (ADR-0016 §3):
       //  - asset IN_USE  → leave status; mark reservation stranded;
@@ -458,6 +513,306 @@ export class MaintenanceService {
       return updated;
     });
   }
+
+  /**
+   * System-attributed auto-open path (ADR-0016 §5). Called by
+   * `MaintenanceTicketSubscriber` from inside its `runInTenant` scope —
+   * caller supplies the `tx` so this nests, no separate transaction.
+   *
+   * Idempotency model: at most one OPEN/IN_PROGRESS ticket per asset.
+   * If one already exists, this returns `skipped` with the existing
+   * ticket id and audits `panorama.maintenance.auto_suggest_skipped`.
+   * That covers two scenarios:
+   *   1. Dispatcher retry of an event whose first invocation succeeded
+   *      but failed to mark dispatched.
+   *   2. A second upstream signal (e.g. damage check-in then FAIL
+   *      inspection on the same asset) where one ticket is enough —
+   *      ops can amend the existing ticket rather than juggle two.
+   *
+   * Asset-state flip and stranded-reservation marking match the public
+   * `openTicket` shape so auto-suggested and manually-opened tickets are
+   * indistinguishable to downstream consumers (banner UI, dashboards).
+   *
+   * The audit row carries `source` + `originalActorUserId` so the chain
+   * remains traceable — without those fields every auto-suggested ticket
+   * would attribute to "system" with no path back to the human signal.
+   */
+  async openTicketAuto(
+    tx: Prisma.TransactionClient,
+    params: AutoOpenTicketParams,
+  ): Promise<AutoOpenResult> {
+    const asset = await tx.asset.findUnique({
+      where: { id: params.assetId },
+      select: { id: true, tenantId: true, status: true, archivedAt: true },
+    });
+    // tenantId equality is redundant under the subscriber's runInTenant
+    // RLS scope — kept as belt-and-braces so a future refactor does not
+    // silently widen.
+    if (!asset || asset.tenantId !== params.tenantId) {
+      throw new NotFoundException('asset_not_found');
+    }
+    if (asset.archivedAt) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset',
+        resourceId: params.assetId,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'asset_archived',
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+        },
+      });
+      return { status: 'skipped', reason: 'asset_archived', existingTicketId: null };
+    }
+    if (asset.status === 'RETIRED') {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset',
+        resourceId: params.assetId,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'asset_retired',
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+        },
+      });
+      return { status: 'skipped', reason: 'asset_retired', existingTicketId: null };
+    }
+
+    const existingOpen = await tx.assetMaintenance.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        assetId: params.assetId,
+        status: { in: ['OPEN', 'IN_PROGRESS'] },
+      },
+      orderBy: { startedAt: 'desc' },
+      select: { id: true },
+    });
+    if (existingOpen) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.auto_suggest_skipped',
+        resourceType: 'asset_maintenance',
+        resourceId: existingOpen.id,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          reason: 'existing_open_ticket',
+          assetId: params.assetId,
+          source: params.source,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          triggeringReservationId: params.triggeringReservationId ?? null,
+          originalActorUserId: params.originalActorUserId,
+        },
+      });
+      return { status: 'skipped', reason: 'existing_open_ticket', existingTicketId: existingOpen.id };
+    }
+
+    const escapedNotes = params.notes ? escapeHtml(params.notes) : null;
+    let created: AssetMaintenance;
+    // Wrap the create in a SAVEPOINT so a 23505 from the per-trigger
+    // UNIQUE indexes (migration 0016) doesn't poison the surrounding
+    // transaction. Without the SAVEPOINT, Postgres flips the tx into
+    // SQLSTATE 25P02 (current transaction is aborted) on the next
+    // command, and the recovery findFirst can't run. ROLLBACK TO
+    // SAVEPOINT brings the tx back to a runnable state with the
+    // failed insert effectively un-attempted.
+    await tx.$executeRawUnsafe('SAVEPOINT before_maintenance_create');
+    try {
+      created = await tx.assetMaintenance.create({
+        data: {
+          tenantId: params.tenantId,
+          assetId: params.assetId,
+          maintenanceType: params.maintenanceType,
+          title: params.title,
+          status: 'OPEN',
+          triggeringReservationId: params.triggeringReservationId ?? null,
+          triggeringInspectionId: params.triggeringInspectionId ?? null,
+          notes: escapedNotes,
+          createdByUserId: params.createdByUserId,
+        },
+      });
+      await tx.$executeRawUnsafe('RELEASE SAVEPOINT before_maintenance_create');
+    } catch (err) {
+      await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT before_maintenance_create');
+      // Migration 0016 added per-trigger UNIQUE partial indexes on
+      // (tenantId, triggeringInspectionId) and (tenantId,
+      // triggeringReservationId) — both partial WHERE NOT NULL AND
+      // status IN ('OPEN','IN_PROGRESS'). The race that lands here
+      // is a dispatcher rescue / multi-pod retry of the same event:
+      // a successful first attempt committed the row, then the
+      // event was re-claimed and re-processed.
+      //
+      // Look up the existing ticket BY TRIGGER (not by asset — see
+      // ADR-0016 v3 §5 on why per-trigger preserves multi-ticket-
+      // per-asset semantics) and convert to a `skipped` result so
+      // the dispatcher marks the event DISPATCHED.
+      if (isMaintenanceOpenUniqueViolation(err)) {
+        // Look up the conflicting ticket by trigger ID. The two
+        // partial UNIQUE indexes are independent: an event can populate
+        // both `triggeringInspectionId` and `triggeringReservationId`
+        // (the inspection subscriber sets both when the inspection is
+        // tied to a reservation), and Postgres surfaces only the FIRST
+        // unique violation it encounters. Use OR so the recovery
+        // findFirst matches the existing ticket whichever index
+        // rejected — including the cross-trigger collapse case where
+        // a second FAIL inspection on the same reservation conflicts
+        // on the per-reservation UNIQUE rather than the per-inspection
+        // one (ADR-0016 v3 §5: distinct triggers within the same
+        // reservation collapse to one ticket — same-root-cause ops
+        // semantics).
+        const winner = await tx.assetMaintenance.findFirst({
+          where: {
+            tenantId: params.tenantId,
+            status: { in: ['OPEN', 'IN_PROGRESS'] },
+            OR: [
+              ...(params.triggeringInspectionId
+                ? [{ triggeringInspectionId: params.triggeringInspectionId }]
+                : []),
+              ...(params.triggeringReservationId
+                ? [{ triggeringReservationId: params.triggeringReservationId }]
+                : []),
+            ],
+          },
+          select: { id: true },
+        });
+        // Should be unreachable-empty when 23505 just fired against
+        // this row's partial predicate, but defence-in-depth: surface
+        // the original error if the committed snapshot somehow hides
+        // the winner. (Could happen if the partial predicate excludes
+        // the existing row — e.g. it transitioned to COMPLETED between
+        // the conflict and this lookup.) Log so an SRE seeing a raw
+        // 23505 in prod can correlate to which event payload tripped
+        // the unreachable branch.
+        if (!winner) {
+          this.log.warn(
+            {
+              tenantId: params.tenantId,
+              assetId: params.assetId,
+              triggeringInspectionId: params.triggeringInspectionId ?? null,
+              triggeringReservationId: params.triggeringReservationId ?? null,
+              source: params.source,
+            },
+            'maintenance_open_unique_violation_no_winner_found',
+          );
+          throw err;
+        }
+        await this.audit.recordWithin(tx, {
+          action: 'panorama.maintenance.auto_suggest_skipped',
+          resourceType: 'asset_maintenance',
+          resourceId: winner.id,
+          tenantId: params.tenantId,
+          actorUserId: null,
+          metadata: {
+            reason: 'concurrent_open_race_lost',
+            assetId: params.assetId,
+            source: params.source,
+            triggeringInspectionId: params.triggeringInspectionId ?? null,
+            triggeringReservationId: params.triggeringReservationId ?? null,
+            originalActorUserId: params.originalActorUserId,
+          },
+        });
+        return {
+          status: 'skipped',
+          reason: 'existing_open_ticket',
+          existingTicketId: winner.id,
+        };
+      }
+      throw err;
+    }
+
+    let strandedReservationId: string | null = null;
+    if (asset.status === 'IN_USE') {
+      const inUse = await tx.reservation.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          assetId: params.assetId,
+          lifecycleStatus: 'CHECKED_OUT',
+        },
+        select: { id: true },
+      });
+      if (inUse) {
+        strandedReservationId = inUse.id;
+        await tx.reservation.update({
+          where: { id: inUse.id },
+          data: { isStranded: true },
+        });
+      }
+    } else {
+      await tx.asset.update({
+        where: { id: params.assetId },
+        data: { status: 'MAINTENANCE' },
+      });
+    }
+
+    await this.audit.recordWithin(tx, {
+      action: 'panorama.maintenance.opened',
+      resourceType: 'asset_maintenance',
+      resourceId: created.id,
+      tenantId: params.tenantId,
+      // System-attributed: actorUserId null. The human chain lives in
+      // `metadata.originalActorUserId` per ADR-0016 §5.
+      actorUserId: null,
+      metadata: {
+        assetId: params.assetId,
+        maintenanceType: params.maintenanceType,
+        severity: null,
+        triggeringReservationId: params.triggeringReservationId ?? null,
+        triggeringInspectionId: params.triggeringInspectionId ?? null,
+        assetWasInUse: asset.status === 'IN_USE',
+        strandedReservationId,
+        source: params.source,
+        originalActorUserId: params.originalActorUserId,
+      },
+    });
+    if (asset.status === 'IN_USE' && strandedReservationId) {
+      await this.audit.recordWithin(tx, {
+        action: 'panorama.maintenance.opened_on_checked_out',
+        resourceType: 'asset_maintenance',
+        resourceId: created.id,
+        tenantId: params.tenantId,
+        actorUserId: null,
+        metadata: {
+          assetId: params.assetId,
+          strandedReservationId,
+          source: params.source,
+          originalActorUserId: params.originalActorUserId,
+        },
+      });
+    }
+
+    return { status: 'opened', ticketId: created.id };
+  }
+}
+
+/**
+ * Returns true iff `err` looks like a Postgres unique-violation that
+ * would have come from one of the two per-trigger partial UNIQUE
+ * indexes shipped in ADR-0016 v3 migration 0016
+ * (`asset_maintenances_open_per_inspection_unique` /
+ * `asset_maintenances_open_per_reservation_unique`). Used by both
+ * `openTicket` and `openTicketAuto` to convert the multi-pod retry
+ * race into a controlled `skipped` / 409 instead of bubbling a
+ * Prisma error to the controller.
+ *
+ * Mirrors the helper in `notification.service.ts`: Prisma surfaces
+ * unique violations as `P2002` on the typed error, and the underlying
+ * Postgres `23505` is in `meta.code` for the raw-SQL paths.
+ *
+ * Both per-trigger UNIQUEs are handled identically by the catch path
+ * (the recovery `findFirst` filters by whichever trigger field this
+ * call site populated), so no constraint-name disambiguation is
+ * needed. If a future migration adds a per-asset or per-photo unique
+ * to this table, narrow with `meta.target`.
+ */
+function isMaintenanceOpenUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; meta?: { code?: unknown } };
+  return e.code === 'P2002' || e.meta?.code === '23505';
 }
 
 function escapeHtml(s: string): string {

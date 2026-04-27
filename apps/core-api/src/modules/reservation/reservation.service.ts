@@ -1046,6 +1046,40 @@ export class ReservationService {
             lastReadMileageUpdated: shouldUpdateMileage,
           },
         });
+
+        // ADR-0016 §5 / #40 ARCH-15: emit the dominant auto-suggest
+        // trigger event when the driver flagged damage at check-in. The
+        // event flows through the same notification bus as
+        // `panorama.inspection.completed`; the MaintenanceTicketSubscriber
+        // (gated per-tenant by `autoOpenMaintenanceFromInspection`)
+        // decides whether to open a draft ticket.
+        //
+        // The event is emitted regardless of the per-tenant flag — the
+        // bus row is the audit-recoverable trail of "the driver reported
+        // damage on this reservation," letting a later flag-flip + manual
+        // backfill replay missed events. The subscriber's no-op-when-flag-
+        // off is logged + benign.
+        //
+        // dedupKey is keyed on the reservation so an idempotent retry of
+        // checkIn (a 5xx-after-commit + client retry, hypothetically)
+        // does not enqueue twice. The subscriber additionally guards via
+        // an existing-OPEN-ticket check so re-emission cannot double-open.
+        if (damageFlag) {
+          await this.notifications.enqueueWithin(tx, {
+            eventType: 'panorama.reservation.checked_in_with_damage',
+            tenantId: actor.tenantId,
+            payload: {
+              reservationId,
+              assetId: existing.assetId,
+              requesterUserId: existing.requesterUserId,
+              checkedInByUserId: actor.userId,
+              checkedInAt: now.toISOString(),
+              mileageIn: params.mileage,
+              ...(params.damageNote ? { damageNote: params.damageNote } : {}),
+            },
+            dedupKey: `checkin_damage:${reservationId}`,
+          });
+        }
         return updated;
       },
     );

@@ -59,6 +59,27 @@ export const NOTIFICATION_PAYLOAD_SCHEMAS = {
       summaryNote: z.string().max(500).optional(),
     })
     .strict(),
+
+  // ADR-0016 §5 dominant trigger path (~70% of auto-suggested tickets per
+  // persona-fleet-ops analysis). Emitted by ReservationService.checkIn
+  // when `damageFlag === true`. The MaintenanceTicketSubscriber consumes
+  // it to open a draft ticket, gated by `tenant.autoOpenMaintenanceFromInspection`.
+  // Wave 1 ARCH-15 / #40: this event was specced in the ADR but never
+  // emitted until the auto-suggest slice landed.
+  'panorama.reservation.checked_in_with_damage': z
+    .object({
+      reservationId: z.string().uuid(),
+      assetId: z.string().uuid(),
+      requesterUserId: z.string().uuid(),
+      checkedInByUserId: z.string().uuid(),
+      checkedInAt: z.string().datetime(),
+      mileageIn: z.number().int().nonnegative(),
+      // Free-text driver note describing the damage — bounded so payload
+      // stays small + fits in the maintenance ticket's `notes` field
+      // when the subscriber HTML-escapes it at write.
+      damageNote: z.string().max(500).optional(),
+    })
+    .strict(),
 } as const;
 
 export type NotificationEventType = keyof typeof NOTIFICATION_PAYLOAD_SCHEMAS;
