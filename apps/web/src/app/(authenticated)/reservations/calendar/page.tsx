@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { getCurrentSession } from '@/lib/session';
 
@@ -114,6 +115,15 @@ export default async function ReservationCalendarPage({
           <h2 style={{ margin: 0 }}>
             {days}-day calendar <span className="panorama-pill">{assetsToShow.length} assets</span>
           </h2>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* #76 PILOT-05: deep-link from calendar to the blackout admin
+                page so coordinators don't have to know the URL. Admin-only;
+                the page itself re-checks the role + redirects. */}
+            {isAdmin ? (
+              <Link href="/admin/blackouts" className="panorama-button secondary">
+                + Add blackout
+              </Link>
+            ) : null}
           <nav style={{ display: 'flex', gap: 10, fontSize: 13 }}>
             <a
               href={`/reservations/calendar?scope=mine&days=${days}`}
@@ -140,6 +150,7 @@ export default async function ReservationCalendarPage({
               </a>
             ))}
           </nav>
+          </div>
         </div>
 
         <CalendarLegend />

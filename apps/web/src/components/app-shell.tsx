@@ -43,9 +43,9 @@ export async function AppShell({ children }: { children: ReactNode }): Promise<R
   // entry so coordinators don't have to drill into Reservations to find
   // it (persona-fleet-ops feedback in earlier reviews).
   //
-  // Future admin entries (Invitations once #75 lands; Blackouts once
-  // #76 lands) get appended here — the comment is the breadcrumb so
-  // future contributors don't re-derive the placement.
+  // Future admin entries (Invitations once #75 lands) get appended here
+  // — the comment is the breadcrumb so future contributors don't
+  // re-derive the placement. #76 Blackouts admin UI landed.
   const navItems: AppNavItem[] = [
     { href: '/assets', label: messages.t('nav.assets') },
     { href: '/reservations', label: messages.t('nav.reservations') },
@@ -59,6 +59,10 @@ export async function AppShell({ children }: { children: ReactNode }): Promise<R
           {
             href: '/admin/inspection-templates',
             label: messages.t('nav.admin_inspection_templates'),
+          },
+          {
+            href: '/admin/blackouts',
+            label: messages.t('nav.admin_blackouts'),
           },
         ]
       : []),
