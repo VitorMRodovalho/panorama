@@ -469,6 +469,83 @@ describe('invitation flow e2e', () => {
     expect(body.items.length).toBeGreaterThan(0);
   });
 
+  it('GET /invitations?status=open|accepted|revoked|expired filters via DB (#64 PERF-02)', async () => {
+    // Seed one row in each terminal state + one open row, then assert
+    // each status filter returns exactly the right partition. Pre-#64
+    // this filter ran client-side after a fetch-all; now it's pushed
+    // to the WHERE clause via column derivation. A switch-arm typo
+    // (e.g. swapping `lte` for `gt` on `expired`, or omitting
+    // `acceptedAt: null` from `revoked`) would cross-contaminate the
+    // partitions — these assertions pin each arm.
+    const cookie = await loginCookie(admin.email, admin.password);
+    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+
+    const openEmail = `filter-open@invitation-test.example`;
+    const acceptedEmail = `filter-accepted@invitation-test.example`;
+    const revokedEmail = `filter-revoked@invitation-test.example`;
+    const expiredEmail = `filter-expired@invitation-test.example`;
+
+    const open = await createInvitation(cookie, openEmail);
+    if (!('id' in open.body)) throw new Error('open create failed');
+
+    const accepted = await createInvitation(cookie, acceptedEmail);
+    if (!('id' in accepted.body)) throw new Error('accepted create failed');
+    await adminDb.invitation.update({
+      where: { id: accepted.body.id },
+      data: { acceptedAt: new Date() },
+    });
+
+    const revoked = await createInvitation(cookie, revokedEmail);
+    if (!('id' in revoked.body)) throw new Error('revoked create failed');
+    await adminDb.invitation.update({
+      where: { id: revoked.body.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const expired = await createInvitation(cookie, expiredEmail);
+    if (!('id' in expired.body)) throw new Error('expired create failed');
+    await adminDb.invitation.update({
+      where: { id: expired.body.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    await adminDb.$disconnect();
+
+    async function fetchStatus(status: string): Promise<string[]> {
+      const res = await fetch(
+        `${url}/invitations?tenantId=${tenantAcme}&status=${status}&limit=200`,
+        { headers: { cookie } },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: Array<{ email: string; status: string }>;
+      };
+      // Restrict to the four rows this test seeded — the suite shares a
+      // tenant with prior tests, so other rows are present.
+      return body.items
+        .filter((i) =>
+          [openEmail, acceptedEmail, revokedEmail, expiredEmail].includes(i.email),
+        )
+        .map((i) => `${i.email}:${i.status}`)
+        .sort();
+    }
+
+    expect(await fetchStatus('open')).toEqual([`${openEmail}:open`]);
+    expect(await fetchStatus('accepted')).toEqual([`${acceptedEmail}:accepted`]);
+    expect(await fetchStatus('revoked')).toEqual([`${revokedEmail}:revoked`]);
+    expect(await fetchStatus('expired')).toEqual([`${expiredEmail}:expired`]);
+    // `all` returns all four — sorted by createdAt DESC, but we only
+    // assert membership, not order (the surrounding suite makes the
+    // tenant state non-deterministic for top-N).
+    const all = await fetchStatus('all');
+    expect(all.sort()).toEqual([
+      `${acceptedEmail}:accepted`,
+      `${expiredEmail}:expired`,
+      `${openEmail}:open`,
+      `${revokedEmail}:revoked`,
+    ]);
+  });
+
   it('concurrent POST accept calls → exactly one wins (double-click race)', async () => {
     const adminCookie = await loginCookie(admin.email, admin.password);
     const created = await createInvitation(

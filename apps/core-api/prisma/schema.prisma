@@ -281,6 +281,12 @@ model Invitation {
   /// Prisma cannot model partial indexes.
   @@index([tenantId, email])
   @@index([expiresAt])
+  /// PERF-07 / #64 — admin invitation list orders by createdAt DESC
+  /// scoped to a single tenant. Without this index Postgres falls
+  /// back to Index Scan on (tenantId, email) + Sort, which scans the
+  /// full tenant partition to find the top-N. The DESC sort key lets
+  /// the planner walk the index backwards for the LIMIT.
+  @@index([tenantId, createdAt(sort: Desc)])
   @@map("invitations")
 }
 
