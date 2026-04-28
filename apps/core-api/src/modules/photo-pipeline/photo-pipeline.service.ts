@@ -7,7 +7,11 @@ import sharp from 'sharp';
 // resolves to the ESM exports lazily. The cost is one async hop on
 // the first call inside `process()`; the import is cached after.
 // The static type-only import below preserves the type signature.
-import type { fileTypeFromBuffer as fileTypeFromBufferType } from 'file-type';
+// `with { 'resolution-mode': 'import' }` tells TS to resolve the
+// type as if from an ESM context, which is required because the
+// surrounding file is CJS but file-type ships ESM-only `.d.ts`.
+// The runtime side uses `await import('file-type')` above.
+import type { fileTypeFromBuffer as fileTypeFromBufferType } from 'file-type' with { 'resolution-mode': 'import' };
 let fileTypeFromBuffer: typeof fileTypeFromBufferType | undefined;
 async function loadFileType(): Promise<typeof fileTypeFromBufferType> {
   if (!fileTypeFromBuffer) {

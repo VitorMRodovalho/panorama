@@ -4,13 +4,14 @@
   "private": true,
   "description": "Shared domain types, DTOs, Zod schemas used across core-api and frontends.",
   "license": "AGPL-3.0-or-later",
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "echo 'shared — types only, no runtime tests yet'",
+    "build": "tsc -b",
+    "test": "echo 'shared \u2014 types only, no runtime tests yet'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
