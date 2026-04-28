@@ -1,14 +1,16 @@
 {
   "name": "@panorama/plugin-sdk",
   "version": "0.0.0",
-  "description": "Panorama plugin SDK — typed event contract (types-only at 0.3 per ADR-0006).",
+  "description": "Panorama plugin SDK \u2014 typed event contract (types-only at 0.3 per ADR-0006).",
   "license": "AGPL-3.0-or-later",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "echo 'plugin-sdk — runtime + tests land with first plugin in 0.4'",
+    "build": "tsc -b",
+    "test": "echo 'plugin-sdk \u2014 runtime + tests land with first plugin in 0.4'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"

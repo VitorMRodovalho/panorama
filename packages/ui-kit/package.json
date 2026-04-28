@@ -7,10 +7,12 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "echo 'ui-kit — scaffold only, first components land in 0.2'",
+    "build": "tsc -b",
+    "test": "echo 'ui-kit \u2014 scaffold only, first components land in 0.2'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"

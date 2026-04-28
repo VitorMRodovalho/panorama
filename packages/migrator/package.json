@@ -4,7 +4,6 @@
   "private": true,
   "description": "CLI that reads Snipe-IT (API) + SnipeScheduler-FleetManager (MySQL dump) and produces Panorama fixtures.",
   "license": "AGPL-3.0-or-later",
-  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "panorama-migrate": "./dist/cli.js"
@@ -13,7 +12,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -b",
     "dev": "tsx src/cli.ts",
     "cli": "tsx src/cli.ts",
     "test": "vitest run",
