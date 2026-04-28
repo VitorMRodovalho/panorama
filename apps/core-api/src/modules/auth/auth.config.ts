@@ -85,7 +85,10 @@ export class AuthConfigService {
       if (process.env.OIDC_GOOGLE_HOSTED_DOMAIN) {
         google.hostedDomainHint = process.env.OIDC_GOOGLE_HOSTED_DOMAIN;
       }
-      const trusted = parseDomainList(process.env.OIDC_GOOGLE_TRUSTED_HD_DOMAINS);
+      const trusted = parseDomainList(
+        process.env.OIDC_GOOGLE_TRUSTED_HD_DOMAINS,
+        this.log,
+      );
       if (trusted.length > 0) {
         google.trustedHdDomains = trusted;
       }
@@ -131,12 +134,57 @@ export class AuthConfigService {
   }
 }
 
-function parseDomainList(raw: string | undefined): string[] {
+/**
+ * DNS label syntax (RFC 1035 letter/digit/hyphen rules) — anchors
+ * forbid wildcards, paths, ports, double dots, leading/trailing
+ * hyphens. Permits multi-label domains (`acme.example`,
+ * `foo.bar.example.com`) and IDN A-labels (`xn--tnq.xn--p1ai`),
+ * which is correct because Workspace `hd` claims arrive in
+ * punycode form.
+ *
+ * The regex alone does NOT reject all-digit labels: `127.0.0.1`
+ * matches the multi-label shape. The companion `/[a-z]/` check
+ * in `parseDomainList` excludes IP-literals while keeping mixed
+ * digit/letter labels (`1foo.bar`).
+ */
+const DNS_LABEL_RE =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * Parse a comma-separated DNS-domain list (e.g.
+ * `OIDC_GOOGLE_TRUSTED_HD_DOMAINS`). Lowercased + trimmed +
+ * deduplicated. Entries that don't match `DNS_LABEL_RE` are
+ * filtered out and logged at warn level (#89 / follow-up #28).
+ *
+ * Silent fail-closed for malformed entries was the prior behaviour
+ * — correct direction (refuse logins) but the wrong signal
+ * (operator chases the IdP side instead of finding a typo in their
+ * env var). Logging at warn lets the boot trace surface the typo.
+ *
+ * Logger arg is optional so tests / callers without a logger can
+ * still use the parser; in production the AuthConfigService
+ * passes `this.log` so the warnings land in pino.
+ */
+function parseDomainList(raw: string | undefined, log?: Logger): string[] {
   if (!raw) return [];
-  return raw
-    .split(',')
-    .map((d) => d.trim().toLowerCase())
-    .filter((d) => d.length > 0);
+  const accepted: string[] = [];
+  for (const part of raw.split(',')) {
+    const candidate = part.trim().toLowerCase();
+    if (candidate.length === 0) continue;
+    // DNS_LABEL_RE alone admits all-digit labels (e.g. `127.0.0.1` matches
+    // the multi-label shape), so we require at least one letter to
+    // reject IP literals while still accepting `acme.example` /
+    // `1foo.bar`-style shapes.
+    if (!DNS_LABEL_RE.test(candidate) || !/[a-z]/.test(candidate)) {
+      log?.warn(
+        { entry: candidate, source: 'OIDC_GOOGLE_TRUSTED_HD_DOMAINS' },
+        'auth_config_invalid_domain_entry_ignored',
+      );
+      continue;
+    }
+    accepted.push(candidate);
+  }
+  return accepted;
 }
 
 /**

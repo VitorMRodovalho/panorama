@@ -403,3 +403,218 @@ describe('AuthService.loginWithOidc — hd-override account-link refusal (B3)', 
     expect(create).toHaveBeenCalledOnce();
   });
 });
+
+describe('AuthService.loginWithOidc — success-path audit (#91)', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('emits panorama.auth.oidc_login on new-user create (strict mode)', async () => {
+    const { svc, runAsSuperAdmin, auditRecord } = makeService();
+    // First runAsSuperAdmin = find-or-create resolution (returns ok+new_user).
+    runAsSuperAdmin.mockImplementationOnce(async (fn: any) => {
+      const tx = {
+        authIdentity: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(),
+          update: vi.fn(),
+        },
+        user: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(async () => ({
+            id: 'new-user-id-42',
+            email: 'alice@acme.example',
+            displayName: 'Alice Driver',
+          })),
+        },
+      };
+      return fn(tx);
+    });
+    // Second runAsSuperAdmin = buildSessionForUser; stop here so the
+    // oidc_login audit emission is the last observable side effect.
+    runAsSuperAdmin.mockRejectedValueOnce(new Error('stop_after_login_audit'));
+
+    await expect(
+      svc.loginWithOidc('google', makeUserInfo({ emailVerified: true })),
+    ).rejects.toThrow('stop_after_login_audit');
+
+    expect(auditRecord).toHaveBeenCalledOnce();
+    expect(lastAuditEvent(auditRecord)).toMatchObject({
+      action: 'panorama.auth.oidc_login',
+      actorUserId: 'new-user-id-42',
+      tenantId: null,
+      resourceType: 'auth_identity',
+    });
+    expect(lastAuditMetadata(auditRecord)).toMatchObject({
+      provider: 'google',
+      pathTaken: 'new_user',
+      viaHdOverride: false,
+      emailDomain: 'acme.example',
+    });
+  });
+
+  it('emits oidc_login with pathTaken=existing_identity on returning user', async () => {
+    const { svc, runAsSuperAdmin, auditRecord } = makeService();
+    runAsSuperAdmin.mockImplementationOnce(async (fn: any) => {
+      const tx = {
+        authIdentity: {
+          findUnique: vi.fn(async () => ({
+            id: 'existing-identity-id',
+            userId: 'returning-user-id',
+          })),
+          create: vi.fn(),
+          update: vi.fn(),
+        },
+        user: { findUnique: vi.fn(), create: vi.fn() },
+      };
+      return fn(tx);
+    });
+    runAsSuperAdmin.mockRejectedValueOnce(new Error('stop_after_login_audit'));
+
+    await expect(
+      svc.loginWithOidc('google', makeUserInfo({ emailVerified: true })),
+    ).rejects.toThrow('stop_after_login_audit');
+
+    expect(lastAuditMetadata(auditRecord)).toMatchObject({
+      pathTaken: 'existing_identity',
+      viaHdOverride: false,
+    });
+  });
+
+  it('emits oidc_login with viaHdOverride=true on hd-override new-user path', async () => {
+    const { svc, runAsSuperAdmin, auditRecord } = makeService({
+      OIDC_GOOGLE_TRUSTED_HD_DOMAINS: 'acme.example',
+    });
+    runAsSuperAdmin.mockImplementationOnce(async (fn: any) => {
+      const tx = {
+        authIdentity: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(),
+          update: vi.fn(),
+        },
+        user: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(async () => ({
+            id: 'workspace-user-id',
+            email: 'alice@acme.example',
+            displayName: 'Alice Driver',
+          })),
+        },
+      };
+      return fn(tx);
+    });
+    runAsSuperAdmin.mockRejectedValueOnce(new Error('stop_after_login_audit'));
+
+    await expect(
+      svc.loginWithOidc(
+        'google',
+        makeUserInfo({
+          email: 'alice@acme.example',
+          emailVerified: false,
+          hd: 'acme.example',
+        }),
+      ),
+    ).rejects.toThrow('stop_after_login_audit');
+
+    expect(lastAuditEvent(auditRecord)).toMatchObject({
+      action: 'panorama.auth.oidc_login',
+      actorUserId: 'workspace-user-id',
+    });
+    expect(lastAuditMetadata(auditRecord)).toMatchObject({
+      pathTaken: 'new_user',
+      viaHdOverride: true,
+      hd: 'acme.example',
+    });
+  });
+
+  it('audit-write failure on success path does NOT mask the resolution', async () => {
+    // Symmetric to the refusal handling: the user-create / identity-link
+    // already committed in runAsSuperAdmin. Audit failure logs at error
+    // but doesn't undo the auth.
+    const { svc, runAsSuperAdmin, auditRecord } = makeService();
+    runAsSuperAdmin.mockImplementationOnce(async (fn: any) => {
+      const tx = {
+        authIdentity: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(),
+          update: vi.fn(),
+        },
+        user: {
+          findUnique: vi.fn(async () => null),
+          create: vi.fn(async () => ({
+            id: 'audit-fail-user-id',
+            email: 'alice@acme.example',
+            displayName: 'Alice Driver',
+          })),
+        },
+      };
+      return fn(tx);
+    });
+    auditRecord.mockRejectedValueOnce(new Error('audit_db_unreachable'));
+    runAsSuperAdmin.mockRejectedValueOnce(new Error('stop_after_login_audit'));
+
+    await expect(
+      svc.loginWithOidc('google', makeUserInfo({ emailVerified: true })),
+    ).rejects.toThrow('stop_after_login_audit');
+    // Confirms the buildSessionForUser path was reached (= audit
+    // failure didn't short-circuit the flow).
+    expect(auditRecord).toHaveBeenCalledOnce();
+  });
+});
+
+describe('AuthConfigService — OIDC_GOOGLE_TRUSTED_HD_DOMAINS validation (#89)', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('SESSION_SECRET', 'a'.repeat(32));
+    vi.stubEnv('OIDC_GOOGLE_CLIENT_ID', 'fake-google-id');
+    vi.stubEnv('OIDC_GOOGLE_CLIENT_SECRET', 'fake-google-secret');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function trustedDomains(envValue: string | undefined): string[] {
+    if (envValue === undefined) {
+      vi.stubEnv('OIDC_GOOGLE_TRUSTED_HD_DOMAINS', '');
+    } else {
+      vi.stubEnv('OIDC_GOOGLE_TRUSTED_HD_DOMAINS', envValue);
+    }
+    const cfg = new AuthConfigService();
+    return cfg.config.providers.google?.trustedHdDomains ?? [];
+  }
+
+  it('accepts valid multi-label domains (lowercased + trimmed)', () => {
+    expect(trustedDomains('acme.example, beta.example, foo.bar.example.com')).toEqual([
+      'acme.example',
+      'beta.example',
+      'foo.bar.example.com',
+    ]);
+  });
+
+  it('lowercases mixed-case entries', () => {
+    expect(trustedDomains('Acme.Example')).toEqual(['acme.example']);
+  });
+
+  it('rejects wildcard, path, port, IP, single-label, and empty entries', () => {
+    // Each malformed entry filters out silently in the parsed list;
+    // the warn log lands via the Logger (not asserted at unit level).
+    // Surviving entries: only the valid one.
+    expect(
+      trustedDomains(
+        '*.example, acme.example/foo, 127.0.0.1, localhost, acme.example, ' +
+          ' , -bad.example, bad-.example',
+      ),
+    ).toEqual(['acme.example']);
+  });
+
+  it('rejects entries with double dots / leading dots', () => {
+    expect(trustedDomains('..acme.example, .acme.example, acme..example')).toEqual([]);
+  });
+
+  it('returns empty when env var is absent', () => {
+    expect(trustedDomains(undefined)).toEqual([]);
+  });
+});

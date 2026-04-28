@@ -2,6 +2,7 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
+import { PanoramaAuditAction } from '../audit/audit-actions.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuthConfigService } from './auth.config.js';
 import type { OidcUserInfo } from './oidc.service.js';
@@ -150,6 +151,11 @@ export class AuthService {
     // sentinel keeps the gate decision contiguous and the audit
     // emission happens exactly once, after the closure has cleanly
     // exited with no writes.
+    //
+    // `pathTaken` captures which of the three resolution branches
+    // fired — the post-success audit (#91) carries it so tenant
+    // admins can see whether a Workspace-override login linked to an
+    // existing identity, linked by email, or created a new user.
     const resolution = await this.prisma.runAsSuperAdmin(
       async (tx) => {
         // Subject is IdP-unique; use it as the strongest key.
@@ -161,7 +167,11 @@ export class AuthService {
             where: { id: existing.id },
             data: { lastUsedAt: new Date(), emailAtLink: email },
           });
-          return { kind: 'ok' as const, userId: existing.userId };
+          return {
+            kind: 'ok' as const,
+            userId: existing.userId,
+            pathTaken: 'existing_identity' as const,
+          };
         }
 
         // Second chance: link this OIDC identity to an existing User with
@@ -184,7 +194,11 @@ export class AuthService {
               lastUsedAt: new Date(),
             },
           });
-          return { kind: 'ok' as const, userId: byEmail.id };
+          return {
+            kind: 'ok' as const,
+            userId: byEmail.id,
+            pathTaken: 'email_link' as const,
+          };
         }
 
         // Brand new — create the global User + the OIDC identity linking it.
@@ -205,7 +219,11 @@ export class AuthService {
             lastUsedAt: new Date(),
           },
         });
-        return { kind: 'ok' as const, userId: created.id };
+        return {
+          kind: 'ok' as const,
+          userId: created.id,
+          pathTaken: 'new_user' as const,
+        };
       },
       { reason: 'oidc find-or-create' },
     );
@@ -225,6 +243,24 @@ export class AuthService {
       );
       throw new UnauthorizedException(reason);
     }
+
+    // #91 — symmetric success-path audit. Tenant admins want to see
+    // who actually authenticated via the trusted-`hd` override path,
+    // not just who got refused. The audit row commits in its own
+    // tx after the identity tx already committed, so a crash between
+    // the two leaves the identity write without an audit row — the
+    // dispatcher's eventual DEAD-letter audit + the
+    // `oidc_login_audit_write_failed` log are the operator-visible
+    // backstops.
+    await this.recordOidcLogin(
+      provider,
+      userInfo,
+      email,
+      resolution.userId,
+      resolution.pathTaken,
+      gate.viaHdOverride,
+      context,
+    );
 
     return this.buildSessionForUser(resolution.userId, provider);
   }
@@ -276,7 +312,7 @@ export class AuthService {
     // transitions on tenant data, not to pre-tenant cluster events.
     try {
       await this.audit.record({
-        action: 'panorama.auth.oidc_refused',
+        action: PanoramaAuditAction.AuthOidcRefused,
         resourceType: 'auth_identity',
         resourceId: null,
         tenantId: null,
@@ -297,6 +333,52 @@ export class AuthService {
       // happens immediately after this call. Log loudly so the gap is
       // detectable.
       this.log.error({ err: String(err) }, 'oidc_refusal_audit_write_failed');
+    }
+  }
+
+  /**
+   * #91 — symmetric success-path audit for OIDC logins. Same shape
+   * as `recordOidcRefusal` (cluster-wide, own-transaction, audit-
+   * write failure does not block the auth chain) so the two surfaces
+   * read consistently in the audit log.
+   *
+   * `actorUserId` is populated post-resolution because we know the
+   * userId at this point — the refusal sibling can't because the
+   * refusal happens BEFORE user resolution.
+   */
+  private async recordOidcLogin(
+    provider: 'google' | 'microsoft',
+    userInfo: OidcUserInfo,
+    normalisedEmail: string,
+    userId: string,
+    pathTaken: 'existing_identity' | 'email_link' | 'new_user',
+    viaHdOverride: boolean,
+    context: { ipAddress?: string | null; userAgent?: string | null },
+  ): Promise<void> {
+    try {
+      await this.audit.record({
+        action: PanoramaAuditAction.AuthOidcLogin,
+        resourceType: 'auth_identity',
+        resourceId: null,
+        tenantId: null,
+        actorUserId: userId,
+        ipAddress: context.ipAddress ?? null,
+        userAgent: context.userAgent ?? null,
+        metadata: {
+          provider,
+          pathTaken,
+          viaHdOverride,
+          emailDomain: emailDomain(normalisedEmail),
+          hd: userInfo.hd,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          iss: userInfo.iss,
+        },
+      });
+    } catch (err) {
+      // Symmetric to refusal handling: audit-log failure logs error
+      // but does not block the auth flow — the user-create / identity-
+      // link writes already committed in the prior runAsSuperAdmin tx.
+      this.log.error({ err: String(err) }, 'oidc_login_audit_write_failed');
     }
   }
 
