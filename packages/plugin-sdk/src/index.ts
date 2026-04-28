@@ -10,14 +10,37 @@
  * deprecation cycle per semantic versioning of @panorama/plugin-sdk.
  */
 
-export type PanoramaEventName =
-  | 'panorama.asset.checked_out'
-  | 'panorama.asset.checked_in'
-  | 'panorama.reservation.created'
-  | 'panorama.reservation.approved'
-  | 'panorama.reservation.rejected'
-  | 'panorama.reservation.missed'
-  | 'panorama.maintenance.flagged';
+/**
+ * Events plugins can subscribe to. **MUST stay in sync** with
+ * `NOTIFICATION_PAYLOAD_SCHEMAS` in
+ * `apps/core-api/src/modules/notification/notification-events.schema.ts`
+ * — the runtime registry is the source of truth for which events are
+ * actually deliverable through the bus.
+ *
+ * Drift between this list and the registry is a guaranteed plugin-author
+ * footgun: authors get a happy typecheck for an event that will never
+ * fire. The CI check at
+ * `apps/core-api/test/notification-bus.integration.test.ts`
+ * (#59 sync test) asserts the two lists match.
+ *
+ * Pre-#59 this list had 4 ghost events (`asset.checked_out`,
+ * `asset.checked_in`, `reservation.missed`, `maintenance.flagged`) +
+ * 1 audit-only event (`reservation.created`) that never entered the
+ * bus. Plugin authors who keyed on those would never see them fire.
+ */
+/**
+ * Runtime enumeration of plugin-subscribable events. Tests + tooling
+ * iterate this; the type alias below is `(typeof PANORAMA_EVENT_NAMES)[number]`
+ * so the two surfaces can't drift.
+ */
+export const PANORAMA_EVENT_NAMES = [
+  'panorama.reservation.approved',
+  'panorama.reservation.rejected',
+  'panorama.reservation.checked_in_with_damage',
+  'panorama.inspection.completed',
+] as const;
+
+export type PanoramaEventName = (typeof PANORAMA_EVENT_NAMES)[number];
 
 export interface PanoramaEvent<T = unknown> {
   name: PanoramaEventName;

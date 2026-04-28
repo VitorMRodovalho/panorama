@@ -166,11 +166,15 @@ describe('notification bus integration', () => {
   // ---- enqueueWithin: validation paths --------------------------
 
   it('unknown eventType → throws + emits panorama.notification.payload_rejected', async () => {
+    // #61 — `eventType` is now typed to the registered union at the
+    // call site, so this path can only be reached via an `as` cast
+    // (untrusted input or test escape hatch). The runtime check
+    // stays as defence-in-depth against exactly that.
     await expect(
       prisma.runAsSuperAdmin(
         (tx) =>
           notifications.enqueueWithin(tx, {
-            eventType: 'not.a.real.type',
+            eventType: 'not.a.real.type' as never,
             tenantId,
             payload: {},
           }),
