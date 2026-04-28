@@ -47,7 +47,6 @@
     "nestjs-i18n": "^10.8.1",
     "nodemailer": "^8.0.5",
     "openid-client": "^5.7.1",
-    "pino": "^9.5.0",
     "prisma": "5.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
