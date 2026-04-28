@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
 
@@ -221,6 +222,79 @@ describe('migration 0015 — Wave 1 corrections', () => {
     expect(row?.prevHash).toEqual(tail.selfHash);
   });
 
+  it('#41 / #96 — trigger digest: selfHash = sha256(prev_hash || utf8(canonical_payload))', async () => {
+    // Pins the trigger function's hash math, not just its row-finding.
+    // The chain-is-global test above proves the SECURITY DEFINER
+    // SELECT walks audit_events without RLS scope; this test
+    // recomputes the resulting selfHash byte-for-byte from the
+    // payload Postgres builds via `json_build_object(...)::text`.
+    //
+    // Locks the digest contract against future trigger refactors:
+    // any change to (a) the JSON payload key set, (b) the
+    // occurredAt format string, or (c) the prepend-prev-hash byte
+    // order would diverge the recomputed hash.
+    //
+    // Read `row.prevHash` AS WRITTEN by the trigger (whatever was
+    // the global tail at fire time) and feed THAT into the
+    // recomputation — no pre-condition on which row is the tail,
+    // because vitest parallelism means another test file can race
+    // an audit insert in between our seed and our fire.
+    const dedupKey = `digest-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const created = await admin.notificationEvent.create({
+      data: {
+        tenantId,
+        eventType: 'panorama.test.digest_target',
+        dedupKey,
+        payload: { kind: 'digest-target' },
+        status: 'PENDING',
+      },
+    });
+    // Disallowed transition fires the trigger.
+    await admin.notificationEvent.update({
+      where: { id: created.id },
+      data: { status: 'DISPATCHED' },
+    });
+
+    const row = await admin.auditEvent.findFirstOrThrow({
+      where: { action: 'panorama.notification.status_tampered', resourceId: created.id },
+      orderBy: { id: 'desc' },
+    });
+
+    // Reconstruct the canonical payload Postgres built via
+    // `json_build_object(...)::text`. Postgres emits `json` output
+    // with whitespace around separators — `{"k" : v, "k2" : v2}` —
+    // NOT the ECMA-404 compact form `JSON.stringify` produces. The
+    // hash math is byte-sensitive, so the reconstruction has to
+    // match that whitespace exactly.
+    //
+    // The occurredAt format mirrors the trigger's
+    // `to_char(... 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` which is the
+    // same shape `Date.toISOString()` emits. The trigger metadata
+    // uses `json_build_object(fromStatus, toStatus, eventType)` —
+    // key order is the SQL argument order, reproduced here.
+    const payload = {
+      action: 'panorama.notification.status_tampered',
+      resourceType: 'notification_event',
+      resourceId: created.id,
+      tenantId,
+      actorUserId: null,
+      metadata: {
+        fromStatus: 'PENDING',
+        toStatus: 'DISPATCHED',
+        eventType: 'panorama.test.digest_target',
+      },
+      occurredAt: row.occurredAt.toISOString(),
+    };
+    const payloadBytes = Buffer.from(pgJsonStringify(payload), 'utf8');
+
+    const expected = createHash('sha256');
+    if (row.prevHash) expected.update(row.prevHash);
+    expected.update(payloadBytes);
+    const expectedDigest = expected.digest();
+
+    expect(row.selfHash.equals(expectedDigest)).toBe(true);
+  });
+
   // The cutover marker (panorama.audit.chain_repair, action key) is
   // emitted at migration apply time. resetTestDb wipes audit_events
   // before every test run, so the marker is not present in the
@@ -230,3 +304,28 @@ describe('migration 0015 — Wave 1 corrections', () => {
   // (its DO $$ block runs once when the migration applies); a
   // vitest assertion here would not survive resetTestDb's wipe.
 });
+
+/**
+ * Postgres-compatible JSON serializer (#96). Postgres `json_build_object`
+ * emits text with whitespace around separators:
+ *   {"key" : "value", "k2" : null}
+ * The trigger digests over those exact bytes, so reconstruction has
+ * to match. ECMA-404 / `JSON.stringify` produces compact output
+ * `{"key":"value","k2":null}` — different bytes, different sha256.
+ *
+ * Limited surface: handles the shapes the audit triggers emit
+ * (strings, null, plain objects, no arrays/numbers/booleans). Not a
+ * general-purpose serializer; throw on anything else so the test
+ * fails loud if the trigger payload shape grows.
+ */
+function pgJsonStringify(value: unknown): string {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const pairs = Object.entries(value).map(
+      ([k, v]) => `${JSON.stringify(k)} : ${pgJsonStringify(v)}`,
+    );
+    return `{${pairs.join(', ')}}`;
+  }
+  throw new Error(`pgJsonStringify: unsupported value type ${typeof value}`);
+}
