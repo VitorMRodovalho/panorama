@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service.js';
 import {
   NOTIFICATION_PAYLOAD_SCHEMAS,
   isRegisteredEventType,
+  type NotificationEventType,
 } from './notification-events.schema.js';
 
 /**
@@ -29,8 +30,15 @@ import {
 const SENSITIVE_FIELD_RE = /token|secret|password|authorization/i;
 const REDACTED = '<redacted>';
 
+/**
+ * Public emit-side input for `enqueueWithin`. `eventType` is a
+ * union of registered keys (#61) — a typo or unregistered name now
+ * fails at compile time instead of waiting for the runtime
+ * `unknown_event_type` audit. The runtime check stays as
+ * defence-in-depth against escape hatches like `as` casts.
+ */
 export interface NotificationEventInput {
-  eventType: string;
+  eventType: NotificationEventType;
   tenantId?: string | null;
   payload: Record<string, unknown>;
   dedupKey?: string;
@@ -59,7 +67,16 @@ export class NotificationService {
     // back, so audit.recordWithin would roll back with it and the
     // signal would disappear. The audit for "your domain write
     // tried to enqueue a bogus event" MUST survive the rollback.
+    //
+    // #61 narrowed `event.eventType` to the registered union at the
+    // type level, so the typecheck-side compile-time view of this
+    // branch is `never` — but the runtime check stays as
+    // defence-in-depth against `as` casts that bypass the
+    // type-system gate at the call site. The `string` cast on the
+    // metadata + throw template is the explicit acknowledgement
+    // that, at runtime, the value can be any string.
     if (!isRegisteredEventType(event.eventType)) {
+      const rawEventType = event.eventType as string;
       await this.audit.record({
         action: 'panorama.notification.payload_rejected',
         resourceType: 'notification_event',
@@ -68,10 +85,10 @@ export class NotificationService {
         actorUserId: null,
         metadata: {
           reason: 'unknown_event_type',
-          eventType: event.eventType,
+          eventType: rawEventType,
         },
       });
-      throw new Error(`unknown_event_type:${event.eventType}`);
+      throw new Error(`unknown_event_type:${rawEventType}`);
     }
 
     const schema = NOTIFICATION_PAYLOAD_SCHEMAS[event.eventType];
