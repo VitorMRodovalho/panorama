@@ -16,7 +16,7 @@
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "@types/node": "^22.19.17",
+    "@types/node": "^25.6.0",
     "typescript": "^6.0.3"
   }
 }
