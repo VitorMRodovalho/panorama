@@ -572,17 +572,55 @@ export class InvitationService {
   // ---------------------------------------------------------------------
 
   async list(params: ListInvitationsParams): Promise<InvitationListItemView[]> {
-    const rows = await this.prisma.runInTenant(
-      params.tenantId,
-      (tx) =>
-        tx.invitation.findMany({
-          where: { tenantId: params.tenantId },
-          orderBy: { createdAt: 'desc' },
-          take: params.limit ?? 100,
-        }),
+    // PERF-02 / #64 — status filter is fully derivable from the
+    // (acceptedAt, revokedAt, expiresAt) tuple; pushing it to the
+    // WHERE clause means the planner only fetches the rows we'll
+    // actually return + skips the post-fetch JS filter step.
+    //
+    // PERF-07 / #64 (paired migration 0019) — the
+    // (tenantId, createdAt DESC) index lets the ORDER BY walk the
+    // index backwards in createdAt order and stop at LIMIT, instead
+    // of falling back to a Sort over the full tenant partition.
+    //
+    // Status semantics mirror `classify(...)` exactly:
+    //   accepted → acceptedAt IS NOT NULL (revoked/expired don't
+    //     win once acceptance landed)
+    //   revoked  → revokedAt IS NOT NULL AND acceptedAt IS NULL
+    //   expired  → acceptedAt IS NULL AND revokedAt IS NULL AND
+    //              expiresAt <= now
+    //   open     → acceptedAt IS NULL AND revokedAt IS NULL AND
+    //              expiresAt > now
+    const where: Prisma.InvitationWhereInput = { tenantId: params.tenantId };
+    const now = new Date();
+    switch (params.status) {
+      case 'accepted':
+        where.acceptedAt = { not: null };
+        break;
+      case 'revoked':
+        where.acceptedAt = null;
+        where.revokedAt = { not: null };
+        break;
+      case 'expired':
+        where.acceptedAt = null;
+        where.revokedAt = null;
+        where.expiresAt = { lte: now };
+        break;
+      case 'open':
+        where.acceptedAt = null;
+        where.revokedAt = null;
+        where.expiresAt = { gt: now };
+        break;
+      // `undefined` and `'all'` fall through with no extra clauses.
+    }
+
+    const rows = await this.prisma.runInTenant(params.tenantId, (tx) =>
+      tx.invitation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: params.limit ?? 100,
+      }),
     );
-    const filtered = rows.filter((r) => this.matchStatus(r, params.status));
-    return filtered.map((r) => this.toListItem(r));
+    return rows.map((r) => this.toListItem(r));
   }
 
   // ---------------------------------------------------------------------
@@ -792,15 +830,20 @@ export class InvitationService {
     );
   }
 
-  private matchStatus(
-    row: { acceptedAt: Date | null; revokedAt: Date | null; expiresAt: Date },
-    filter: ListInvitationsParams['status'],
-  ): boolean {
-    if (!filter || filter === 'all') return true;
-    const status = this.classify(row);
-    return status === filter;
-  }
-
+  /**
+   * Render-time status classifier. **MUST stay in lock-step** with
+   * the WHERE-clause derivation in `list()` — they encode the same
+   * order-dependent rules but on different surfaces (JS branching
+   * here, SQL nullability + comparison there). A drift between the
+   * two means a row's filtered-list visibility disagrees with its
+   * rendered status pill.
+   *
+   * Rules (order matters — accepted short-circuits before revoked):
+   *   1. acceptedAt IS NOT NULL → 'accepted'
+   *   2. revokedAt  IS NOT NULL → 'revoked'
+   *   3. expiresAt <= now       → 'expired'
+   *   4. otherwise               → 'open'
+   */
   private classify(row: {
     acceptedAt: Date | null;
     revokedAt: Date | null;
