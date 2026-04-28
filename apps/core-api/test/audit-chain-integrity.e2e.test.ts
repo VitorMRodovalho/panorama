@@ -8,11 +8,12 @@ import { AppModule } from '../src/app.module.js';
 import { AuditService } from '../src/modules/audit/audit.service.js';
 import { PrismaService } from '../src/modules/prisma/prisma.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { createTenantForTest } from './_create-tenant.js';
 
 /**
- * Hash-chain integrity for batched `audit.recordWithin` calls inside
- * a single super-admin tx (tech-lead pass-2 soft on #140 +
- * MaintenanceSweepService PM-due audit batching).
+ * Hash-chain integrity for batched `audit.recordWithin` calls
+ * (tech-lead pass-2 soft on #140 + MaintenanceSweepService PM-due
+ * audit batching, extended in #113 for the multi-strand reality).
  *
  * The invariant: when N rows are inserted via `recordWithin(tx, …)`
  * inside one transaction, row[k+1].prevHash MUST equal row[k].selfHash.
@@ -24,12 +25,17 @@ import { resetTestDb } from './_reset-db.js';
  * before the chain breaks silently in production.
  *
  * Coverage:
- *   1. Five consecutive `recordWithin` calls in one tx → chain links
- *      forward, each row's prevHash matches predecessor selfHash.
- *   2. Batch's first row links to the global chain tail (the row
- *      that was head BEFORE the batch).
- *   3. Each row's selfHash recomputes from (prevHash, payload) so
- *      tampering with any field downstream breaks verification.
+ *   1. **Super-admin (global) strand** — five consecutive
+ *      `recordWithin` calls in one super-admin tx; chain links
+ *      forward, prevHash recomputable. Locks the global-strand
+ *      invariant against Prisma upgrades.
+ *   2. **Cross-batch global** — second super-admin batch in the same
+ *      suite continues the chain (no per-tx reset).
+ *   3. **Per-tenant strand (#113)** — three consecutive `recordWithin`
+ *      calls under `runInTenant(tenantA, …)`. Under `panorama_app`
+ *      the chain-head read is RLS-filtered to (tenantA + NULL), so
+ *      the strand we observe back is what tenantA would see at
+ *      verification time. Asserts the strand is internally coherent.
  */
 
 const HOST = process.env.PG_HOST ?? 'localhost';
@@ -210,6 +216,66 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
     // — the previous test's batch already extended the chain).
     expect(rows[0]!.prevHash).not.toBeNull();
     // Internal links remain coherent.
+    for (let i = 1; i < rows.length; i++) {
+      expect(Buffer.compare(rows[i]!.prevHash!, rows[i - 1]!.selfHash)).toBe(0);
+    }
+  }, 30_000);
+
+  it('per-tenant strand under runInTenant chains coherently (#113)', async () => {
+    // Documents + locks the multi-strand reality: under
+    // `runInTenant(tenantA)` the `panorama_app` role's RLS policy
+    // filters the chain-head read to (tenantA + NULL). The strand the
+    // tenant observes back is what verification tooling will see at
+    // audit time, so it must be internally coherent: every row's
+    // prev_hash links to the previous row's self_hash within the same
+    // batch.
+    //
+    // This does NOT assert linkage to the global super-admin strand —
+    // those are separate strands by design (see AuditService docstring).
+    const tenant = await createTenantForTest(adminDb, {
+      slug: 'audit-chain-tenantA',
+      name: 'Audit Chain Tenant A',
+      displayName: 'Audit Chain Tenant A',
+    });
+
+    await prisma.runInTenant(tenant.id, async (tx) => {
+      for (let i = 0; i < 3; i++) {
+        await audit.recordWithin(tx, {
+          action: `panorama.audit_chain_test.tenant_strand_${i}`,
+          resourceType: 'audit_chain_test',
+          resourceId: `tenant-row-${i}`,
+          tenantId: tenant.id,
+          actorUserId: null,
+          metadata: { i, strand: 'tenant' },
+        });
+      }
+    });
+
+    // Read back via the admin client (BYPASSRLS) so the test is not
+    // itself constrained by the tenant's RLS view; the assertion is
+    // about the rows we wrote, not about what the tenant can see.
+    const rows = (await adminDb.auditEvent.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: { id: 'asc' },
+      select: {
+        action: true,
+        prevHash: true,
+        selfHash: true,
+        tenantId: true,
+      },
+    })) as unknown as Array<{
+      action: string;
+      prevHash: Buffer | null;
+      selfHash: Buffer;
+      tenantId: string | null;
+    }>;
+
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.tenantId).toBe(tenant.id);
+    }
+    // Internal chain coherence within the tenant strand.
+    expect(rows[0]!.prevHash).not.toBeNull();
     for (let i = 1; i < rows.length; i++) {
       expect(Buffer.compare(rows[i]!.prevHash!, rows[i - 1]!.selfHash)).toBe(0);
     }

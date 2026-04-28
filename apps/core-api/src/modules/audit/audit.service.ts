@@ -15,6 +15,45 @@ import { PrismaService } from '../prisma/prisma.service.js';
  * audit log since we only need *a* consistent predecessor pointer,
  * not a globally-total order. Verification tooling traverses the
  * id-ordered chain at audit time.
+ *
+ * --- Multi-strand semantics (#113 / RLS-01) ---
+ *
+ * The chain is **multi-strand**, not single-linear, because the
+ * `findFirst` chain-head read is filtered by RLS at the role's
+ * visibility:
+ *
+ *   * `recordWithin(tx, …)` called from `runInTenant(tenantA, …)`
+ *     reads the latest row visible to tenantA (own rows + NULL-tenant
+ *     rows per `audit_events_tenant_read`). Writes carry
+ *     `tenantId = tenantA`.
+ *   * `recordWithin(tx, …)` called from `runAsSuperAdmin(…)` (or the
+ *     SECURITY DEFINER triggers post-#41) reads the global latest row.
+ *     Writes typically carry `tenantId = NULL` for cluster-wide
+ *     system events.
+ *
+ * This is by ADR-0003's least-privilege contract — `panorama_app`
+ * cannot see other tenants' rows, so the chain head it reads is
+ * tenant-scoped. The trade-off: a single global linear chain would
+ * require every tenant write to escalate to super-admin for the
+ * head read (a SECURITY DEFINER helper), which weakens the RLS
+ * isolation property for an append-only verification benefit.
+ *
+ * **Verification tooling implications:**
+ *
+ *   1. Verify each tenant's strand independently — filter to
+ *      `tenantId IN (tenant, NULL)`, order by `id`, walk prev/self hash.
+ *      Cross-strand prev_hash links (a tenant linking forward to a
+ *      NULL-tenant row visible to it) are normal and verify cleanly.
+ *   2. Verify the global super-admin strand — no tenantId filter,
+ *      order by `id`, walk the chain. The global strand sees every
+ *      row but its `prev_hash` was written from the global head at
+ *      write time, so it's coherent on its own.
+ *   3. Cross-tenant timeline reconstruction uses `occurredAt`, NOT
+ *      the prev_hash links — links are local to a strand.
+ *
+ * The `tenantId` column is the natural strand discriminator: NULL
+ * for system / privileged-write events, the tenant uuid for
+ * tenant-scoped writes.
  */
 export interface AuditEventInput {
   /** e.g. `panorama.invitation.created`. */
