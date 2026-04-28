@@ -331,52 +331,101 @@ export class ReservationService {
           }
         }
 
-        // Validate every asset + check every conflict + blackout BEFORE
-        // writing anything — first failure rolls back the whole basket.
+        // Batched validation phase — three queries regardless of basket
+        // size. Pre-#63 this loop ran 3 queries per asset under
+        // SERIALIZABLE; a basket of 10 trucks held SIRead locks across
+        // 30 round-trips and burned through P2034 retries on
+        // concurrent baskets touching overlapping assets. Lock-hold
+        // duration now scales with one batched read per check, not N.
+        //
+        // First-failure semantics preserved: if multiple assets fail
+        // different checks, the order is asset-existence → archived →
+        // bookable → status → overlap → blackout, matching the
+        // pre-batch loop's per-iteration order. We surface the first
+        // assetId that trips each check so error messages stay
+        // identical to the pre-batch shape.
+        const validatedAssets = await tx.asset.findMany({
+          where: { id: { in: params.assetIds }, tenantId: actor.tenantId },
+          select: {
+            id: true,
+            tenantId: true,
+            bookable: true,
+            archivedAt: true,
+            status: true,
+          },
+        });
+        const assetById = new Map(validatedAssets.map((a) => [a.id, a]));
         for (const assetId of params.assetIds) {
-          const asset = await tx.asset.findUnique({
-            where: { id: assetId },
-            select: { id: true, tenantId: true, bookable: true, archivedAt: true, status: true },
-          });
-          if (!asset || asset.tenantId !== actor.tenantId) {
-            throw new NotFoundException(`asset_not_found:${assetId}`);
-          }
+          const asset = assetById.get(assetId);
+          if (!asset) throw new NotFoundException(`asset_not_found:${assetId}`);
           if (asset.archivedAt) throw new BadRequestException(`asset_archived:${assetId}`);
           if (!asset.bookable) throw new BadRequestException(`asset_not_bookable:${assetId}`);
           if (asset.status === 'RETIRED' || asset.status === 'MAINTENANCE') {
             throw new ConflictException(`asset_not_available:${assetId}:${asset.status}`);
           }
-          await this.assertNoOverlap(tx, actor.tenantId, assetId, params.startAt, params.endAt);
-          await this.assertNoBlackout(tx, actor.tenantId, assetId, params.startAt, params.endAt);
+        }
+
+        const overlapping = await tx.reservation.findMany({
+          where: {
+            tenantId: actor.tenantId,
+            assetId: { in: params.assetIds },
+            approvalStatus: { in: ['PENDING_APPROVAL', 'AUTO_APPROVED', 'APPROVED'] },
+            lifecycleStatus: { in: ['BOOKED', 'CHECKED_OUT'] },
+            startAt: { lt: params.endAt },
+            endAt: { gt: params.startAt },
+          },
+          select: { assetId: true },
+        });
+        if (overlapping.length > 0) {
+          throw new ConflictException('reservation_conflict');
+        }
+
+        const blackouts = await tx.blackoutSlot.findMany({
+          where: {
+            tenantId: actor.tenantId,
+            OR: [{ assetId: { in: params.assetIds } }, { assetId: null }],
+            startAt: { lt: params.endAt },
+            endAt: { gt: params.startAt },
+          },
+          select: { title: true },
+        });
+        if (blackouts.length > 0) {
+          // Surface the first matching blackout's title — matches the
+          // pre-batch shape's `blackout_conflict:<title>` error string.
+          throw new ConflictException(`blackout_conflict:${blackouts[0]!.title}`);
         }
 
         const decision = this.decideApproval(rules, actor);
         const createdAt = new Date();
-        const rows: Reservation[] = [];
-        for (const assetId of params.assetIds) {
-          const row = await tx.reservation.create({
-            data: {
-              tenantId: actor.tenantId,
-              assetId,
-              basketId,
-              requesterUserId: actor.userId,
-              onBehalfUserId: params.onBehalfUserId ?? null,
-              startAt: params.startAt,
-              endAt: params.endAt,
-              purpose: params.purpose ?? null,
-              approvalStatus: decision,
-              lifecycleStatus: 'BOOKED',
-              ...(decision === 'AUTO_APPROVED'
-                ? { approverUserId: actor.userId, approvedAt: createdAt }
-                : {}),
-            },
-          });
-          rows.push(row);
+        // `createManyAndReturn` (Prisma 5.14+) gives us back the inserted
+        // rows in input order — needed because each row feeds a per-row
+        // audit_event below. `createMany` would force a follow-up
+        // findMany() to recover ids, defeating the round-trip win.
+        const rows = await tx.reservation.createManyAndReturn({
+          data: params.assetIds.map((assetId) => ({
+            tenantId: actor.tenantId,
+            assetId,
+            basketId,
+            requesterUserId: actor.userId,
+            onBehalfUserId: params.onBehalfUserId ?? null,
+            startAt: params.startAt,
+            endAt: params.endAt,
+            purpose: params.purpose ?? null,
+            approvalStatus: decision,
+            lifecycleStatus: 'BOOKED',
+            ...(decision === 'AUTO_APPROVED'
+              ? { approverUserId: actor.userId, approvedAt: createdAt }
+              : {}),
+          })),
+        });
 
-          // Per-row audit event so queries by resourceType=reservation
-          // catch basket rows the same way they catch single-asset
-          // creates. The basket-level event below still fires for
-          // "what baskets exist" audit slices.
+        // Per-row audit event so queries by resourceType=reservation
+        // catch basket rows the same way they catch single-asset
+        // creates. Sequential because each row's prev_hash chains
+        // forward from the prior row's self_hash; a multi-row INSERT
+        // would break the chain. The basket-level event below still
+        // fires for "what baskets exist" audit slices.
+        for (const row of rows) {
           await this.audit.recordWithin(tx, {
             action:
               decision === 'AUTO_APPROVED'
@@ -387,7 +436,7 @@ export class ReservationService {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
             metadata: {
-              assetId,
+              assetId: row.assetId,
               basketId,
               onBehalfUserId: params.onBehalfUserId ?? null,
               startAt: params.startAt.toISOString(),
