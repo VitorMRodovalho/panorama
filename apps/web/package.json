@@ -17,7 +17,7 @@
     "@panorama/shared": "workspace:*",
     "@panorama/ui-kit": "workspace:*",
     "next": "^15.5.15",
-    "next-intl": "^4.9.1",
+    "next-intl": "^4.9.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "server-only": "^0.0.1",
