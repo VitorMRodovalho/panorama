@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Logger,
   Param,
   Post,
   Query,
@@ -45,6 +46,8 @@ const OidcProviderSchema = z.enum(['google', 'microsoft']);
 
 @Controller('auth')
 export class AuthController {
+  private readonly log = new Logger('AuthController');
+
   constructor(
     private readonly auth: AuthService,
     private readonly discovery: DiscoveryService,
@@ -245,27 +248,29 @@ export class AuthController {
     const provider = this.requireProvider(req);
 
     // RFC 6749 §4.1.2.1 — IdP signals refusal/failure via `?error=`
-    // (e.g., access_denied, invalid_request, login_required). Surface
-    // that to the user with the IdP's actual reason instead of the
-    // generic `missing_code_or_state`. Char-allowlist + length-cap
-    // before echoing in case an IdP ever ships a non-spec error code;
-    // RFC 6749 codes are `[a-z_]+`.
+    // (access_denied, invalid_request, login_required, …). Capture
+    // the IdP's reason in the SERVER LOG (where ops triages it) and
+    // return a stable client-facing code — never echo attacker-
+    // influenced data into the HTTP response body. Char-allowlist
+    // + length-cap on the logged code in case an IdP ships garbage
+    // (RFC 6749 codes are `[a-z_]+`; `-` allowed for forward-compat).
     //
-    // Cookie-cleanup is GUARDED by stored-state presence + provider
+    // Cookie-cleanup is GATED on stored-state presence + provider
     // match. Without that gate, a drive-by `/callback?error=foo` URL
-    // (no cookie) would still invoke `destroyOauthState`, which —
-    // while idempotent against missing state — pulls a sensitive code
-    // path on attacker input (CodeQL js/user-controlled-bypass).
-    // Reading the stored state is side-effect-free; only the
-    // matching-context destroy is privileged, so we keep it inside
-    // the second `if`.
+    // (no cookie) would still invoke `destroyOauthState` — idempotent
+    // against missing state, but still a sensitive code path
+    // reachable from attacker input.
     if (typeof idpError === 'string' && idpError.length > 0) {
       const stored = await this.sessions.getOauthState(req, res);
       if (stored && stored.provider === provider) {
         await this.sessions.destroyOauthState(req, res);
       }
       const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
-      throw new BadRequestException(`oidc_idp_error:${safeCode}`);
+      this.log.warn(
+        { provider, idp_error: safeCode },
+        'oidc_idp_error_received',
+      );
+      throw new BadRequestException('oidc_idp_error');
     }
 
     if (!code || !state) throw new BadRequestException('missing_code_or_state');
