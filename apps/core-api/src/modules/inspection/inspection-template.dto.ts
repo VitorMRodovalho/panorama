@@ -61,7 +61,7 @@ export const CreateInspectionTemplateSchema = z
     name: z.string().min(1).max(200),
     description: z.string().max(1000).nullable().optional(),
     categoryKind: CategoryKindSchema.nullable().optional(),
-    categoryId: z.string().uuid().nullable().optional(),
+    categoryId: z.guid().nullable().optional(),
     displayOrder: z.number().int().min(0).max(10_000).default(0),
     items: z
       .array(InspectionTemplateItemInputSchema)
@@ -82,7 +82,7 @@ export const UpdateInspectionTemplateSchema = z
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(1000).nullable().optional(),
     categoryKind: CategoryKindSchema.nullable().optional(),
-    categoryId: z.string().uuid().nullable().optional(),
+    categoryId: z.guid().nullable().optional(),
     displayOrder: z.number().int().min(0).max(10_000).optional(),
     /**
      * When provided, items are FULLY REPLACED inside one transaction
@@ -115,7 +115,7 @@ export type UpdateInspectionTemplateInput = z.infer<
 
 export const ListInspectionTemplatesSchema = z.object({
   /** Filter to templates that match this asset's category (resolved server-side). */
-  assetId: z.string().uuid().optional(),
+  assetId: z.guid().optional(),
   /** Filter by category kind directly — admin browsing. */
   categoryKind: CategoryKindSchema.optional(),
   /** Include archived templates in the result (admin view). */

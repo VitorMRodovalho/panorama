@@ -21,10 +21,10 @@ import { z } from 'zod';
 export const NOTIFICATION_PAYLOAD_SCHEMAS = {
   'panorama.reservation.approved': z
     .object({
-      reservationId: z.string().uuid(),
-      assetId: z.string().uuid().nullable(),
-      requesterUserId: z.string().uuid(),
-      approverUserId: z.string().uuid(),
+      reservationId: z.guid(),
+      assetId: z.guid().nullable(),
+      requesterUserId: z.guid(),
+      approverUserId: z.guid(),
       startAt: z.string().datetime(),
       endAt: z.string().datetime(),
       note: z.string().max(500).optional(),
@@ -33,10 +33,10 @@ export const NOTIFICATION_PAYLOAD_SCHEMAS = {
 
   'panorama.reservation.rejected': z
     .object({
-      reservationId: z.string().uuid(),
-      assetId: z.string().uuid().nullable(),
-      requesterUserId: z.string().uuid(),
-      approverUserId: z.string().uuid(),
+      reservationId: z.guid(),
+      assetId: z.guid().nullable(),
+      requesterUserId: z.guid(),
+      approverUserId: z.guid(),
       startAt: z.string().datetime(),
       endAt: z.string().datetime(),
       note: z.string().max(500).optional(),
@@ -49,10 +49,10 @@ export const NOTIFICATION_PAYLOAD_SCHEMAS = {
   // (audit + future subscribers) without firing email.
   'panorama.inspection.completed': z
     .object({
-      inspectionId: z.string().uuid(),
-      assetId: z.string().uuid(),
-      reservationId: z.string().uuid().nullable(),
-      startedByUserId: z.string().uuid(),
+      inspectionId: z.guid(),
+      assetId: z.guid(),
+      reservationId: z.guid().nullable(),
+      startedByUserId: z.guid(),
       outcome: z.enum(['PASS', 'FAIL', 'NEEDS_MAINTENANCE']),
       photoCount: z.number().int().min(0).max(50),
       responseCount: z.number().int().min(0).max(100),
@@ -68,10 +68,10 @@ export const NOTIFICATION_PAYLOAD_SCHEMAS = {
   // emitted until the auto-suggest slice landed.
   'panorama.reservation.checked_in_with_damage': z
     .object({
-      reservationId: z.string().uuid(),
-      assetId: z.string().uuid(),
-      requesterUserId: z.string().uuid(),
-      checkedInByUserId: z.string().uuid(),
+      reservationId: z.guid(),
+      assetId: z.guid(),
+      requesterUserId: z.guid(),
+      checkedInByUserId: z.guid(),
       checkedInAt: z.string().datetime(),
       mileageIn: z.number().int().nonnegative(),
       // Free-text driver note describing the damage — bounded so payload

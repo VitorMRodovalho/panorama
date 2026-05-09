@@ -26,7 +26,7 @@ export const ManifestSchema = z.object({
   source: FixtureSourceSchema,
   sourceUrl: z.string().url().nullable(),
   generatedAt: z.string().datetime({ offset: true }),
-  counts: z.record(z.number().int().nonnegative()),
+  counts: z.record(z.string(), z.number().int().nonnegative()),
 });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
@@ -111,7 +111,7 @@ export const AssetFixtureSchema = z.object({
   serial: z.string().nullable().optional(),
   status: z.enum(['READY', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'RETIRED']).default('READY'),
   bookable: z.boolean().default(false),
-  customFields: z.record(z.unknown()).default({}),
+  customFields: z.record(z.string(), z.unknown()).default({}),
 });
 export type AssetFixture = z.infer<typeof AssetFixtureSchema>;
 

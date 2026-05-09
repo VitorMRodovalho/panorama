@@ -17,7 +17,7 @@ export const InspectionItemTypeEnum = z.enum(['BOOLEAN', 'TEXT', 'NUMBER', 'PHOT
 
 export const InspectionSnapshotItemSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     position: z.number().int().min(0).max(10_000),
     label: z.string().min(1).max(200),
     itemType: InspectionItemTypeEnum,

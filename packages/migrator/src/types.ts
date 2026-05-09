@@ -53,7 +53,7 @@ export const SnipeItAssetSchema = z.object({
   company: NestedRefSchema,
   rtd_location: NestedRefSchema,
   assigned_to: z.unknown().nullable().optional(),
-  custom_fields: z.record(z.unknown()).nullable().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export type SnipeItAsset = z.infer<typeof SnipeItAssetSchema>;
 
@@ -65,7 +65,7 @@ export const PaginatedResponseSchema = z.object({
 export const InventoryReportSchema = z.object({
   snipeitUrl: z.string().url(),
   generatedAt: z.string().datetime({ offset: true }),
-  counts: z.record(z.number().int()),
+  counts: z.record(z.string(), z.number().int()),
   flags: z.object({
     duplicateEmails: z.array(z.string()),
     unknownStatusLabels: z.array(z.string()),

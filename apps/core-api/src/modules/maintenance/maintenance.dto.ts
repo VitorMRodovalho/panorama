@@ -20,13 +20,13 @@ export const MAINTENANCE_TYPE_ALLOWLIST = [
 export type MaintenanceTypeName = (typeof MAINTENANCE_TYPE_ALLOWLIST)[number];
 
 export const OpenTicketSchema = z.object({
-  assetId: z.string().uuid(),
+  assetId: z.guid(),
   maintenanceType: z.enum(MAINTENANCE_TYPE_ALLOWLIST),
   title: z.string().trim().min(3, 'title_too_short').max(200),
   severity: z.string().trim().max(40).optional(),
-  triggeringReservationId: z.string().uuid().optional(),
-  triggeringInspectionId: z.string().uuid().optional(),
-  assigneeUserId: z.string().uuid().optional(),
+  triggeringReservationId: z.guid().optional(),
+  triggeringInspectionId: z.guid().optional(),
+  assigneeUserId: z.guid().optional(),
   supplierName: z.string().trim().max(200).optional(),
   mileageAtService: z.number().int().nonnegative().optional(),
   expectedReturnAt: z.string().datetime().optional(),
@@ -38,10 +38,10 @@ export type OpenTicketInput = z.infer<typeof OpenTicketSchema>;
 
 export const ListTicketsSchema = z.object({
   status: z.enum(['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-  assetId: z.string().uuid().optional(),
-  assigneeUserId: z.string().uuid().optional(),
+  assetId: z.guid().optional(),
+  assigneeUserId: z.guid().optional(),
   limit: z.coerce.number().int().positive().max(200).optional(),
-  cursor: z.string().uuid().optional(),
+  cursor: z.guid().optional(),
 });
 export type ListTicketsInput = z.infer<typeof ListTicketsSchema>;
 
