@@ -247,12 +247,23 @@ export class AuthController {
     // RFC 6749 §4.1.2.1 — IdP signals refusal/failure via `?error=`
     // (e.g., access_denied, invalid_request, login_required). Surface
     // that to the user with the IdP's actual reason instead of the
-    // generic `missing_code_or_state`. Also clear the OAuth-state
-    // cookie so a stale stash can't interfere with the user's retry.
-    // Char-allowlist + length-cap before echoing in case an IdP ever
-    // ships a non-spec error code; RFC 6749 codes are `[a-z_]+`.
+    // generic `missing_code_or_state`. Char-allowlist + length-cap
+    // before echoing in case an IdP ever ships a non-spec error code;
+    // RFC 6749 codes are `[a-z_]+`.
+    //
+    // Cookie-cleanup is GUARDED by stored-state presence + provider
+    // match. Without that gate, a drive-by `/callback?error=foo` URL
+    // (no cookie) would still invoke `destroyOauthState`, which —
+    // while idempotent against missing state — pulls a sensitive code
+    // path on attacker input (CodeQL js/user-controlled-bypass).
+    // Reading the stored state is side-effect-free; only the
+    // matching-context destroy is privileged, so we keep it inside
+    // the second `if`.
     if (typeof idpError === 'string' && idpError.length > 0) {
-      await this.sessions.destroyOauthState(req, res);
+      const stored = await this.sessions.getOauthState(req, res);
+      if (stored && stored.provider === provider) {
+        await this.sessions.destroyOauthState(req, res);
+      }
       const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
       throw new BadRequestException(`oidc_idp_error:${safeCode}`);
     }
