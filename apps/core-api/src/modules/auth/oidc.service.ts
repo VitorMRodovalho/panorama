@@ -1,5 +1,49 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { generators, Issuer, type Client } from 'openid-client';
+// `openid-client` is ESM-only since v6 (no CJS export). Static `import`
+// from our compiled CJS module would fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`
+// at runtime. Dynamic import works in CJS via Node's interop and resolves
+// to the ESM exports lazily; cached after first use. The type-only static
+// import below uses `with { 'resolution-mode': 'import' }` so TS resolves
+// the types as if from an ESM context (required because the surrounding
+// file is CJS but openid-client ships ESM-only `.d.ts`).
+// Same shape as photo-pipeline's `file-type` shim landed in #163.
+import type {
+  authorizationCodeGrant as authorizationCodeGrantType,
+  buildAuthorizationUrl as buildAuthorizationUrlType,
+  calculatePKCECodeChallenge as calculatePKCECodeChallengeType,
+  Configuration,
+  discovery as discoveryType,
+  randomNonce as randomNonceType,
+  randomPKCECodeVerifier as randomPKCECodeVerifierType,
+  randomState as randomStateType,
+} from 'openid-client' with { 'resolution-mode': 'import' };
+
+interface OidcModule {
+  authorizationCodeGrant: typeof authorizationCodeGrantType;
+  buildAuthorizationUrl: typeof buildAuthorizationUrlType;
+  calculatePKCECodeChallenge: typeof calculatePKCECodeChallengeType;
+  discovery: typeof discoveryType;
+  randomNonce: typeof randomNonceType;
+  randomPKCECodeVerifier: typeof randomPKCECodeVerifierType;
+  randomState: typeof randomStateType;
+}
+
+let oidcModule: OidcModule | undefined;
+async function loadOidc(): Promise<OidcModule> {
+  if (!oidcModule) {
+    const mod = await import('openid-client');
+    oidcModule = {
+      authorizationCodeGrant: mod.authorizationCodeGrant,
+      buildAuthorizationUrl: mod.buildAuthorizationUrl,
+      calculatePKCECodeChallenge: mod.calculatePKCECodeChallenge,
+      discovery: mod.discovery,
+      randomNonce: mod.randomNonce,
+      randomPKCECodeVerifier: mod.randomPKCECodeVerifier,
+      randomState: mod.randomState,
+    };
+  }
+  return oidcModule;
+}
 import { AuthConfigService, type OidcProviderConfig } from './auth.config.js';
 
 export interface OidcStartParams {
@@ -50,9 +94,9 @@ export interface OidcUserInfo {
 }
 
 /**
- * Thin wrapper around `openid-client` (v5) that:
+ * Thin wrapper around `openid-client` (v6) that:
  *   * Discovers the IdP's metadata from its issuer URL on first use
- *   * Caches the resulting Client so subsequent calls don't re-discover
+ *   * Caches the resulting Configuration so subsequent calls don't re-discover
  *   * Implements PKCE + nonce for every flow (no implicit grant, no plain)
  *
  * Controllers call `start()` to get an authorise URL + the state/verifier
@@ -62,7 +106,7 @@ export interface OidcUserInfo {
 @Injectable()
 export class OidcService {
   private readonly log = new Logger('OidcService');
-  private readonly clientsCache = new Map<string, Promise<Client>>();
+  private readonly configCache = new Map<string, Promise<Configuration>>();
 
   constructor(private readonly cfg: AuthConfigService) {}
 
@@ -70,40 +114,48 @@ export class OidcService {
     return `${this.cfg.config.baseUrl}/auth/oidc/${provider}/callback`;
   }
 
-  private async client(provider: 'google' | 'microsoft'): Promise<Client> {
+  private async config(provider: 'google' | 'microsoft'): Promise<Configuration> {
     const cfg = this.cfg.config.providers[provider];
     if (!cfg) throw new Error(`OIDC provider "${provider}" not configured`);
-    if (!this.clientsCache.has(provider)) {
-      this.clientsCache.set(provider, this.buildClient(provider, cfg));
+    if (!this.configCache.has(provider)) {
+      this.configCache.set(provider, this.buildConfig(provider, cfg));
     }
-    return this.clientsCache.get(provider)!;
+    return this.configCache.get(provider)!;
   }
 
-  private async buildClient(
+  private async buildConfig(
     provider: 'google' | 'microsoft',
     cfg: OidcProviderConfig,
-  ): Promise<Client> {
-    const issuer = await Issuer.discover(cfg.issuer);
-    this.log.log({ provider, issuer: issuer.metadata.issuer }, 'oidc_client_ready');
-    return new issuer.Client({
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
-      redirect_uris: [this.redirectUri(provider)],
-      response_types: ['code'],
-    });
+  ): Promise<Configuration> {
+    const { discovery } = await loadOidc();
+    const config = await discovery(new URL(cfg.issuer), cfg.clientId, cfg.clientSecret);
+    this.log.log(
+      { provider, issuer: config.serverMetadata().issuer },
+      'oidc_client_ready',
+    );
+    return config;
   }
 
   async start(params: OidcStartParams): Promise<OidcStartResult> {
-    const client = await this.client(params.provider);
-    const state = generators.state();
-    const nonce = generators.nonce();
-    const codeVerifier = generators.codeVerifier();
-    const codeChallenge = generators.codeChallenge(codeVerifier);
+    const {
+      buildAuthorizationUrl,
+      calculatePKCECodeChallenge,
+      randomNonce,
+      randomPKCECodeVerifier,
+      randomState,
+    } = await loadOidc();
+
+    const config = await this.config(params.provider);
+    const state = randomState();
+    const nonce = randomNonce();
+    const codeVerifier = randomPKCECodeVerifier();
+    const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
     const providerCfg = this.cfg.config.providers[params.provider]!;
 
     const scopes = ['openid', 'email', 'profile', ...(providerCfg.extraScopes ?? [])];
 
-    const url = client.authorizationUrl({
+    const url = buildAuthorizationUrl(config, {
+      redirect_uri: this.redirectUri(params.provider),
       scope: scopes.join(' '),
       state,
       nonce,
@@ -113,25 +165,41 @@ export class OidcService {
       ...(params.tenantHint ? { login_hint: params.tenantHint } : {}),
     });
 
-    return { url, state, codeVerifier, nonce };
+    return { url: url.href, state, codeVerifier, nonce };
   }
 
   async callback(params: OidcCallbackParams): Promise<OidcUserInfo> {
-    const client = await this.client(params.provider);
+    const { authorizationCodeGrant } = await loadOidc();
+    const config = await this.config(params.provider);
+
+    // v6 takes the inbound URL (with code+state in the query string) and
+    // validates state internally. Reconstruct it from the redirect URI
+    // we registered + the params the controller extracted.
+    const currentUrl = new URL(this.redirectUri(params.provider));
+    currentUrl.searchParams.set('code', params.code);
+    currentUrl.searchParams.set('state', params.state);
+
     let tokens;
     try {
-      tokens = await client.callback(
-        this.redirectUri(params.provider),
-        { code: params.code, state: params.state },
-        { state: params.expectedState, nonce: params.expectedNonce, code_verifier: params.codeVerifier },
-      );
+      tokens = await authorizationCodeGrant(config, currentUrl, {
+        expectedState: params.expectedState,
+        expectedNonce: params.expectedNonce,
+        pkceCodeVerifier: params.codeVerifier,
+      });
     } catch (err) {
       this.log.warn({ err: String(err), provider: params.provider }, 'oidc_callback_failed');
       throw new UnauthorizedException('oidc_exchange_failed');
     }
 
     const claims = tokens.claims();
-    if (!claims.email) throw new UnauthorizedException('oidc_missing_email');
+    if (!claims) throw new UnauthorizedException('oidc_missing_id_token');
+    // `email` claim is `JsonValue | undefined` in v6's type. Narrow to a
+    // non-empty string explicitly — anything else (number, array, object)
+    // means the IdP is misconfigured and we'd otherwise stringify garbage.
+    const rawEmail = claims['email'];
+    if (typeof rawEmail !== 'string' || rawEmail.length === 0) {
+      throw new UnauthorizedException('oidc_missing_email');
+    }
     // `sub` is mandatory per RFC 7519. If it's missing or non-string,
     // the (provider, subject) tuple we use as the strongest identity
     // key would degrade to `(provider, 'undefined')` and start
@@ -148,10 +216,10 @@ export class OidcService {
 
     return {
       subject: claims.sub,
-      email: String(claims.email).toLowerCase().trim(),
-      firstName: (claims['given_name']) ?? null,
-      lastName: (claims['family_name']) ?? null,
-      displayName: (claims['name']) ?? null,
+      email: rawEmail.toLowerCase().trim(),
+      firstName: typeof claims['given_name'] === 'string' ? claims['given_name'] : null,
+      lastName: typeof claims['family_name'] === 'string' ? claims['family_name'] : null,
+      displayName: typeof claims['name'] === 'string' ? claims['name'] : null,
       emailVerified: claims['email_verified'] === true,
       hd,
       iss: typeof claims.iss === 'string' && claims.iss.length > 0 ? claims.iss : null,
