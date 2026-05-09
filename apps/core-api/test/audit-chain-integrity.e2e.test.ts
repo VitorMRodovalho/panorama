@@ -90,7 +90,10 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
       orderBy: { id: 'desc' },
       select: { selfHash: true },
     });
-    const priorTailHash: Buffer | null = priorTail?.selfHash ?? null;
+    // Prisma 6 returns Bytes columns as Uint8Array (not Buffer); the
+    // chain check downstream only needs structural equality which both
+    // types satisfy.
+    const priorTailHash: Uint8Array | null = priorTail?.selfHash ?? null;
 
     // Mark batch rows with a unique tenantId so we can SELECT them
     // back without matching unrelated audits emitted by the boot path.
