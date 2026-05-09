@@ -31,29 +31,43 @@ collapse to a single `apply_migration` call per migration.
 - [ ] Test suite green at HEAD (`pnpm test` from `apps/core-api/`).
 - [ ] Secondary Supabase account login + access to the `Panorama`
       Free org.
-- [ ] Project `gycvrrqsngglqgnrerha` created (or note the project
-      ID for whichever you use).
+- [ ] Project created. Current ID at time of last bring-up:
+      `tuswqzeytiobqfkxgkbe` (note the project ID for whichever you
+      use; record it in `memory/project_deploy_prep.md`).
 - [ ] North Virginia (`us-east-1`) region (US-focused pilot fits;
       data residency matches Amtrak/FDT).
 
 ## Step 1 — Capture the connection details
 
+Use `scripts/setup-staging-env.sh` (interactive bootstrapper added
+2026-05-09). From the repo root:
+
+```bash
+./scripts/setup-staging-env.sh
+```
+
+It prompts for the two URLs (hidden input), validates shape, probes
+both connections with non-destructive `SELECT`s, and writes
+`apps/core-api/.env.staging` at mode 600. The file is gitignored.
+
 In the Supabase dashboard for the project:
 
-1. **Project Settings → Database → Connection string**:
-   - **Direct connection** (port 5432) — used by `prisma migrate
-     deploy`. Save as `DATABASE_DIRECT_URL` in your `.env.staging`.
-   - **Connection pooling → Transaction mode** (port 6543) — used by
-     the runtime. Append `?pgbouncer=true&connection_limit=1` per
-     Prisma's required workaround. Save as `DATABASE_URL`.
-   - **Privileged URL** — connect as the `postgres` user (Project
-     Settings → Database → Database password). This becomes
-     `DATABASE_PRIVILEGED_URL` per ADR-0015. **Document this password
-     in your password manager and rotate quarterly.** Do NOT use
-     Supabase's `service_role` JWT for this — it's account-root and
-     forbidden in app code.
+1. **Project Settings → Database → Connection string** — copy the
+   two strings the script asks for, in order:
+   - **Connection pooling → Transaction mode** (port 6543) — runtime.
+     Becomes `DATABASE_URL`.
+   - **Direct connection** (port 5432) — `prisma migrate deploy` +
+     RLS DDL. Becomes `DATABASE_DIRECT_URL` AND
+     `DATABASE_PRIVILEGED_URL` (same value; separated by intent —
+     see `.env.example` for the contract).
 
-2. **Project Settings → API**:
+2. The privileged user is the project's `postgres` (Project Settings
+   → Database → Database password). **Document this password in your
+   password manager and rotate quarterly.** Do NOT use Supabase's
+   `service_role` JWT — that's account-root and forbidden in app code
+   per security-reviewer.
+
+3. **Project Settings → API**:
    - Note the **Project URL** (`https://<project-ref>.supabase.co`).
    - Note the **anon key** — you do not need this for the Nest API;
      ignore unless you later add Supabase Auth integration.
@@ -75,33 +89,41 @@ themselves where used.
 
 ## Step 3 — Apply migrations
 
-Per ADR-0015, the GUC namespace migrates from `app.*` to `panorama.*`
-**before** Supabase sees any of our SQL. So the migrations applied
-here are the post-refactor versions, not the historical
-`app.current_tenant` ones.
+**Single command** (since 2026-05-09 — PRs #184/#185 simplified the
+former hand-applied SQL Editor walkthrough):
 
-In SQL Editor, for each migration directory under
-`apps/core-api/prisma/migrations/` (in order):
-
-1. Open `migration.sql`. Paste into a new SQL Editor query. Run.
-2. Then open the same directory's `rls.sql` if it exists. Paste +
-   run, **using the privileged URL** (Connection: switch to "Direct
-   connection / postgres user").
-
-Migration order at time of writing (verify with
-`ls apps/core-api/prisma/migrations/`):
-
-1. `20260417232616_0001_core_schema` — core schema + RLS.
-2. `20260417232617_0002_*` (whatever's next) ...
-3. … through 0012 inspection_photo_pipeline.
-
-After each migration, run a sanity query:
-
-```sql
-SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';
+```bash
+set -a && . apps/core-api/.env.staging && set +a
+cd apps/core-api && pnpm exec sh ./scripts/apply-migrations.sh
 ```
 
-Track the count growth so you can spot a missed migration.
+What this does (each step idempotent on re-run):
+
+1. **`prisma/supabase-bootstrap.sql`** — creates `panorama_app` +
+   `panorama_super_admin` roles (the self-hosted `postgres-init.sql`
+   never runs on Supabase), grants both to `current_user`, ensures
+   `pgcrypto` / `citext` / `uuid-ossp` / `btree_gist` extensions.
+   No-op via `IF NOT EXISTS` guards on re-run.
+2. **`prisma migrate deploy`** — runs against `DATABASE_DIRECT_URL`
+   (port 5432). Skips already-applied migrations via
+   `_prisma_migrations`. Required to use the direct URL because
+   pgBouncer transaction-mode strips the session-level features
+   Prisma's migration engine needs (advisory locks, multi-statement
+   transactions).
+3. **rls.sql loop** — applies each `prisma/migrations/*/rls.sql`
+   against `DATABASE_PRIVILEGED_URL` in alphabetical order. Files
+   use `CREATE OR REPLACE` / `DROP POLICY IF EXISTS` so re-runs
+   converge on the same state.
+
+If something fails mid-way, the script exits non-zero. Recovery
+options:
+
+- For a partially-applied migration: see `prisma migrate resolve
+  --rolled-back <name>` (Prisma docs). The 2026-05-09 staging
+  bring-up needed this once after migration 0011 hit
+  `database "panorama" does not exist` (since fixed to use
+  `current_database()` parametrically).
+- For an rls.sql file that errored: re-run; idempotent.
 
 ## Step 4 — Verify RLS is on + the GUC works
 
