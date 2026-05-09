@@ -247,24 +247,25 @@ export class AuthController {
   ): Promise<void> {
     const provider = this.requireProvider(req);
 
+    // Read + consume the OAuth-state cookie ONCE, unconditionally. All
+    // /callback request paths (success, mismatch, IdP error) terminate
+    // the in-flight flow, so the cookie is always single-use here. By
+    // doing the destroy BEFORE branching on user input, the user-
+    // controlled branches below don't gate any privileged session
+    // operation (CodeQL js/user-controlled-bypass).
+    const stored = await this.sessions.getOauthState(req, res);
+    if (stored) {
+      await this.sessions.destroyOauthState(req, res);
+    }
+
     // RFC 6749 §4.1.2.1 — IdP signals refusal/failure via `?error=`
     // (access_denied, invalid_request, login_required, …). Capture
     // the IdP's reason in the SERVER LOG (where ops triages it) and
     // return a stable client-facing code — never echo attacker-
-    // influenced data into the HTTP response body. Char-allowlist
-    // + length-cap on the logged code in case an IdP ships garbage
-    // (RFC 6749 codes are `[a-z_]+`; `-` allowed for forward-compat).
-    //
-    // Cookie-cleanup is GATED on stored-state presence + provider
-    // match. Without that gate, a drive-by `/callback?error=foo` URL
-    // (no cookie) would still invoke `destroyOauthState` — idempotent
-    // against missing state, but still a sensitive code path
-    // reachable from attacker input.
+    // influenced data into the HTTP response body. Char-allowlist +
+    // length-cap on the logged code (RFC 6749 codes are `[a-z_]+`;
+    // `-` allowed for forward-compat).
     if (typeof idpError === 'string' && idpError.length > 0) {
-      const stored = await this.sessions.getOauthState(req, res);
-      if (stored && stored.provider === provider) {
-        await this.sessions.destroyOauthState(req, res);
-      }
       const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
       this.log.warn(
         { provider, idp_error: safeCode },
@@ -275,8 +276,6 @@ export class AuthController {
 
     if (!code || !state) throw new BadRequestException('missing_code_or_state');
 
-    const stored = await this.sessions.getOauthState(req, res);
-    await this.sessions.destroyOauthState(req, res);
     if (!stored || stored.provider !== provider || stored.state !== state) {
       throw new UnauthorizedException('oidc_state_mismatch');
     }
