@@ -1,24 +1,25 @@
 // ESLint flat config for @panorama/web (#109 — migrated from
 // `.eslintrc.cjs` ahead of Next 16 / `next lint` removal).
 //
-// Strategy: `eslint-config-next` and `@typescript-eslint` still ship
-// in legacy-config shape today (no flat-config export as of Next
-// 15.5.15). Wrap their legacy configs through `FlatCompat` rather
-// than hand-rolling equivalents — when upstream ships flat, swap
-// the compat lines for direct imports without churning consumers.
+// Now uses direct flat-config imports (eslint-config-next 16 ships
+// flat-shaped exports, so the FlatCompat shim from #109 is no longer
+// needed). Kept the same rule surface — permissive matching apps/
+// core-api's pre-#101 ratchet baseline.
 //
-// `pnpm --filter @panorama/web lint` now runs `eslint .` directly
-// instead of `next lint`, which deprecates in Next 16.
+// `pnpm --filter @panorama/web lint` runs `eslint .` directly; Next 16
+// removed the `next lint` command.
 
-import { FlatCompat } from '@eslint/eslintrc';
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
+// `eslint-config-next` 16 already bundles + configures `@typescript-eslint`
+// (see its dependencies). Do NOT spread `tseslint.configs.recommended`
+// here too — that re-registers the same plugin name and ESLint 10 hard-
+// errors with `Cannot redefine plugin "@typescript-eslint"`.
 export default [
   {
     ignores: [
@@ -28,8 +29,7 @@ export default [
       'eslint.config.mjs',
     ],
   },
-  ...compat.extends('next/core-web-vitals'),
-  ...compat.extends('plugin:@typescript-eslint/recommended'),
+  ...nextCoreWebVitals,
   {
     languageOptions: {
       parserOptions: {
