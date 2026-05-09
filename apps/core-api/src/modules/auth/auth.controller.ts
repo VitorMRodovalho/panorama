@@ -238,10 +238,25 @@ export class AuthController {
   async oidcCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
+    @Query('error') idpError: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const provider = this.requireProvider(req);
+
+    // RFC 6749 §4.1.2.1 — IdP signals refusal/failure via `?error=`
+    // (e.g., access_denied, invalid_request, login_required). Surface
+    // that to the user with the IdP's actual reason instead of the
+    // generic `missing_code_or_state`. Also clear the OAuth-state
+    // cookie so a stale stash can't interfere with the user's retry.
+    // Char-allowlist + length-cap before echoing in case an IdP ever
+    // ships a non-spec error code; RFC 6749 codes are `[a-z_]+`.
+    if (typeof idpError === 'string' && idpError.length > 0) {
+      await this.sessions.destroyOauthState(req, res);
+      const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
+      throw new BadRequestException(`oidc_idp_error:${safeCode}`);
+    }
+
     if (!code || !state) throw new BadRequestException('missing_code_or_state');
 
     const stored = await this.sessions.getOauthState(req, res);
@@ -250,10 +265,21 @@ export class AuthController {
       throw new UnauthorizedException('oidc_state_mismatch');
     }
 
+    // ⚠ Order matters: this URL composition must stay AFTER the
+    // `?error=` short-circuit above. If error-handling ever moves
+    // below this line, an IdP-controlled `error_description` (free
+    // text per RFC 6749) would ride into v6's URL parser. Today the
+    // error branch returns before reaching here, so we're safe.
+    //
+    // Compose the absolute callback URL from req.originalUrl + the
+    // configured baseUrl (NOT raw req.headers.host — attacker-shaped
+    // without `trust proxy`). Forwards `code`, `state`, `iss`
+    // (RFC 9207), and any other query params v6 needs to validate.
+    const callbackUrl = new URL(req.originalUrl, this.cfg.config.baseUrl).href;
+
     const userInfo = await this.oidc.callback({
       provider,
-      code,
-      state,
+      callbackUrl,
       expectedState: stored.state,
       codeVerifier: stored.codeVerifier,
       expectedNonce: stored.nonce,
