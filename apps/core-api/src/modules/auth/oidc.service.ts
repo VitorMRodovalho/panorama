@@ -61,8 +61,21 @@ export interface OidcStartResult {
 
 export interface OidcCallbackParams {
   provider: 'google' | 'microsoft';
-  code: string;
-  state: string;
+  /**
+   * Absolute URL of the inbound callback request the IdP redirected
+   * the browser to (path + full query string), so openid-client v6
+   * can extract `code`, `state`, AND — importantly — `iss`
+   * (RFC 9207 Authorization Server Issuer Identifier) and
+   * `error`/`error_description` if the IdP sends them. The previous
+   * implementation reconstructed the URL from configured redirectUri +
+   * code + state alone, which dropped `iss` and made mix-up attacks
+   * harder to detect.
+   *
+   * Controller composes this from `req.originalUrl` joined to the
+   * configured `baseUrl` (NOT raw `req.headers.host` — that's
+   * attacker-shaped without `app.set('trust proxy', ...)` configured).
+   */
+  callbackUrl: string;
   expectedState: string;
   codeVerifier: string;
   expectedNonce: string;
@@ -169,15 +182,27 @@ export class OidcService {
   }
 
   async callback(params: OidcCallbackParams): Promise<OidcUserInfo> {
+    // Defence-in-depth at the service boundary. Controller already does
+    // a `stored.state !== state` cookie comparison, but `expectedState`
+    // is typed `string` and an empty string would silently pass through
+    // to v6 — which would then validate against the literal empty state
+    // and accept any `?state=` value the IdP returns. Same for the URL
+    // (cheap parse-or-throw guard).
+    if (typeof params.expectedState !== 'string' || params.expectedState.length === 0) {
+      throw new UnauthorizedException('oidc_state_invalid');
+    }
+    if (typeof params.callbackUrl !== 'string' || params.callbackUrl.length === 0) {
+      throw new UnauthorizedException('oidc_invalid_callback_url');
+    }
+    let currentUrl: URL;
+    try {
+      currentUrl = new URL(params.callbackUrl);
+    } catch {
+      throw new UnauthorizedException('oidc_invalid_callback_url');
+    }
+
     const { authorizationCodeGrant } = await loadOidc();
     const config = await this.config(params.provider);
-
-    // v6 takes the inbound URL (with code+state in the query string) and
-    // validates state internally. Reconstruct it from the redirect URI
-    // we registered + the params the controller extracted.
-    const currentUrl = new URL(this.redirectUri(params.provider));
-    currentUrl.searchParams.set('code', params.code);
-    currentUrl.searchParams.set('state', params.state);
 
     let tokens;
     try {
@@ -187,7 +212,29 @@ export class OidcService {
         pkceCodeVerifier: params.codeVerifier,
       });
     } catch (err) {
-      this.log.warn({ err: String(err), provider: params.provider }, 'oidc_callback_failed');
+      // openid-client v6 sometimes embeds the auth-response URL in
+      // error messages — including `code=...` (single-use, short-lived,
+      // PII-adjacent) and `state=...`. Redact those before they hit
+      // the log aggregator. Keep err.name + redacted .message for
+      // diagnosis without leaking the auth code.
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const sanitized = errMsg
+        .replace(/([?&])code=[^&\s]+/g, '$1code=REDACTED')
+        .replace(/([?&])state=[^&\s]+/g, '$1state=REDACTED')
+        // Strip ANSI control + DEL bytes — pino encodes JSON safely,
+        // but downstream sinks (Grafana panels, Slack relays) sometimes
+        // render `err_msg` raw, which is an injection surface if an IdP
+        // ever returns a URL fragment with `[31m` etc.
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\x00-\x1f\x7f]/g, '');
+      this.log.warn(
+        {
+          err_name: err instanceof Error ? err.name : 'Unknown',
+          err_msg: sanitized,
+          provider: params.provider,
+        },
+        'oidc_callback_failed',
+      );
       throw new UnauthorizedException('oidc_exchange_failed');
     }
 

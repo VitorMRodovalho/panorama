@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Logger,
   Param,
   Post,
   Query,
@@ -45,6 +46,8 @@ const OidcProviderSchema = z.enum(['google', 'microsoft']);
 
 @Controller('auth')
 export class AuthController {
+  private readonly log = new Logger('AuthController');
+
   constructor(
     private readonly auth: AuthService,
     private readonly discovery: DiscoveryService,
@@ -238,22 +241,60 @@ export class AuthController {
   async oidcCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
+    @Query('error') idpError: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     const provider = this.requireProvider(req);
+
+    // Read + consume the OAuth-state cookie ONCE, unconditionally. All
+    // /callback request paths (success, mismatch, IdP error) terminate
+    // the in-flight flow, so the cookie is always single-use here. By
+    // doing the destroy BEFORE branching on user input, the user-
+    // controlled branches below don't gate any privileged session
+    // operation (CodeQL js/user-controlled-bypass).
+    const stored = await this.sessions.getOauthState(req, res);
+    if (stored) {
+      await this.sessions.destroyOauthState(req, res);
+    }
+
+    // RFC 6749 §4.1.2.1 — IdP signals refusal/failure via `?error=`
+    // (access_denied, invalid_request, login_required, …). Capture
+    // the IdP's reason in the SERVER LOG (where ops triages it) and
+    // return a stable client-facing code — never echo attacker-
+    // influenced data into the HTTP response body. Char-allowlist +
+    // length-cap on the logged code (RFC 6749 codes are `[a-z_]+`;
+    // `-` allowed for forward-compat).
+    if (typeof idpError === 'string' && idpError.length > 0) {
+      const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
+      this.log.warn(
+        { provider, idp_error: safeCode },
+        'oidc_idp_error_received',
+      );
+      throw new BadRequestException('oidc_idp_error');
+    }
+
     if (!code || !state) throw new BadRequestException('missing_code_or_state');
 
-    const stored = await this.sessions.getOauthState(req, res);
-    await this.sessions.destroyOauthState(req, res);
     if (!stored || stored.provider !== provider || stored.state !== state) {
       throw new UnauthorizedException('oidc_state_mismatch');
     }
 
+    // ⚠ Order matters: this URL composition must stay AFTER the
+    // `?error=` short-circuit above. If error-handling ever moves
+    // below this line, an IdP-controlled `error_description` (free
+    // text per RFC 6749) would ride into v6's URL parser. Today the
+    // error branch returns before reaching here, so we're safe.
+    //
+    // Compose the absolute callback URL from req.originalUrl + the
+    // configured baseUrl (NOT raw req.headers.host — attacker-shaped
+    // without `trust proxy`). Forwards `code`, `state`, `iss`
+    // (RFC 9207), and any other query params v6 needs to validate.
+    const callbackUrl = new URL(req.originalUrl, this.cfg.config.baseUrl).href;
+
     const userInfo = await this.oidc.callback({
       provider,
-      code,
-      state,
+      callbackUrl,
       expectedState: stored.state,
       codeVerifier: stored.codeVerifier,
       expectedNonce: stored.nonce,
