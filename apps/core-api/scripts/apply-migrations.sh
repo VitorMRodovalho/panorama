@@ -10,13 +10,22 @@
 # / `DROP POLICY IF EXISTS` patterns so re-runs converge on the same
 # state.
 #
-# Two env vars are consumed:
-#   DATABASE_URL          — connection string Prisma uses (must be writable)
-#   DATABASE_PRIVILEGED_URL — optional; when set, rls.sql runs against this
-#                             URL instead. Useful when the panorama_app role
-#                             can't CREATE POLICY (e.g. RLS files create
-#                             roles + grants the app role doesn't have
-#                             permission to issue).
+# Three env vars are consumed:
+#   DATABASE_URL          — connection string the runtime app uses (may
+#                           be a connection-pooled / pgBouncer endpoint
+#                           on managed PG; do not assume session-level
+#                           ops work here).
+#   DATABASE_DIRECT_URL   — optional; when set, `prisma migrate deploy`
+#                           uses this instead of DATABASE_URL. Required
+#                           on managed PG with pgBouncer (Supabase, Neon)
+#                           because Prisma's migration engine relies on
+#                           session-level features (advisory locks,
+#                           multi-statement transactions) that
+#                           transaction-mode pooling strips.
+#   DATABASE_PRIVILEGED_URL — optional; when set, rls.sql + the
+#                             pre-migration bootstrap run against this
+#                             URL instead. Useful when the panorama_app
+#                             role can't CREATE POLICY / CREATE ROLE.
 
 set -eu
 
@@ -41,8 +50,15 @@ if [ -f prisma/supabase-bootstrap.sql ]; then
   psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f prisma/supabase-bootstrap.sql
 fi
 
+# Use DATABASE_DIRECT_URL for `migrate deploy` when set — managed PG
+# (Supabase, Neon) routes DATABASE_URL through pgBouncer, which breaks
+# Prisma's session-level migration ops. Self-hosted leaves
+# DATABASE_DIRECT_URL unset and the fallback to DATABASE_URL works
+# unchanged.
+MIGRATE_URL="${DATABASE_DIRECT_URL:-$DATABASE_URL}"
+
 echo ">> prisma migrate deploy"
-node ./node_modules/.bin/prisma migrate deploy
+DATABASE_URL="$MIGRATE_URL" node ./node_modules/.bin/prisma migrate deploy
 
 echo ">> applying rls.sql files in migration order"
 for dir in prisma/migrations/*/; do
