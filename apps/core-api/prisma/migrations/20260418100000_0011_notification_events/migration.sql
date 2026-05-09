@@ -156,7 +156,17 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-GRANT CONNECT ON DATABASE panorama TO panorama_notification_dispatcher;
+-- Parametric on database name — `panorama` on self-hosted (per
+-- infra/docker/postgres-init.sql) and `postgres` on Supabase / other
+-- managed PG. Hardcoded literal would fail on any non-self-hosted
+-- target (caught during the 2026-05-09 staging bring-up).
+DO $$
+BEGIN
+  EXECUTE format(
+    'GRANT CONNECT ON DATABASE %I TO panorama_notification_dispatcher',
+    current_database()
+  );
+END $$;
 GRANT USAGE ON SCHEMA public TO panorama_notification_dispatcher;
 GRANT SELECT, UPDATE ON "notification_events" TO panorama_notification_dispatcher;
 GRANT INSERT ON "audit_events"                  TO panorama_notification_dispatcher;
