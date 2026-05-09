@@ -292,7 +292,9 @@ describe('migration 0015 — Wave 1 corrections', () => {
     expected.update(payloadBytes);
     const expectedDigest = expected.digest();
 
-    expect(row.selfHash.equals(expectedDigest)).toBe(true);
+    // Prisma 6: Bytes returned as Uint8Array (no .equals()); wrap once
+    // for byte-wise comparison via Buffer's helper.
+    expect(Buffer.from(row.selfHash).equals(expectedDigest)).toBe(true);
   });
 
   // The cutover marker (panorama.audit.chain_repair, action key) is
