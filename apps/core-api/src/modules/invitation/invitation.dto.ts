@@ -8,7 +8,7 @@ import { z } from 'zod';
  */
 
 export const CreateInvitationSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.guid(),
   email: z
     .string()
     .email()
@@ -20,7 +20,7 @@ export const CreateInvitationSchema = z.object({
 export type CreateInvitationInput = z.infer<typeof CreateInvitationSchema>;
 
 export const ListInvitationsSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.guid(),
   status: z.enum(['open', 'accepted', 'revoked', 'expired', 'all']).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });

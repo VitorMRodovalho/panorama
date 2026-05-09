@@ -22,14 +22,14 @@ const ListQuerySchema = z.object({
   search: z.string().max(200).optional(),
 });
 const HardwareListQuerySchema = ListQuerySchema.extend({
-  category_id: z.string().uuid().optional(),
+  category_id: z.guid().optional(),
   requestable: z
     .string()
     .optional()
     .transform((v) => (v === '1' || v === 'true' ? true : v === '0' || v === 'false' ? false : undefined)),
 });
 const ModelsListQuerySchema = ListQuerySchema.extend({
-  category_id: z.string().uuid().optional(),
+  category_id: z.guid().optional(),
 });
 
 /**

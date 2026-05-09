@@ -38,7 +38,7 @@ const DiscoverySchema = z.object({
 });
 
 const SwitchTenantSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.guid(),
 });
 
 const OidcProviderSchema = z.enum(['google', 'microsoft']);

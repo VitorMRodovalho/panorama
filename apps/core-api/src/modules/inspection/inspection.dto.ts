@@ -9,11 +9,11 @@ import { z } from 'zod';
 
 export const StartInspectionSchema = z
   .object({
-    assetId: z.string().uuid(),
+    assetId: z.guid(),
     /** Optional reservation tether — pre-trip from the reservation page. */
-    reservationId: z.string().uuid().nullable().optional(),
+    reservationId: z.guid().nullable().optional(),
     /** Optional explicit template — when omitted, server resolves by category. */
-    templateId: z.string().uuid().optional(),
+    templateId: z.guid().optional(),
   })
   .strict();
 export type StartInspectionInput = z.infer<typeof StartInspectionSchema>;
@@ -21,7 +21,7 @@ export type StartInspectionInput = z.infer<typeof StartInspectionSchema>;
 export const RespondSchema = z
   .object({
     /** Anchor in the inspection's templateSnapshot.items[*].id. */
-    snapshotItemId: z.string().uuid(),
+    snapshotItemId: z.guid(),
     booleanValue: z.boolean().nullable().optional(),
     textValue: z.string().max(2000).nullable().optional(),
     numberValue: z.number().nullable().optional(),
@@ -72,8 +72,8 @@ export const ListInspectionsSchema = z.object({
   outcome: z.enum(['PASS', 'FAIL', 'NEEDS_MAINTENANCE', 'all']).default('all'),
   /** Admin review queue: unreviewed COMPLETED rows only. */
   needsReview: z.coerce.boolean().default(false),
-  assetId: z.string().uuid().optional(),
-  reservationId: z.string().uuid().optional(),
+  assetId: z.guid().optional(),
+  reservationId: z.guid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListInspectionsInput = z.infer<typeof ListInspectionsSchema>;

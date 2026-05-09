@@ -15,7 +15,7 @@ import { z } from 'zod';
 export const INSPECTION_PHOTO_KEY_REGEX =
   /^tenants\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/inspections\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/photos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/;
 
-const UuidSchema = z.string().uuid();
+const UuidSchema = z.guid();
 
 /**
  * Build the S3 key for a photo. Every argument is runtime-validated

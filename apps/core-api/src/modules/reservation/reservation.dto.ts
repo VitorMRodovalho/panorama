@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 export const CreateReservationSchema = z
   .object({
-    assetId: z.string().uuid().nullable().optional(),
-    onBehalfUserId: z.string().uuid().optional(),
+    assetId: z.guid().nullable().optional(),
+    onBehalfUserId: z.guid().optional(),
     startAt: z.string().datetime(),
     endAt: z.string().datetime(),
     purpose: z.string().max(2000).optional(),
@@ -16,8 +16,8 @@ export type CreateReservationInput = z.infer<typeof CreateReservationSchema>;
 
 export const CreateBasketSchema = z
   .object({
-    assetIds: z.array(z.string().uuid()).min(1).max(20),
-    onBehalfUserId: z.string().uuid().optional(),
+    assetIds: z.array(z.guid()).min(1).max(20),
+    onBehalfUserId: z.guid().optional(),
     startAt: z.string().datetime(),
     endAt: z.string().datetime(),
     purpose: z.string().max(2000).optional(),
@@ -60,7 +60,7 @@ export const ApprovalDecisionSchema = z.object({
 // the web layer maps to a user-facing string.
 export const RejectionDecisionSchema = z.object({
   note: z
-    .string({ required_error: 'note_required', invalid_type_error: 'note_required' })
+    .string({ error: 'note_required' })
     .trim()
     .min(1, 'note_required')
     .max(500),
@@ -76,7 +76,7 @@ export type BasketBatchDecisionInput = z.infer<typeof BasketBatchDecisionSchema>
 // in a multi-asset basket get the same "why" surface as solo bookings.
 export const BasketBatchRejectionSchema = z.object({
   note: z
-    .string({ required_error: 'note_required', invalid_type_error: 'note_required' })
+    .string({ error: 'note_required' })
     .trim()
     .min(1, 'note_required')
     .max(500),
@@ -89,7 +89,7 @@ export const BasketBatchRejectionSchema = z.object({
 // maintenance scheduling chain.
 export const CheckoutSchema = z.object({
   mileage: z
-    .number({ required_error: 'mileage_required', invalid_type_error: 'mileage_required' })
+    .number({ error: 'mileage_required' })
     .int()
     .nonnegative('mileage_required'),
   condition: z.string().max(2000).optional(),
@@ -101,7 +101,7 @@ export type CheckoutInput = z.infer<typeof CheckoutSchema>;
 // PM-due cron depends on it being a real number, not NULL.
 export const CheckinSchema = z.object({
   mileage: z
-    .number({ required_error: 'mileage_required', invalid_type_error: 'mileage_required' })
+    .number({ error: 'mileage_required' })
     .int()
     .nonnegative('mileage_required'),
   condition: z.string().max(2000).optional(),
@@ -112,7 +112,7 @@ export type CheckinInput = z.infer<typeof CheckinSchema>;
 
 export const CreateBlackoutSchema = z
   .object({
-    assetId: z.string().uuid().nullable().optional(),
+    assetId: z.guid().nullable().optional(),
     title: z.string().min(1).max(200),
     startAt: z.string().datetime(),
     endAt: z.string().datetime(),
@@ -127,7 +127,7 @@ export type CreateBlackoutInput = z.infer<typeof CreateBlackoutSchema>;
 export const ListBlackoutsSchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  assetId: z.string().uuid().optional(),
+  assetId: z.guid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 export type ListBlackoutsInput = z.infer<typeof ListBlackoutsSchema>;
