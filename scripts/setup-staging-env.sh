@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# scripts/setup-staging-env.sh
+#
+# Interactive helper to populate apps/core-api/.env.staging with the
+# two Supabase connection strings needed to apply migrations + rls.sql
+# against the staging project. The .env.staging path is gitignored
+# (`apps/*/.env` line in .gitignore), so re-running this is the
+# rotation path too.
+#
+# What you need before running:
+#   * Supabase project unpaused.
+#   * `psql` (16+) installed locally — script uses it to verify both
+#     URLs reach the database before writing.
+#   * Two connection strings, copied from Supabase dashboard:
+#       Settings → Database → Connection string
+#       1) "Connection pooling" tab, mode "Transaction" (port 6543)
+#       2) "Direct connection" (port 5432)
+#
+# What the script does NOT do:
+#   * Apply any migrations or run any DDL — connections are SELECT 1
+#     reads only.
+#   * Send the password anywhere besides `psql` and the local file.
+#
+# Privacy note: the connection string contains the password and will
+# appear briefly in your local `ps` listing while psql runs. Process
+# cmdlines are readable by your own user only on default Linux configs;
+# if your workstation is shared, run this in a private session.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET="$REPO_ROOT/apps/core-api/.env.staging"
+
+# --- 0. Refuse to overwrite without explicit y --------------------
+if [ -f "$TARGET" ]; then
+  echo
+  echo "$TARGET already exists."
+  read -r -p "Overwrite? (type 'yes' to continue, anything else aborts): " confirm
+  if [ "$confirm" != "yes" ]; then
+    echo "Aborted. Existing file unchanged."
+    exit 1
+  fi
+fi
+
+# --- 1. Prereq check ----------------------------------------------
+if ! command -v psql >/dev/null 2>&1; then
+  echo "ERROR: 'psql' not found in PATH. Install postgresql-client (16+)." >&2
+  exit 1
+fi
+PSQL_VER=$(psql --version | awk '{print $3}' | cut -d. -f1)
+if [ "$PSQL_VER" -lt 14 ]; then
+  echo "WARN: psql is v$PSQL_VER. Supabase prefers 14+; v16 recommended."
+fi
+
+# --- 2. Prompt for both URLs (hidden input) -----------------------
+echo
+echo "Paste the two connection strings from Supabase dashboard."
+echo "(Settings → Database → Connection string. Use the 'Copy' button"
+echo " — paste; characters won't appear as you type.)"
+echo
+echo "1/2 — Connection pooling (Transaction mode, port 6543)."
+echo "      This becomes DATABASE_URL (used by the app at runtime)."
+echo "      Shape: postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:6543/postgres?..."
+read -r -s -p "      Paste: " DB_URL
+echo
+echo
+echo "2/2 — Direct connection (port 5432)."
+echo "      This becomes DATABASE_PRIVILEGED_URL (used for rls.sql DDL)."
+echo "      Shape: postgresql://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres?sslmode=require"
+read -r -s -p "      Paste: " DB_PRIV_URL
+echo
+echo
+
+# --- 3. Basic shape validation ------------------------------------
+if ! grep -qE '^postgres(ql)?://[^[:space:]]+' <<<"$DB_URL"; then
+  echo "ERROR: DATABASE_URL doesn't look like a Postgres URL." >&2
+  exit 1
+fi
+if ! grep -qE '^postgres(ql)?://[^[:space:]]+' <<<"$DB_PRIV_URL"; then
+  echo "ERROR: DATABASE_PRIVILEGED_URL doesn't look like a Postgres URL." >&2
+  exit 1
+fi
+
+# Heuristic warnings, not hard failures (Supabase URL formats evolve).
+if ! grep -q ':6543/' <<<"$DB_URL"; then
+  echo "WARN: DATABASE_URL has no :6543 port — make sure you copied the POOLER URL."
+fi
+if ! grep -q ':5432/' <<<"$DB_PRIV_URL"; then
+  echo "WARN: DATABASE_PRIVILEGED_URL has no :5432 port — make sure you copied the DIRECT URL."
+fi
+if [ "$DB_URL" = "$DB_PRIV_URL" ]; then
+  echo "ERROR: Both URLs are identical — check you didn't paste the same one twice." >&2
+  exit 1
+fi
+
+# --- 4. Sanity ping each connection (non-destructive) -------------
+echo "→ Probing pooler connection (DATABASE_URL)..."
+if ! POOLER_OUT=$(PGOPTIONS='-c statement_timeout=10000' \
+    psql "$DB_URL" -tA -c "SELECT current_user || ' @ ' || inet_server_addr() || ':' || inet_server_port();" 2>&1); then
+  echo "ERROR: pooler connection failed:" >&2
+  echo "$POOLER_OUT" >&2
+  exit 1
+fi
+echo "  ok: $POOLER_OUT"
+
+echo "→ Probing direct connection (DATABASE_PRIVILEGED_URL)..."
+if ! DIRECT_OUT=$(PGOPTIONS='-c statement_timeout=10000' \
+    psql "$DB_PRIV_URL" -tA -c "SELECT current_user || ' bypassrls=' || rolbypassrls FROM pg_roles WHERE rolname = current_user;" 2>&1); then
+  echo "ERROR: direct connection failed:" >&2
+  echo "$DIRECT_OUT" >&2
+  exit 1
+fi
+echo "  ok: $DIRECT_OUT"
+
+# Quick sanity: privileged URL should be 'postgres' (Supabase) or
+# 'panorama_super_admin' (self-hosted). Either should have BYPASSRLS.
+if ! grep -q 'bypassrls=t' <<<"$DIRECT_OUT"; then
+  echo "WARN: privileged role does NOT have BYPASSRLS. rls.sql apply may fail."
+  echo "       (On Supabase the right user is 'postgres'.)"
+fi
+
+# --- 5. Write the file with restrictive perms ---------------------
+umask 077
+cat > "$TARGET" <<EOF
+# Generated by scripts/setup-staging-env.sh on $(date -Iseconds).
+# Re-run the script to rotate. Both URLs verified at write-time.
+# This file is gitignored (apps/*/.env in .gitignore).
+DATABASE_URL=$DB_URL
+DATABASE_PRIVILEGED_URL=$DB_PRIV_URL
+EOF
+chmod 600 "$TARGET"
+
+echo
+echo "✓ Wrote $TARGET (mode 600)."
+echo "  Tell Claude: 'staging .env ready'."
