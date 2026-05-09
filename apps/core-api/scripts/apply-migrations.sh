@@ -29,6 +29,18 @@ ADMIN_URL="${DATABASE_PRIVILEGED_URL:-$DATABASE_URL}"
 
 cd "$(dirname "$0")/.."
 
+# Pre-migration bootstrap (idempotent). Creates panorama_app +
+# panorama_super_admin roles, grants membership to the connecting user,
+# and ensures required extensions. On self-hosted this is a no-op via
+# IF NOT EXISTS guards (postgres-init.sql ran first on container init).
+# On managed PG (Supabase, Neon, RDS, …) this is the prereq for the
+# role GRANTs in subsequent migrations to resolve. Surfaced 2026-05-09
+# during the first Supabase staging bring-up.
+if [ -f prisma/supabase-bootstrap.sql ]; then
+  echo ">> pre-migration bootstrap (prisma/supabase-bootstrap.sql)"
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f prisma/supabase-bootstrap.sql
+fi
+
 echo ">> prisma migrate deploy"
 node ./node_modules/.bin/prisma migrate deploy
 
