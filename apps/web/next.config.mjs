@@ -20,14 +20,20 @@ const nextConfig = {
   },
   // Transpile our workspace packages so Next's SWC picks up the TS source.
   transpilePackages: ['@panorama/shared', '@panorama/ui-kit'],
-  // Server Actions are stable since Next 14.2 — config hoisted out of
-  // `experimental` per Next 15. allowedOrigins is the CSRF gate against
-  // cross-site Server Action invocations; bodySizeLimit caps the
-  // request payload (default 1MB; raised here for the photo-upload
-  // action which posts JPEGs after the photo-pipeline downsizes).
-  serverActions: {
-    allowedOrigins: ['localhost:3000', 'panorama.vitormr.dev'],
-    bodySizeLimit: '8mb',
+  // Server Actions are stable, but Next 16 moved the config key BACK
+  // under `experimental` (top-level was the Next 15 shape; reverted in
+  // 16 — surfaces as `Unrecognized key(s) in object: 'serverActions'`
+  // boot warning if left at top-level, which silently drops bodySizeLimit
+  // back to the 1MB default and breaks photo upload).
+  // allowedOrigins is the CSRF gate against cross-site Server Action
+  // invocations; bodySizeLimit caps the request payload (raised for the
+  // photo-upload action which posts JPEGs after the photo-pipeline
+  // downsizes).
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['localhost:3000', 'panorama.vitormr.dev'],
+      bodySizeLimit: '8mb',
+    },
   },
 };
 

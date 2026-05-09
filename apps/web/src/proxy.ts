@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 const PUBLIC_PATHS = ['/login', '/invitations/accept'];
 
-export function middleware(req: NextRequest): NextResponse {
+export function proxy(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
