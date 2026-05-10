@@ -355,6 +355,32 @@ Persists for canary onboarding reuse:
 4. **Connection_limit math** — explicit per-Fly-instance value pinned in deploy config; data-architect's caveat about pgBouncer client-connection ceilings.
 5. **Bus factor of 1 (#50)** — at 10 paying tenants, 3am pages are real. Mitigation = "document everything to the level a stranger can run it." That's literally what this handoff is for.
 
+### vitormr.dev personal-page Panorama copy (recommendation, owner action)
+
+The Panorama mention on the maintainer's personal site
+(https://vitormr.dev) currently reads:
+
+> Open-source IT asset + fleet management
+> Successor to Snipe-IT plus a custom scheduling overlay. Multi-tenant
+> Postgres RLS, OIDC, trilingual EN/PT-BR/ES. Born from a real need at
+> AECOM B&P Tunnel program. AGPL-3.0 + Enterprise.
+
+Recommended rewrite (committee delta — Option B, chosen by maintainer
+because Snipe-IT/SnipeScheduler aren't framing the project anymore):
+
+> One open-source platform for IT assets AND operational fleet —
+> laptops, vehicles, licenses, equipment, in one pane.
+> Multi-tenant Postgres RLS, OIDC, hash-chained audit, trilingual
+> EN/PT-BR/ES.
+> AGPL-3.0 (fork-friendly). Free hosted preview coming.
+
+Rationale: drops the "successor to" framing (Panorama stands on its
+own), drops the "AGPL + Enterprise" tag (commercial-leaning;
+inconsistent with free-hosted-preview pivot), keeps technical
+credibility signals (RLS/OIDC/trilingual), keeps licensing
+transparency. Personal-page edit is owner action, not a Panorama-repo
+change.
+
 ---
 
 ## Numbers

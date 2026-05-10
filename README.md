@@ -1,8 +1,8 @@
 # Panorama
 
-> Unified open-source platform for **IT asset management + operational fleet management**.
-> The successor to running [Snipe-IT](https://snipeitapp.com) plus a bespoke scheduling overlay —
-> one system, trilingual, self-hostable, API-first.
+> One open-source platform for **IT assets + operational fleet** — laptops, vehicles, licenses, equipment, in one pane.
+> Multi-tenant Postgres RLS, OIDC, hash-chained audit trail, trilingual EN/PT-BR/ES.
+> AGPL-3.0 (fork-friendly). Free hosted preview coming.
 
 <p align="center">
   <em>One pane of glass for laptops, licences, phones, forklifts, vans, and everything in between.</em>
@@ -20,27 +20,41 @@
 
 ## Why Panorama?
 
-Today, fleets that also have IT inventory tend to stitch together:
+Most teams that manage both IT assets (laptops, licenses, phones) and operational equipment
+(vehicles, forklifts, tools) end up running two separate systems — two databases, two auth
+surfaces, two audit trails, duplicate users, and a brittle integration between them.
 
-- **Snipe-IT** (Laravel, AGPL-3.0) — excellent IT asset management, weak on advance reservation workflows, weak on vehicle-specific fields
-- **A custom overlay** like [SnipeScheduler-FleetManager](https://github.com/VitorMRodovalho/SnipeScheduler-FleetManager) — bolted on top of Snipe-IT to handle reservations, inspections, driver training, multi-entity partitioning
-
-Running both means two databases, two auth surfaces, two audit trails, duplicate users,
-two upgrade paths, and a brittle HTTP boundary between them. Panorama absorbs both sets of
-features into a single domain model, a single data plane, and a single admin surface.
+Panorama is one platform for both. Single domain model, single data plane, single admin surface.
+Multi-tenant from construction (Postgres RLS forced at every tenant-scoped table). Hash-chained,
+tamper-detected audit log. Trilingual UI from day one (EN/PT-BR/ES). Self-host or use the
+hosted preview.
 
 ## Status
 
-🚧 **Pre-alpha — greenfield.** Bootstrapped 2026-04-17. Architecture and name open to review.
-See [`docs/adr/`](./docs/adr/) for the decisions recorded so far.
+🚧 **Early access — open for use, expect rough edges.** Bootstrapped 2026-04-17.
+
+- **Backend:** production-ready (NestJS 11 + Prisma 6 + Postgres RLS + OIDC end-to-end tested
+  via [#92](https://github.com/VitorMRodovalho/panorama/issues/92)). Dependency surface current
+  through 2026-05-09 ([#123](https://github.com/VitorMRodovalho/panorama/issues/123)).
+- **Web app:** in active build. ~10% of feature surface today; nav + asset CRUD + checkout
+  forms in flight ([#52](https://github.com/VitorMRodovalho/panorama/issues/52)).
+- **Hosted preview:** opening when [Wave 0 readiness](./docs/audits/HANDOFF-2026-05-09-session-end.md)
+  closes (Privacy + ToS + status page + audit-chain fix + data-export endpoint).
+
+Architecture decisions in [`docs/adr/`](./docs/adr/); current state + wave plan in
+[`docs/audits/HANDOFF-2026-05-09-session-end.md`](./docs/audits/HANDOFF-2026-05-09-session-end.md).
 
 ## Project health & audit trail
 
 A three-wave QA/QC audit was completed on 2026-04-23 covering security, architecture, data,
-UX, ops, product strategy, supply-chain, and AI/MCP exposure. 126 findings documented, 61 open
-as labelled GitHub issues. **Start at [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md)**
-for the prioritised action list. Wave reports under [`docs/audits/`](./docs/audits/); filter
-issues by [`audit:wave-1`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-1),
+UX, ops, product strategy, supply-chain, and AI/MCP exposure. 126 findings documented; most
+high/medium-priority items resolved across the audit-resolution sprint and the 2026-05-09
+deps + Supabase staging session.
+
+**Latest handoff** with current wave plan: [`docs/audits/HANDOFF-2026-05-09-session-end.md`](./docs/audits/HANDOFF-2026-05-09-session-end.md)
+**Original audit punch list:** [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md).
+Wave reports under [`docs/audits/`](./docs/audits/); filter open issues by
+[`audit:wave-1`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-1),
 [`audit:wave-2`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-2),
 or [`audit:wave-3`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Aissue+label%3Aaudit%3Awave-3).
 
@@ -50,7 +64,7 @@ or [`audit:wave-3`](https://github.com/VitorMRodovalho/panorama/issues?q=is%3Ais
 |---------------|---------------|------------|----------------------------------------------------------------------|
 | **Community** | AGPL-3.0      | This repo  | Full self-hosting for any size team, no feature gating on core flows |
 | **Enterprise**| Commercial    | Private repo `panorama-enterprise` (pulled at build time) | SSO connectors for niche IdPs, SOC-2 audit packs, white-label, 24×7 support |
-| **Cloud**     | Managed SaaS  | Run by us  | Fastest onboarding, vendor-run Postgres + backups + patching         |
+| **Hosted preview** | Free (early access) | Run by us | Free hosted instance for evaluation; opening when Wave 0 readiness closes (see latest handoff) |
 
 The **Community** edition is the reference implementation — everything in it must work
 end-to-end without Enterprise code. Enterprise is **additive**, never subtractive.
@@ -72,8 +86,8 @@ end-to-end without Enterprise code. Enterprise is **additive**, never subtractiv
 | **Notifications** | **Shipped:** internal event bus (`panorama.*.*`), per-event channel registry, hash-chained tamper-audit, invitation email channel. **Planned (0.4+):** Slack/Teams/PagerDuty connectors, webhook delivery with HMAC, reservation lifecycle emails. |
 | **Reports** | **Planned (0.4+):** save-as-view, schedule, email; CSV/XLSX/PDF export. Nothing shipped today. |
 | **Labels/Barcodes** | **Planned (0.4+):** server-side SVG rendering, per-tenant templates. Nothing shipped today. |
-| **Importers** | **Shipped:** CSV importer + `panorama-migrator` CLI for Snipe-IT API + SnipeScheduler-FleetManager MySQL dump → fixtures. |
-| **API** | **Shipped:** REST under NestJS, typed OpenAPI auto-generated, Snipe-IT compat shim with PAT auth. **Planned (0.4+):** webhooks with HMAC. GraphQL is **not** on the roadmap — REST + OpenAPI is the contract. |
+| **Importers** | **Shipped:** CSV importer + `panorama-migrator` CLI with adapters for upstream IT-asset and fleet systems. |
+| **API** | **Shipped:** REST under NestJS, typed OpenAPI auto-generated. PAT-authenticated compatibility shim for legacy IT-asset clients. **Planned (0.4+):** webhooks with HMAC. GraphQL is **not** on the roadmap — REST + OpenAPI is the contract. |
 | **Observability** | **Shipped:** structured JSON logging via Pino, audit-event hash chain, vitest coverage threshold. **Planned (0.4+):** OpenTelemetry tracing, Prometheus metrics, slow-query baseline runner. |
 | **i18n** | **Shipped:** EN/PT-BR/ES framework + CI gate (every key must exist in all three locales). **Building:** ~80% of web strings still hardcoded English; the migration to fully-translated UI lands during pilot prep. |
 
@@ -141,22 +155,15 @@ any AI tool with MCP servers configured against this repo, read
 before running anything. The runbook lists the verified MCP server
 allowlist and the incident-response path.
 
-## Migrating from Snipe-IT or SnipeScheduler-FleetManager
+## Importing data from another system
 
-A migration CLI lives in `packages/migrator`. It reads from a running Snipe-IT v8+
-instance via API (no direct DB access required) and, optionally, a
-SnipeScheduler-FleetManager MySQL dump, and produces Panorama fixtures.
+If you're coming from another IT-asset or fleet system, Panorama ships a CSV importer plus
+a `panorama-migrator` CLI in `packages/migrator` that adapts common upstream shapes
+(API + MySQL dump readers) into Panorama fixtures. Existing integrations can keep working
+during transition via the PAT-authenticated compatibility API shim.
 
-```bash
-pnpm --filter @panorama/migrator cli \
-  --snipeit-url https://snipe.example.com \
-  --snipeit-token $SNIPEIT_API_TOKEN \
-  --fleetmanager-dump ./snipescheduler_backup.sql \
-  --out ./migrated
-```
-
-This is **not** a one-way trapdoor. Panorama also ships a Snipe-IT–compatible API
-shim so existing integrations keep working while you migrate.
+See [`packages/migrator/README.md`](./packages/migrator/README.md) for the current adapter
+list and CLI flags.
 
 ## Contributing
 
