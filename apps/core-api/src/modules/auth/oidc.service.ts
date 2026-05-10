@@ -8,6 +8,7 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 // file is CJS but openid-client ships ESM-only `.d.ts`).
 // Same shape as photo-pipeline's `file-type` shim landed in #163.
 import type {
+  allowInsecureRequests as allowInsecureRequestsType,
   authorizationCodeGrant as authorizationCodeGrantType,
   buildAuthorizationUrl as buildAuthorizationUrlType,
   calculatePKCECodeChallenge as calculatePKCECodeChallengeType,
@@ -19,6 +20,7 @@ import type {
 } from 'openid-client' with { 'resolution-mode': 'import' };
 
 interface OidcModule {
+  allowInsecureRequests: typeof allowInsecureRequestsType;
   authorizationCodeGrant: typeof authorizationCodeGrantType;
   buildAuthorizationUrl: typeof buildAuthorizationUrlType;
   calculatePKCECodeChallenge: typeof calculatePKCECodeChallengeType;
@@ -33,6 +35,7 @@ async function loadOidc(): Promise<OidcModule> {
   if (!oidcModule) {
     const mod = await import('openid-client');
     oidcModule = {
+      allowInsecureRequests: mod.allowInsecureRequests,
       authorizationCodeGrant: mod.authorizationCodeGrant,
       buildAuthorizationUrl: mod.buildAuthorizationUrl,
       calculatePKCECodeChallenge: mod.calculatePKCECodeChallenge,
@@ -140,8 +143,32 @@ export class OidcService {
     provider: 'google' | 'microsoft',
     cfg: OidcProviderConfig,
   ): Promise<Configuration> {
-    const { discovery } = await loadOidc();
-    const config = await discovery(new URL(cfg.issuer), cfg.clientId, cfg.clientSecret);
+    const { discovery, allowInsecureRequests } = await loadOidc();
+    // openid-client v6 refuses non-HTTPS issuers by default — for both
+    // the discovery fetch itself AND every subsequent request. The
+    // `OIDC_ALLOW_INSECURE_ISSUER=true` env-gated escape hatch exists
+    // for in-process stub IdPs (e2e tests, #92) and rare self-hosted
+    // mirror configurations. NEVER set in production — security
+    // depends on the IdP origin being authenticated by TLS.
+    //
+    // The opt-in must be passed via the `execute` array on the 5th
+    // arg of discovery — the wrapper applies it BEFORE the discovery
+    // fetch (otherwise discovery itself rejects HTTP and never gets
+    // to the post-call `allowInsecureRequests(config)` form).
+    const allowInsecure = process.env.OIDC_ALLOW_INSECURE_ISSUER === 'true';
+    if (allowInsecure) {
+      this.log.warn(
+        { provider, issuer: cfg.issuer },
+        'oidc_insecure_issuer_allowed',
+      );
+    }
+    const config = await discovery(
+      new URL(cfg.issuer),
+      cfg.clientId,
+      cfg.clientSecret,
+      undefined,
+      allowInsecure ? { execute: [allowInsecureRequests] } : undefined,
+    );
     this.log.log(
       { provider, issuer: config.serverMetadata().issuer },
       'oidc_client_ready',

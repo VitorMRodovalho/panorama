@@ -79,7 +79,14 @@ export class AuthConfigService {
       const google: OidcProviderConfig = {
         clientId: process.env.OIDC_GOOGLE_CLIENT_ID,
         clientSecret: process.env.OIDC_GOOGLE_CLIENT_SECRET ?? '',
-        issuer: 'https://accounts.google.com',
+        // Issuer override exists for two narrow use cases:
+        //   1. e2e tests with an in-process stub IdP (#92).
+        //   2. self-hosted OIDC mirrors that pass Google's discovery
+        //      shape but on a different origin (rare).
+        // Default = production Google. NEVER set in production unless
+        // you know exactly what you're doing — the issuer string also
+        // becomes the value v6 validates ID-token `iss` against.
+        issuer: process.env.OIDC_GOOGLE_ISSUER ?? 'https://accounts.google.com',
         extraScopes: [],
       };
       if (process.env.OIDC_GOOGLE_HOSTED_DOMAIN) {
