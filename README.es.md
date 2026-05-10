@@ -1,8 +1,8 @@
 # Panorama
 
-> Plataforma open-source unificada para **gestión de activos de TI + gestión operativa de flota**.
-> Sucesor de ejecutar [Snipe-IT](https://snipeitapp.com) junto con un overlay de reservas a medida —
-> un solo sistema, trilingüe, auto-hospedable, API-first.
+> Una plataforma open-source para **activos de TI + flota operativa** — notebooks, vehículos, licencias, equipos, en un solo panel.
+> Postgres RLS multi-tenant, OIDC, registro de auditoría con hash-chain, trilingüe EN/PT-BR/ES.
+> AGPL-3.0 (fork-friendly). Vista previa hospedada gratuita próximamente.
 
 <p align="center">
   <em>Un solo panel para notebooks, licencias, móviles, montacargas, furgonetas — y todo lo demás.</em>
@@ -20,20 +20,31 @@
 
 ## ¿Por qué Panorama?
 
-Hoy, las flotas que también manejan inventario de TI terminan cosiendo dos sistemas:
+Los equipos que gestionan tanto activos de TI (notebooks, licencias, móviles) como equipos
+operativos (vehículos, montacargas, herramientas) terminan corriendo dos sistemas separados —
+dos bases de datos, dos superficies de autenticación, dos pistas de auditoría, usuarios
+duplicados y una integración frágil entre ellos.
 
-- **Snipe-IT** (Laravel, AGPL-3.0) — excelente para TI, débil en reservas con antelación, débil en campos específicos de vehículo
-- **Un overlay hecho a medida** como [SnipeScheduler-FleetManager](https://github.com/VitorMRodovalho/SnipeScheduler-FleetManager) — atornillado sobre Snipe-IT para reservas, inspecciones, capacitación del conductor, particionado multi-entidad
-
-Correr los dos significa: dos bases de datos, dos superficies de autenticación, dos
-pistas de auditoría, usuarios duplicados, dos caminos de upgrade y una frontera HTTP
-frágil entre ambos. Panorama absorbe ambos conjuntos de funcionalidades en un solo modelo
-de dominio, un solo plano de datos y una sola superficie de administración.
+Panorama es una sola plataforma para ambos. Modelo de dominio único, plano de datos único,
+superficie de administración única. Multi-tenant por construcción (Postgres RLS forzado en
+cada tabla scoped por tenant). Auditoría hash-chained, con detección de manipulación. UI
+trilingüe desde el día 1 (EN/PT-BR/ES). Auto-hospédalo o usa la vista previa hospedada.
 
 ## Estado
 
-🚧 **Pre-alpha — greenfield.** Inicio 2026-04-17. Arquitectura y nombre abiertos a revisión.
-Ver [`docs/adr/`](./docs/adr/) para las decisiones registradas hasta hoy.
+🚧 **Acceso anticipado — abierto al uso, esperá aristas.** Inicio 2026-04-17.
+
+- **Backend:** listo para producción (NestJS 11 + Prisma 6 + Postgres RLS + OIDC probado
+  end-to-end vía [#92](https://github.com/VitorMRodovalho/panorama/issues/92)). Dependencias
+  al día hasta 2026-05-09 ([#123](https://github.com/VitorMRodovalho/panorama/issues/123)).
+- **App web:** en construcción activa. ~10% de la superficie de funcionalidades hoy;
+  navegación + CRUD de activos + formularios de checkout en proceso
+  ([#52](https://github.com/VitorMRodovalho/panorama/issues/52)).
+- **Vista previa hospedada:** abre cuando la [Wave 0 readiness](./docs/audits/HANDOFF-2026-05-09-session-end.md)
+  cierre (Privacy + ToS + status page + fix de audit chain + endpoint de export de datos).
+
+Decisiones de arquitectura en [`docs/adr/`](./docs/adr/); estado actual + plan de olas en
+[`docs/audits/HANDOFF-2026-05-09-session-end.md`](./docs/audits/HANDOFF-2026-05-09-session-end.md).
 
 ## Ediciones
 
@@ -41,29 +52,32 @@ Ver [`docs/adr/`](./docs/adr/) para las decisiones registradas hasta hoy.
 |---------------|---------------|------------|----------------------------------------------------------------------|
 | **Community** | AGPL-3.0      | Este repo  | Auto-hospedaje completo para cualquier tamaño, sin feature gating en el core |
 | **Enterprise**| Comercial     | Repositorio privado `panorama-enterprise` (tomado en build time) | Conectores SSO especializados, paquetes de auditoría SOC-2, white-label, soporte 24×7 |
-| **Cloud**     | SaaS gestionado | Operado por nosotros | Onboarding rápido, Postgres + backups + parches a nuestra cuenta |
+| **Vista previa hospedada** | Gratis (acceso anticipado) | Operado por nosotros | Instancia hospedada gratis para evaluación; abre cuando la Wave 0 readiness cierre (ver handoff) |
 
 La edición **Community** es la implementación de referencia — todo en ella debe funcionar
 extremo-a-extremo sin código Enterprise. Enterprise es **aditivo**, nunca sustractivo.
 
 ## Pilares de funcionalidades
 
-| Pilar | De Snipe-IT mantenemos | De FleetManager mantenemos | Panorama añade |
-|-------|------------------------|-----------------------------|----------------|
-| **Activos** | Hardware/Licencia/Accesorio/Consumible/Componente/Kits, Categorías, Fabricantes, Modelos, Proveedores, Estados, Campos/Fieldsets personalizados, Eventos de ciclo de vida, Depreciación, Aceptación/EULA | Modelo vehículo-first, validación de VIN/placa duplicada, prefijo de etiqueta por empresa | Abstracción `assetable` unificada: cualquier tipo de activo puede ser reservable |
-| **Reservas** | — | Reserva con antelación + workflow de aprobación, reservas recurrentes, blackouts, exigencia de capacitación, auto-aprobación VIP, carrito multi-activo | Calendario de primera clase, detección de conflicto con `FOR UPDATE`, matrices de aprobación configurables |
-| **Inspecciones** | — | Checklist configurable (Quick 4 / Full 50 ítems / Off), foto, strip de EXIF, comparación antes/después | Checklists arbitrarios por tipo de activo, captura de firma, offline-first en móvil |
-| **Mantenimiento** | Mantenimientos de activo | Flag al devolver, alertas por KM/tiempo | Alertas predictivas, calendarios por tipo, portal de proveedor |
-| **Personas** | Usuarios, Grupos, Departamentos, Ubicaciones, Empresas, Permisos | Validez de capacitación del conductor, sync OAuth por e-mail | SCIM 2.0, mapeo de grupo vía IdP, matriz RBAC por empresa |
-| **Multi-tenancy**| Empresas (row-level), flag de permiso por empresa | Filtrado por empresa en vehículos/reservas | Tenancy estricto a nivel de consulta + claves de caché tenant-aware |
-| **Autenticación**| LDAP, SAML, OAuth Google/Microsoft, tokens API Passport, 2FA | OAuth para web, token para CLI | OIDC, SAML, provisioning SCIM, mapeo de grupo por IdP, WebAuthn, API keys de corta duración |
-| **Notificaciones**| E-mail, Slack, Teams, Google Chat | SMTP + Teams por evento, recordatorios de atraso, expiración de capacitación | Webhooks, PagerDuty, event bus configurable (`panorama.asset.checked_out`), entrega por cola |
-| **Reportes**| 20+ reportes nativos, exportación CSV | Utilización, compliance, analítica de conductor | ReportTemplate 2.0: guardar-como-vista, programar, enviar por mail; export CSV/XLSX/PDF |
-| **Etiquetas/Códigos**| PDFs QR + 1D vía TCPDF | — | Renderizado SVG en servidor, plantillas por tenant |
-| **Importadores**| CSV para toda entidad principal | — | CSV idempotente con preview dry-run, CLI `panorama migrate-from-snipeit` |
-| **API**| REST v1 (1.379 rutas), tokens OAuth 2 Passport | — | REST + OpenAPI 3.1 tipado, GraphQL opcional, webhooks con firma HMAC |
-| **Observabilidad**| Log de actividad, backups Spatie | Log de actividad, monitor de salud de CRON | Trazas OpenTelemetry, métricas Prometheus, logs JSON estructurados |
-| **i18n**| 50+ traducciones de la comunidad | Solo inglés | EN / PT-BR / ES de primera clase, framework para añadir más idiomas |
+> Listo = funciona end-to-end hoy. En construcción = desarrollo activo para 0.3.
+> Planeado = en el roadmap (0.4+).
+
+| Pilar | Estado |
+|-------|--------|
+| **Activos** | **Listo:** schema core, Categorías, Fabricantes, Modelos, prefijo de tag, campos vehiculares. **Planeado (0.4+):** Custom Fields & Fieldsets, Proveedores, Depreciación, Status Labels, Aceptación/EULA. |
+| **Reservas** | **Listo:** reserva con antelación + workflow de aprobación, carrito (multi-activo), blackouts, detección de conflicto bajo `FOR UPDATE` SERIALIZABLE. **En construcción:** UI de gestión de blackouts, sweep de detección de atraso + señal en UI. **Planeado (0.4+):** reservas recurrentes, gating de compliance de capacitación, matrices de aprobación configurables. |
+| **Inspecciones** | **Listo:** templates configurables (por tenant), evidencia fotográfica con strip de EXIF, versionado de ítems vía snapshot, workflow FAIL-review, sweep de retención de fotos. **Planeado (0.4+):** captura de firma, offline-first en móvil, comparación antes/después. |
+| **Mantenimiento** | **En construcción:** apertura/listado/cierre manual de ticket + flip de estado del activo. **Planeado (0.4+):** auto-sugerencia desde inspección FAIL o flag de damage, alertas predictivas por KM/tiempo, portal del proveedor. |
+| **Personas** | **Listo:** Usuarios, TenantMembership con role + status, OIDC + auth e-mail/contraseña, flujo de invitación. **Planeado (0.4+):** SCIM 2.0, mapeo de grupo vía IdP. SAML/LDAP fuera del roadmap pre-1.0. |
+| **Multi-tenancy** | **Listo:** Postgres RLS en la capa de query, GUC `panorama.current_tenant` enforced vía `runInTenant`, FORCE RLS en cada tabla scoped por tenant, trigger de FK cross-tenant. |
+| **Autenticación** | **Listo:** OIDC (Google + Microsoft Entra) con gate `email_verified` + override Workspace `hd`, e-mail/contraseña con argon2id, Personal Access Tokens. **Planeado (0.4+):** SAML, WebAuthn. |
+| **Notificaciones** | **Listo:** event bus interno (`panorama.*.*`), registry de canal por evento, audit hash-chained de manipulación, canal de e-mail de invitación. **Planeado (0.4+):** conectores Slack/Teams/PagerDuty, entrega por webhook con HMAC, e-mails de ciclo de vida de reserva. |
+| **Reportes** | **Planeado (0.4+):** guardar-como-vista, programar, enviar por mail; export CSV/XLSX/PDF. Nada listo hoy. |
+| **Etiquetas/Códigos** | **Planeado (0.4+):** renderizado SVG en servidor, plantillas por tenant. Nada listo hoy. |
+| **Importadores** | **Listo:** CSV importer + CLI `panorama-migrator` con adapters para sistemas upstream de TI/flota. |
+| **API** | **Listo:** REST bajo NestJS, OpenAPI tipado auto-generado, shim de compatibilidad autenticado por PAT para clientes legacy de TI. **Planeado (0.4+):** webhooks con HMAC. GraphQL **no** está en el roadmap. |
+| **Observabilidad** | **Listo:** logs JSON estructurados vía Pino, audit hash chain, threshold de coverage de vitest. **Planeado (0.4+):** trazas OpenTelemetry, métricas Prometheus. |
+| **i18n** | **Listo:** framework EN/PT-BR/ES + gate de CI (cada clave debe existir en los tres locales). **En construcción:** ~80% de las strings web aún hardcoded en inglés; migración a UI completamente traducida ocurre durante prep del pilot. |
 
 ## Arquitectura en una pantalla
 
@@ -108,5 +122,5 @@ Ver [LICENSE](./LICENSE) y [docs/es/licenciamiento.md](./docs/es/licenciamiento.
 
 ## Créditos
 
-- Derivado del trabajo en [SnipeScheduler-FleetManager](https://github.com/VitorMRodovalho/SnipeScheduler-FleetManager) por Vitor Rodovalho, a su vez un fork de [SnipeScheduler](https://github.com/JSY-Ben/SnipeScheduler) de Ben Pirozzolo.
-- Cobertura de funcionalidades mapeada contra [Snipe-IT](https://github.com/grokability/snipe-it) (AGPL-3.0, © Grokability Inc.).
+- Atribución de la cadena de fork por obligación AGPL — ver [README.md](./README.md) sección Credits.
+- Agradecimientos a los proyectos OSS que usamos — ver `THIRD_PARTY_NOTICES.md` al momento del release.
