@@ -206,6 +206,42 @@ quickly identify what's safe to log.
 - `OAUTH_STATE_COOKIE_NAME`, `SESSION_COOKIE_NAME`,
   `SESSION_MAX_AGE_SECONDS`
 - `INVITE_RATE_ADMIN_HOUR`, `INVITE_RATE_TENANT_DAY`
+- `TRUST_PROXY_HOPS` — see dedicated subsection below
+
+### `TRUST_PROXY_HOPS` — load-bearing for signup rate-limit (ADR-0020 §4)
+
+Not a secret, but **load-bearing for the §4 per-IP throttler bucket
+on `/auth/signup`** and named here so self-hosters cannot miss it.
+
+Express's `app.set('trust proxy', n)` reads the Nth-from-the-right
+value in `X-Forwarded-For` as `req.ip`. Set wrong:
+
+- **Too low** → `req.ip` resolves to an internal proxy; every
+  signup attempt buckets to one IP (fail-united, the entire IP
+  bucket is one shared slot for the whole internet).
+- **Too high** → `req.ip` resolves to whatever the upstream client
+  sent in `X-Forwarded-For`, which a remote attacker controls (the
+  attacker mints arbitrary identities).
+
+| Topology | TRUST_PROXY_HOPS |
+|---|---|
+| Local dev, no proxy | `0` |
+| Fly hosted instance (Fly edge → app) | `1` (default) |
+| Self-host: nginx → app | `1` |
+| Self-host: Cloudflare → nginx → app | `2` |
+| Self-host: Cloudflare → Fly edge → app | `2` |
+| Self-host: ALB → nginx → app | `2` |
+
+Bootstrap validates the value: must be a non-negative integer or
+`app.listen` is preceded by `Error: TRUST_PROXY_HOPS must be a
+non-negative integer; got "loopback"` (or similar). Unset → default
+`1`.
+
+When `FEATURE_SELF_SERVE_SIGNUP=true` (the hosted instance and any
+self-host that opens self-serve signup), this variable becomes
+SECURITY-CRITICAL — the §4 anti-spoof flood test in
+`apps/core-api/test/abuse/signup-flood.e2e.test.ts` asserts the
+bucket behavior assuming a correctly-configured value.
 
 ## Total count
 
@@ -213,7 +249,8 @@ quickly identify what's safe to log.
   Session ×1, OIDC ×2, S3 ×2, SMTP ×2, Redis ×1, SEED ×1)
 - **Future secrets pending ADR implementation:** 2 (Sentry DSN,
   CAPTCHA secret)
-- **Non-secret env vars:** ~18 (listed above)
+- **Non-secret env vars:** ~19 (listed above, including the new
+  `TRUST_PROXY_HOPS` load-bearing config)
 
 ## Maintainer accountability
 
