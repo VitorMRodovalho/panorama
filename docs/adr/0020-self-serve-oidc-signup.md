@@ -1,14 +1,21 @@
 # ADR-0020: Self-serve OIDC signup (Wave 0.5)
 
-- Status: Proposed (2026-05-16). Decision on signup model: Accepted.
-  Implementation gates on a security-reviewer follow-up threat model
-  pass on the rate-limit + email-verification + CAPTCHA design.
+- Status: **Accepted (2026-05-16, amended same day).** Security-
+  reviewer follow-up threat model pass complete; §§1–8 amended with
+  C1–C7 (state contract, UUID slug, email-verification hardening,
+  three-bucket throttler with `TRUST_PROXY_HOPS`, Turnstile lock
+  with timing-padded 400 responses, audit-action expansion,
+  deletion-race resolutions, signed-URL hygiene). Recommendations
+  R1–R5 tracked as implementation TODOs.
 - Date: 2026-05-16
 - Deciders: Vitor Rodovalho (maintainer)
 - Reviewers (Wave 0 scan, 2026-05-16):
-  - security-reviewer → flagged self-serve as needing its own threat
-    model carve-out (B3 in the scan); this ADR is the carve-out, and
-    the implementation phase requires a follow-up sec-review pass
+  - security-reviewer (initial scan) → flagged self-serve as needing
+    its own threat model carve-out (B3 in the scan); this ADR is the
+    carve-out
+  - security-reviewer (follow-up pass, same session) → APPROVE WITH
+    CONDITIONS C1–C7; all conditions landed as the §§1–8 amendments
+    above; APPROVE on the amended design
   - product-lead → SUPPORT (self-serve removes the hand-provisioning
     bottleneck that would otherwise gate organic signup signal)
   - tech-lead → no objection on architecture (OIDC-only avoids the
@@ -70,6 +77,34 @@ to self-host (the AGPL self-host path explicitly supports any OIDC
 provider). The hosted instance does not need to be every-user-
 welcoming; it needs to be safe.
 
+### 1a. Signup-flow `state` parameter (CSRF defense)
+
+Signup is a *different* OIDC flow than login: at login the callback
+binds the IdP response to an existing session; at signup the callback
+binds it to a tenant-creation transaction. The CSRF surface is wider,
+so the signup callback MUST enforce a stricter `state` contract than
+the login callback:
+
+- The signup-initiate endpoint generates a `state` parameter that
+  is a **server-side one-time-use record** (Redis, 5min TTL), NOT a
+  signed cookie. A leaked `SESSION_SECRET` would forge a cookie-only
+  state; a Redis-backed record forces the breach surface up to "DB +
+  Redis simultaneously," which is a meaningfully higher bar.
+- The state record carries `purpose: 'signup'`. The callback MUST
+  reject any callback whose state record does not have
+  `purpose === 'signup'` (defends against confused-deputy: an
+  attacker initiates a login flow and tricks a victim into completing
+  a signup-shaped callback, or vice versa).
+- The callback MUST reject any request that arrives with an existing
+  authenticated session — signup is initiated from a logged-out
+  browser by definition. A logged-in user that wants to provision a
+  second tenant uses the existing invitation flow (ADR-0008), not
+  signup.
+- A state-record mismatch (missing / expired / wrong purpose /
+  session-attached) emits
+  `panorama.auth.signup_oidc_state_mismatch` (see §6) so SIEM can
+  alert on signup-CSRF attempts.
+
 ### 2. One tenant per email (initial signup)
 
 Each successful OIDC signup creates exactly one tenant with the
@@ -78,6 +113,29 @@ allow a user to be Owner of multiple tenants by inviting themselves
 under a different email or by accepting an invitation to join an
 existing tenant — both already supported via the existing invitation
 flow (ADR-0008).
+
+### 2a. Tenant identifier is UUID; display name is free text
+
+Tenant URL slugs and primary identifiers MUST be opaque UUIDs (the
+existing `Tenant.id` column). There is NO human-readable tenant slug
+on the hosted instance. The tenant's display name ("Acme Transit") is
+a separate non-unique text field shown in the UI but never in URLs or
+unique-key positions.
+
+Reasoning: a first-mover-takes-all human-readable namespace creates a
+press-grade incident on day 1 of the public URL — a scripted attacker
+with 5 Google accounts can register `amtrak`, `mta`, `bart`, `tfl`,
+`septa` in under 5 minutes (well under any per-IP cap, well within any
+CAPTCHA challenge budget). A real customer signing up later finds
+their org name owned by a squatter, with no clean remediation path.
+UUID identifiers + free-text display names sidestep the entire class:
+no scarcity, nothing to squat, no homograph attack vector (cyrillic
+`аmtrak` vs latin `amtrak`).
+
+A future Enterprise-edition feature may add reserved organizational
+slugs with verified-domain proof-of-ownership (the same mechanism SaaS
+products like GitHub Enterprise use). That is explicitly out of scope
+for the Community signup surface this ADR carves out.
 
 ### 3. Email-verification gate
 
@@ -97,62 +155,197 @@ The pattern reuses the existing invitation token machinery from
 ADR-0008 (email-token + TTL + one-time-use + audit). No new
 abstraction.
 
-### 4. Per-IP rate-limit on signup endpoint
+**Email target is `email` from the OIDC id_token, NOT a user-supplied
+form field.** Signup is OIDC-only (§1), there is no separate email
+input. Trusting the IdP-asserted email is correct because it is the
+same identity Panorama will use for all subsequent auth; allowing a
+divergent user-supplied target would create a phishing-by-proxy
+vector (attacker initiates signup, types `victim@acme.com` in a form
+field, Panorama sends an unsolicited "verify your tenant" email to
+the victim).
 
-The signup endpoint (POST `/auth/signup` or similar) is throttled at
-**5 signups per IP per hour**, fail-closed. This is enforced via the
-ThrottlerGuard pattern that Wave 0 Round 2 wires (see
-`HANDOFF-2026-05-16-wave0-scan.md`); the signup endpoint MUST be in
-the first batch of `@Throttle`-decorated routes.
+**Consume endpoint is `POST /auth/verify`, not `GET`.** The link in
+the verification email is an HTML form button that POSTs the token,
+not a clickable URL that GETs it. Reason: link-preview bots in
+Outlook Safe-Links, Slack unfurl, Mimecast URL Defense, and Gmail's
+content-inspection bots will fetch GET links in transit and consume
+one-time tokens before the user clicks. The POST form pattern defeats
+all known link-preview pre-consumption (none of them submit forms).
 
-Per security-reviewer's note on `app.set('trust proxy')`: the
-throttler key must use `X-Forwarded-For[0]`, not the LB IP. Without
-this fix, all signups appear to come from one IP and share one bucket
-— that's not fail-closed, that's fail-united.
+**Per-email rate cap: MAX 3 pending verifications per email per 24h.**
+Without this cap, an attacker cycling Google accounts could spam
+`victim@acme.com` with hundreds of "verify your tenant" emails
+(harassment + inbox-pollution-at-scale). The cap is enforced
+fail-closed via Redis bucket keyed on the IdP-asserted email
+(normalized: lowercase, trim). Hits emit
+`panorama.tenant.verification_throttled` (see §6).
 
-### 5. CAPTCHA on signup form
+### 4. Multi-bucket rate-limit on signup endpoint
 
-The signup form on the public homepage includes a CAPTCHA challenge
-(hCaptcha or Cloudflare Turnstile — TBD by the homepage rewrite PR).
-This is the abuse cutoff against scripted signup flooding that
-rate-limit alone doesn't catch (rate limit at 5/hour/IP is still
-30/day/IP through one residential proxy network).
+The signup endpoint (POST `/auth/signup`) is throttled with **three
+independent fail-closed buckets**. Any one bucket trip rejects the
+request. The reason for three buckets is that any single shape is
+trivially bypassable at attacker scale:
 
-CAPTCHA is **client-side rendered, server-side verified** on every
-signup attempt. CAPTCHA failure returns a generic "verification
-failed, please try again" error (do not leak which check failed —
-rate limit vs CAPTCHA vs IdP).
+| Bucket | Limit | Defeats |
+|---|---|---|
+| Per-IP | 5 / IP / hour | Loud single-source flooders |
+| Per-IPv4-/24 (or IPv6-/64) | 50 / subnet / 24h | Cheap residential proxies (~$10/mo gives unlimited single IPs but residential pools cluster in /24 ranges) |
+| Per OIDC `(iss, sub)` | 3 / (iss, sub) / 24h | A single Google account cycling proxies to mint tenants |
+
+The first two are pre-OIDC-resolution (checked on the
+signup-initiate endpoint). The third runs post-OIDC-resolution on
+the callback (once `iss` and `sub` claims are known from the
+verified id_token).
+
+**Throttler stack reference:** This endpoint rides on the throttler
+wired by PR #204 (`app.set('trust proxy', 1)` in `main.ts:18`,
+`ThrottlerModule` registered as `APP_GUARD`) and PR #205
+(`PerTenantThrottlerGuard` at
+`apps/core-api/src/shared/throttler/per-tenant-throttler.guard.ts`
+which falls back to `req.ip` for anonymous routes — exactly the
+case for signup-initiate). The signup endpoint is added to the first
+batch of `@Throttle`-decorated routes; the per-subnet and per-`(iss,
+sub)` buckets are added as additional `@Throttle` declarations or
+a sibling guard.
+
+**Trust-proxy contract is fragile and self-hosters must configure
+it.** `app.set('trust proxy', 1)` means "trust ONE hop." On the
+hosted instance that hop is the Fly edge, which DOES overwrite
+`X-Forwarded-For` with the real client IP, so `req.ip` is correct.
+But:
+
+- If a CDN (Cloudflare, Fastly) is added in front of Fly, hop count
+  becomes 2 and `trust proxy 1` reads the Fly-edge IP as `req.ip` —
+  every signup attempt buckets to the same Fly-edge IP (fail-united,
+  not fail-closed).
+- Self-hosters running behind nginx + a CDN will have hop count 2+;
+  if they set `trust proxy 1` they have the same problem inverted.
+
+**Required environment contract:** Introduce `TRUST_PROXY_HOPS` env
+var (default `1` for the hosted instance, REQUIRED for self-hosters
+enabling `FEATURE_SELF_SERVE_SIGNUP`). The bootstrap in `main.ts`
+reads this and passes it to `app.set('trust proxy', n)`. The README
++ `docs/runbooks/secrets-inventory.md` (per Round 1) documents the
+correct value per deployment topology.
+
+**Anti-spoof assertion in the flood test.** The synthetic flood test
+at `apps/core-api/test/abuse/signup-flood.e2e.test.ts` (a sibling of
+the existing `apps/core-api/test/login-flood.e2e.test.ts`) MUST
+assert all three buckets independently AND MUST include one case
+that sends `X-Forwarded-For: 1.2.3.4` from the test loopback and
+asserts the bucket is keyed on the loopback IP (NOT `1.2.3.4`) —
+i.e., that an external attacker cannot forge themselves out of the
+bucket via a header they control.
+
+### 5. CAPTCHA on signup form (Cloudflare Turnstile)
+
+The signup form on the public homepage includes a Cloudflare
+Turnstile challenge. This is the abuse cutoff against scripted
+signup flooding that rate-limit alone doesn't catch.
+
+**Locked on Turnstile, not hCaptcha.** Three reasons:
+
+1. **Latency profile.** Turnstile's invisible challenge clears in
+   <200ms for ~99% of users. hCaptcha's interactive challenges spike
+   2–5s on hard variants. Constant-latency padding (below) is
+   easier to baseline against a tight latency distribution.
+2. **Privacy story.** Turnstile keeps the client IP on Cloudflare's
+   infrastructure. hCaptcha sends it to Intuition Machines. For an
+   AGPL project marketed as privacy-respecting, Turnstile is the
+   better narrative.
+3. **Cost shape.** Turnstile is free-unlimited. hCaptcha free tier
+   caps at 1M challenges/month — a soft DoS surface if an attacker
+   can drain the quota.
+
+CAPTCHA is **client-side rendered, server-side verified** via
+Turnstile's siteverify endpoint on every signup attempt. The
+verified token result is keyed in Redis for 5 minutes to prevent
+double-submit race (two concurrent signup requests sharing one valid
+token).
+
+**Constant-latency error envelope (timing-attack defense).** Rate-
+limit rejection is sub-millisecond (Redis local). Turnstile
+verification is 50–300ms (HTTPS round-trip to Cloudflare). OIDC
+token validation is 100–500ms (HTTPS round-trip to Google/Microsoft).
+An attacker timing failure paths can distinguish "rate-limited"
+(fast) from "CAPTCHA failed" (medium) from "OIDC rejected" (slow)
+purely by wall-clock — defeating §5's no-leak goal.
+
+Therefore: **all signup-failure responses MUST be padded to a
+constant minimum latency floor (target: ≥600ms, calibrated to the
+95th-percentile success-path latency).** All failures share:
+
+- Same response envelope: `{ error: 'signup_failed' }` (no detail)
+- Same status code: **400 Bad Request, NOT 429.** Returning 429 on
+  rate-limit hits leaks the rate-limit's existence and shape to an
+  anonymous attacker — that's reconnaissance value, not operational
+  value. (Note: this is a deliberate deviation from the auth-login
+  throttler, which DOES return 429 because the audience there is
+  authenticated users for whom the 429 carries operational value.)
+- Same latency floor (padded async, do not block on real work)
+
+The error message shown in the UI is the generic "Couldn't sign you
+up — please try again in a few minutes." Failed attempts still emit
+distinct audit actions server-side (see §6), so SIEM can distinguish
+rate-limit-trip vs CAPTCHA-fail vs OIDC-refused for incident
+response — the leak is only closed from the *attacker's* side.
 
 ### 6. Audit emission
 
-Every signup attempt emits at least:
-- `panorama.tenant.signup_initiated` — at the moment the OIDC flow
-  starts (audit registry addition)
-- `panorama.tenant.created` — at the moment the tenant is provisioned
-  in `pending_verification` state (existing event)
-- `panorama.tenant.verification_sent` — when the confirmation email
-  is dispatched (audit registry addition)
-- `panorama.tenant.verified` — when the user clicks the verification
-  link and the tenant becomes active (audit registry addition)
-- `panorama.auth.signup_rate_limit_tripped` — when the throttler
-  blocks an attempt (audit registry addition)
-- `panorama.auth.captcha_failed` — when CAPTCHA verification fails
-  server-side (audit registry addition)
+The signup, verification, and deletion surfaces emit the following
+audit actions. All are added to the registry at
+`apps/core-api/src/modules/audit/audit-actions.ts` BEFORE the
+endpoints that emit them ship (Round 3 prerequisite).
 
-All new audit actions added to the audit registry
-(`apps/core-api/src/modules/audit/audit-actions.ts`) BEFORE the
-signup endpoint ships.
+**Signup + verification lifecycle:**
+- `panorama.tenant.signup_initiated` — at the moment the OIDC flow
+  starts (registry addition)
+- `panorama.tenant.created` — at the moment the tenant is
+  provisioned in `pending_verification` state (existing event)
+- `panorama.tenant.verification_sent` — when the confirmation email
+  is dispatched (registry addition)
+- `panorama.tenant.verified` — when the user POSTs the verification
+  token and the tenant becomes active (registry addition)
+- `panorama.tenant.verification_throttled` — per-email cap (§3) hit
+  (registry addition)
+
+**Anonymous-abuse signals:**
+- `panorama.auth.signup_rate_limit_tripped` — any of the three §4
+  throttler buckets blocks an attempt; metadata records WHICH bucket
+  (`ip` / `subnet` / `oidc_sub`) so SIEM can distinguish (registry
+  addition)
+- `panorama.auth.captcha_failed` — Turnstile verification fails
+  server-side (registry addition)
+- `panorama.auth.signup_oidc_state_mismatch` — §1a state contract
+  violation (missing / expired / wrong purpose / session-attached);
+  this is the CSRF-attempt signal (registry addition)
+
+**Deletion lifecycle (§7):**
+- `panorama.tenant.delete_requested` — step 1 (registry addition)
+- `panorama.tenant.delete_confirmed` — step 2; deletion is now
+  scheduled (registry addition)
+- `panorama.tenant.delete_cancelled` — cancel during cool-off
+  (registry addition; idempotent — second call against an already-
+  cancelled tenant is a no-op and emits ONE event, not two)
+- `panorama.tenant.delete_veto` — maintainer or peer-Owner vetoes
+  a pending deletion (§7 race B; registry addition)
+- `panorama.tenant.deleted` — cron purges tenant data (existing
+  event, kept as the terminal state)
 
 ### 7. Tenant deletion: two-step + 7d cool-off
 
 The hosted instance provides `DELETE /tenants/:tenantId` (Owner-only):
 
-- Step 1: `POST /tenants/:tenantId/delete-request` — sends an email
-  with a one-time confirmation link
+- Step 1: `POST /tenants/:tenantId/delete-request` — sends a
+  confirmation email to **ALL Owners of the tenant** (not just the
+  requester) with a one-time confirmation token
 - Step 2: `POST /tenants/:tenantId/delete-confirm` with the token —
   schedules deletion for 7 days hence
 - During the 7-day cool-off:
-  - Owner can cancel via `POST /tenants/:tenantId/delete-cancel`
+  - Any Owner can cancel via `POST /tenants/:tenantId/delete-cancel`
+  - Any peer Owner OR the platform maintainer can VETO via
+    `POST /tenants/:tenantId/delete-veto` (admin console surface)
   - Tenant data remains accessible (login still works)
   - Banner in the UI: "this tenant is scheduled for deletion on
     YYYY-MM-DD; click here to cancel"
@@ -161,7 +354,39 @@ The hosted instance provides `DELETE /tenants/:tenantId` (Owner-only):
 
 The 7-day window prevents a compromised Owner credential from
 instantly nuking a tenant. The cancel path provides a "I clicked the
-wrong button" recovery.
+wrong button" recovery; the veto path provides a peer-recovery
+channel when the credential compromise also captures the inbox
+(see race B below).
+
+**Race conditions (resolution rules):**
+
+- **Race A — concurrent `delete-cancel` and `delete-confirm`.**
+  Compromised credential triggers confirm at T+0; legitimate Owner
+  POSTs cancel at T+50ms. Both succeed at the HTTP layer because
+  deletion is a 7-day scheduled job, not an immediate action.
+  Resolution: **last-writer-wins on the `deletionScheduledAt`
+  column** (cancel sets it to NULL; confirm sets it to T+7d). Both
+  events are audited; the UI banner shows the most-recent action.
+  This is intentionally cancel-friendly — the user-friendly outcome
+  wins.
+- **Race B — credential compromise captures the inbox.** If the
+  attacker holds the Owner's Google credentials, they also hold the
+  Google inbox where the confirm token lands; the 7-day window
+  collapses to zero. This is not fixable without a second factor
+  outside the OIDC inbox. Mitigations: (a) the delete-request email
+  goes to ALL Owners of the tenant, so a multi-Owner setup gives
+  peer-recovery; (b) the platform maintainer can veto a pending
+  deletion via the admin console during the 7-day window; (c) Owners
+  are encouraged (UI nudge) to set up account recovery by inviting
+  at least one peer Owner with a different OIDC identity (see
+  Recommendations §R2). Single-Owner tenants where the Owner is
+  fully compromised remain at residual risk — this is documented in
+  the hosted instance's risk register.
+- **Race C — two concurrent `delete-cancel` requests.** Both UPDATE
+  the same row with the same value (`deletionScheduledAt = NULL`).
+  Postgres serializes. Resolution: no-op on second call; emit ONE
+  `panorama.tenant.delete_cancelled` event, not two (deduplicate by
+  checking `deletionScheduledAt IS NULL` before emitting).
 
 Cascade ordering note (per data-architect C6 in Wave 0 scan):
 `Tenant.systemActorUserId` has `ON DELETE RESTRICT`. The deletion
@@ -184,11 +409,63 @@ abuse defenses:
 - Inline export of a 100k-row tenant on a hot HTTP path is itself a
   DoS vector; async-only is non-negotiable
 
+**Signed-URL contract.** The pre-signed S3 URL delivered in the
+completion email has TTL ≤24h. The URL itself is **never written to
+any log line, audit row, or persisted record** — the URL embeds
+credentials and persisting it is a credential leak. The audit row
+for `panorama.tenant.exported` records:
+
+- The S3 object key (e.g., `exports/tenant-{uuid}/{job-id}.tar.gz`)
+- The TTL the URL was minted with
+- The recipient email (the Owner's IdP-asserted email)
+
+NOT the signed URL, NOT the query parameters that carry the
+signature. Operators retrieving the export object via the audit
+trail re-mint a signed URL from the key + their own AWS credentials.
+
 The signup → export path satisfies the "show data-export before
 signup" persona-fleet-ops principle: the homepage has a "see what
 we'd export for you" link to a sample JSON document showing the
 shape of the export, BEFORE the user signs up. Real export only
 happens post-signup.
+
+## Recommendations (security-reviewer follow-up, 2026-05-16)
+
+These are non-blocking recommendations from the security-reviewer's
+threat-model pass that signed off the §§1–8 amendments above.
+Tracked as implementation TODOs, not ADR blockers.
+
+- **R1. Age gate (LGPD Art. 14).** Self-declared "I am 18+"
+  checkbox on the signup form. The LGPD Art. 14 obligation applies
+  to anyone processing minors' data in Brazil; for an AGPL fleet-
+  management product the realistic minor-signup risk is near-zero,
+  but a self-declaration is cheap, defensible, and doesn't pretend
+  to enforce. Implementation: a required checkbox before the OIDC
+  initiate button; refusal blocks signup with a generic message.
+- **R2. Account-recovery nudge.** The first Owner of a brand-new
+  tenant is by definition alone. If their Google account is
+  disabled, the tenant is data-locked. Within 7 days of signup,
+  surface a one-time UI prompt asking the Owner to invite at least
+  one peer Owner OR link a backup OIDC identity (Google ↔ Microsoft
+  cross-link). Not blocking; dismissable but re-surfaced every
+  login until satisfied. This is also the practical mitigation for
+  §7 race B.
+- **R3. Turnstile token Redis dedupe.** Per §5, the verified
+  Turnstile token result is keyed in Redis for 5 minutes to prevent
+  double-submit race where two signup requests share one valid
+  token. Implementation TODO when wiring the Turnstile siteverify
+  call.
+- **R4. Audit metadata for §6 actions.** Each new audit action
+  needs a documented metadata shape (which fields, which are
+  required, which carry PII). Land alongside the registry additions
+  in the audit-registry PR, mirroring the pattern in
+  `audit-actions.ts:34-50`.
+- **R5. CTA tracking on signup vs self-host paths.** The hosted-vs-
+  self-host CTA tracking that product-lead opportunity 1 calls for
+  (Round 7) should fire `panorama.tenant.signup_initiated` with a
+  `cta_source` metadata field (`hosted_button` / `selfhost_button`
+  / `direct_url`) so the maintainer can read funnel signal from the
+  audit trail without standing up analytics infra prematurely.
 
 ## Alternatives considered
 
@@ -285,24 +562,41 @@ binary, just with a different config.
 
 Sequencing within Wave 0:
 
-1. **Security-reviewer follow-up pass** on the threat model in
-   §§ 4 + 5 + 7 above — required before Round 3 starts. The follow-
-   up validates: rate-limit shape against synthetic flood test;
-   CAPTCHA verification flow + failure messaging; email-verification
-   token TTL + replay defense; deletion cool-off race conditions
-   (e.g., two cancel requests in flight).
-2. Audit registry addition (Round 3 prerequisite, per §6) — adds the
-   six new audit actions to `audit-actions.ts` BEFORE the endpoints
-   that emit them ship.
-3. Signup endpoint + email-verification flow (Round 3, gated on §1).
-4. Data-export endpoint (Round 3, gated on Round 2's audit chain
+1. **Security-reviewer follow-up pass — DONE 2026-05-16.** APPROVE
+   WITH CONDITIONS C1–C7 (rate-limit anti-spoof + three buckets;
+   timing-padded 400 envelope; Turnstile lock; email-verification
+   target from id_token + POST consume + per-email cap; OIDC `state`
+   contract; tenant-slug UUID; deletion-race resolutions). All
+   landed as §§1–8 amendments. R1–R5 recommendations tracked as
+   implementation TODOs.
+2. **Audit registry addition** (Round 3 prerequisite, per §6) —
+   adds the new audit actions to `audit-actions.ts` BEFORE the
+   endpoints that emit them ship. Eleven new actions versus
+   pre-amendment (added: `verification_throttled`,
+   `signup_oidc_state_mismatch`, `delete_requested`,
+   `delete_confirmed`, `delete_cancelled`, `delete_veto`).
+3. **Throttler bucket additions** (Round 3 prerequisite, per §4) —
+   per-IPv4-/24 and per-`(iss, sub)` buckets added as `@Throttle`
+   declarations or a sibling guard atop the
+   `PerTenantThrottlerGuard` shipped in PR #205. `TRUST_PROXY_HOPS`
+   env var added with default `1`.
+4. **Signup endpoint + email-verification flow** (Round 3, gated on
+   §1 + §1a + §3 + §4 + §5).
+5. **Data-export endpoint** (Round 3, gated on Round 2's audit chain
    reproducibility — without it, "we audited your export" is
    unverifiable).
-5. Tenant-deletion endpoint (Round 3, includes the 7-day cron).
-6. Homepage signup form + CAPTCHA integration (Round 1 wires the
-   form copy; CAPTCHA + functional submit in Round 3).
-7. v2 6-agent scan: re-run security-reviewer on the implemented
-   surface before URL flips.
+6. **Tenant-deletion endpoint** (Round 3, includes the 7-day cron,
+   the four lifecycle audit actions, the §7 race A/B/C resolutions,
+   and the multi-Owner email fan-out).
+7. **Homepage signup form + Turnstile integration** (Round 1 wires
+   the form copy; Turnstile + functional submit + R1 age-gate in
+   Round 3).
+8. **Anti-spoof synthetic flood test** at
+   `apps/core-api/test/abuse/signup-flood.e2e.test.ts` (per §4) —
+   asserts all three throttler buckets independently AND that a
+   forged `X-Forwarded-For` does not move the per-IP bucket.
+9. **v2 6-agent scan:** re-run security-reviewer on the implemented
+   surface (not the design) before URL flips.
 
 The `FEATURE_SELF_SERVE_SIGNUP` flag defaults to `false` in
 Community + `true` on the hosted instance. Self-hosters wanting
