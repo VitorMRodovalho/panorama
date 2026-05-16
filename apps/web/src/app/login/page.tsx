@@ -51,7 +51,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
       : messages.t('login.subtitle.default');
 
   return (
-    <div className="panorama-login">
+    <main className="panorama-login">
       <h1>{messages.t('login.title')}</h1>
       <p className="muted">{subtitle}</p>
 
@@ -115,6 +115,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps): Promi
           </>
         ) : null}
       </div>
-    </div>
+    </main>
   );
 }

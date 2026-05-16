@@ -121,10 +121,10 @@ export async function AppShell({ children }: { children: ReactNode }): Promise<R
         </div>
       </header>
 
-      <section className="panorama-content">
+      <main className="panorama-content">
         <AppNav items={navItems} />
         {children}
-      </section>
+      </main>
     </>
   );
 }

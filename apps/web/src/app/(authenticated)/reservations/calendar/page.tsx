@@ -252,19 +252,24 @@ export default async function ReservationCalendarPage({
 function CalendarLegend({ t }: { t: (k: string) => string }): ReactNode {
   return (
     <div className="panorama-calendar-legend">
-      <Swatch kind="pending" label={t('calendar.legend.pending')} />
-      <Swatch kind="approved" label={t('calendar.legend.approved')} />
-      <Swatch kind="checkedout" label={t('calendar.legend.checkedout')} />
-      <Swatch kind="returned" label={t('calendar.legend.returned')} />
+      <Swatch kind="pending" label={t('calendar.legend.pending')} prefix="P" />
+      <Swatch kind="approved" label={t('calendar.legend.approved')} prefix="A" />
+      <Swatch kind="checkedout" label={t('calendar.legend.checkedout')} prefix="O" />
+      <Swatch kind="returned" label={t('calendar.legend.returned')} prefix="R" />
       <Swatch kind="blackout" label={t('calendar.legend.blackout')} />
     </div>
   );
 }
 
-function Swatch({ kind, label }: { kind: string; label: string }): ReactNode {
+function Swatch({ kind, label, prefix }: { kind: string; label: string; prefix?: string }): ReactNode {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 12 }}>
-      <span className={`panorama-swatch panorama-block--${kind}`} />
+      <span className={`panorama-swatch panorama-block--${kind}`} aria-hidden="true" />
+      {prefix ? (
+        <kbd style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }} aria-hidden="true">
+          {prefix}
+        </kbd>
+      ) : null}
       <span style={{ fontSize: 12 }}>{label}</span>
     </span>
   );
@@ -311,10 +316,20 @@ function reservationKind(r: ReservationView): string {
   return 'approved';
 }
 
+const STATUS_PREFIX: Record<string, string> = {
+  pending: 'P',
+  approved: 'A',
+  checkedout: 'O',
+  returned: 'R',
+  cancelled: 'X',
+  rejected: '!',
+};
+
 function labelForReservation(r: ReservationView, locale: SupportedLocale): string {
   const fmt = (d: string): string =>
     new Date(d).toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: 'numeric' });
-  return `${fmt(r.startAt)}–${fmt(r.endAt)}`;
+  const prefix = STATUS_PREFIX[reservationKind(r)] ?? '';
+  return prefix ? `${prefix} · ${fmt(r.startAt)}–${fmt(r.endAt)}` : `${fmt(r.startAt)}–${fmt(r.endAt)}`;
 }
 
 function atStartOfDay(d: Date): Date {
