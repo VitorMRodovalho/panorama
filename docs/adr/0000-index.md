@@ -18,9 +18,13 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0011 | [Notification event bus — architecture](./0011-notification-event-bus.md) | Accepted | 2026-04-18 |
 | 0012 | [Inspection checklists + photo evidence pipeline](./0012-inspection-photo-pipeline.md) | Accepted | 2026-04-18 |
 | 0013 | [Staging deploy architecture (internal only)](./0013-staging-deploy-architecture.md) | Accepted | 2026-04-19 |
-| 0014 | _(reserved — Cloud SKU + edition placement; unwritten by intent until customer signal)_ | — | — |
+| 0014 | [Public hosted instance (Community deployed, free preview)](./0014-public-hosted-instance.md) | Accepted | 2026-05-16 |
 | 0015 | [BYPASSRLS removal refactor (SECURITY DEFINER bypass function)](./0015-bypassrls-removal-refactor.md) | Accepted | 2026-04-19 |
 | 0016 | [Asset maintenance flow (Snipe-IT-compatible)](./0016-asset-maintenance-flow.md) | Accepted (v3 2026-04-26) | 2026-04-19 |
+| 0017 | [AI/LLM integration principles](./0017-ai-llm-integration-principles.md) | Accepted | 2026-04-23 |
+| 0018 | [Observability stack (pino + Sentry + request-id ALS)](./0018-observability-stack.md) | Accepted | 2026-05-16 |
+| 0019 | [Worker process boundary (photo pipeline defer-with-trigger)](./0019-worker-process-boundary.md) | Accepted | 2026-05-16 |
+| 0020 | [Self-serve OIDC signup (Wave 0.5)](./0020-self-serve-oidc-signup.md) | Proposed | 2026-05-16 |
 
 ## Template
 
