@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './modules/prisma/prisma.module.js';
 import { TenantModule } from './modules/tenant/tenant.module.js';
 import { AssetModule } from './modules/asset/asset.module.js';
@@ -79,10 +80,21 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 120 },
-      { name: 'auth', ttl: 60_000, limit: 10 },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'global', ttl: 60_000, limit: 120 },
+        { name: 'auth', ttl: 60_000, limit: 10 },
+        { name: 'upload', ttl: 60_000, limit: 5 },
+      ],
+      // skipIf is evaluated per-request (NOT per module-load), so
+      // existing e2e tests that share a cached AppModule instance
+      // get the bypass when THROTTLER_ENABLED is unset, while the
+      // login-flood.e2e test gets the throttle when it sets
+      // THROTTLER_ENABLED=1 right before its own POSTs.
+      skipIf: () =>
+        process.env['NODE_ENV'] === 'test' &&
+        process.env['THROTTLER_ENABLED'] !== '1',
+    }),
     PrismaModule,
     TenantModule,
     RedisModule,
@@ -103,6 +115,15 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     // Audit + Redis are wired so the boot audits commit cleanly.
     BootAuditModule,
     // 0.2: PluginHostModule, I18nModule.forRootAsync.
+  ],
+  providers: [
+    // ThrottlerGuard wired as a global APP_GUARD — without this, the
+    // ThrottlerModule.forRoot config is dead metadata. Wave 0 Round 2
+    // (ADR-0014 prerequisite): the synthetic-flood test in
+    // test/login-flood.e2e.test.ts exercises the auth bucket. The
+    // bypass for non-flood tests is handled by skipIf in the module
+    // config above, not at provider registration.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

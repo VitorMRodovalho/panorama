@@ -13,6 +13,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AuthService } from './auth.service.js';
@@ -76,6 +77,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   async login(
     @Body() body: unknown,
     @Req() req: Request,
@@ -238,6 +240,7 @@ export class AuthController {
   }
 
   @Get('oidc/:provider/callback')
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   async oidcCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
