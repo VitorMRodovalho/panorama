@@ -86,6 +86,17 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
         { name: 'global', ttl: 60_000, limit: 120 },
         { name: 'auth', ttl: 60_000, limit: 10 },
         { name: 'upload', ttl: 60_000, limit: 5 },
+        // Self-serve signup buckets (ADR-0020 §4 first two of three).
+        // Currently declared but not yet decorated on any route — the
+        // signup endpoint (Round 3 main) wires `@Throttle({ signupIp:
+        // ..., signupSubnet: ... })` and a sibling guard handles the
+        // subnet-keyed bucket via `subnetKey(req.ip)` from
+        // shared/throttler/subnet-key.ts. The third §4 bucket
+        // (3/(iss,sub)/24h) is a controller-level Redis check, not
+        // a ThrottlerModule bucket, because it runs post-OIDC-
+        // validation on the callback.
+        { name: 'signupIp', ttl: 3_600_000, limit: 5 },
+        { name: 'signupSubnet', ttl: 86_400_000, limit: 50 },
       ],
       // skipIf is evaluated per-request (NOT per module-load), so
       // existing e2e tests that share a cached AppModule instance
