@@ -54,6 +54,7 @@ interface AuditRowSlim {
   occurredAt: Date;
   prevHash: Buffer | null;
   selfHash: Buffer;
+  digestPreImage: Buffer | null;
 }
 
 describe('audit hash-chain integrity — batched recordWithin', () => {
@@ -130,6 +131,7 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
         occurredAt: true,
         prevHash: true,
         selfHash: true,
+        digestPreImage: true,
       },
     })) as unknown as AuditRowSlim[];
 
@@ -158,8 +160,13 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
     // selfHash recomputability: each row's selfHash must equal
     // sha256(prevHash || canonical_payload). If a downstream tool
     // tampers with any field — action, resourceId, tenantId, metadata,
-    // occurredAt — the recomputed hash diverges and verification
-    // tooling (when it ships) will catch it.
+    // occurredAt — the recomputed hash diverges and the chain-verify
+    // CLI catches it. We assert TWO ways:
+    //   (a) recomputing the payload from columns, the way the writer
+    //       does, must match (legacy invariant)
+    //   (b) recomputing from the new `digestPreImage` column, the way
+    //       the chain-verify CLI does, must also match (migration
+    //       0021 reproducibility contract)
     for (const row of rows) {
       const payload = {
         action: row.action,
@@ -170,11 +177,28 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
         metadata: row.metadata ?? null,
         occurredAt: row.occurredAt.toISOString(),
       };
-      const h = createHash('sha256');
-      if (row.prevHash) h.update(row.prevHash);
-      h.update(JSON.stringify(payload));
-      const expected = h.digest();
-      expect(Buffer.compare(row.selfHash, expected)).toBe(0);
+      const hViaColumns = createHash('sha256');
+      if (row.prevHash) hViaColumns.update(row.prevHash);
+      hViaColumns.update(JSON.stringify(payload));
+      expect(Buffer.compare(row.selfHash, hViaColumns.digest())).toBe(0);
+
+      // (b) Migration 0021 contract: digestPreImage must be populated
+      // for every row written by the post-0021 service, and the CLI's
+      // recomputation path must equal selfHash. This is the load-
+      // bearing invariant for the chain-verify CLI.
+      //
+      // Prisma 6 returns Bytes as Uint8Array (no .toString('utf8'));
+      // wrap once via Buffer.from for predictable byte semantics.
+      expect(row.digestPreImage).not.toBeNull();
+      const preImageBuf = Buffer.from(row.digestPreImage!);
+      const hViaPreImage = createHash('sha256');
+      if (row.prevHash) hViaPreImage.update(row.prevHash);
+      hViaPreImage.update(preImageBuf);
+      expect(Buffer.compare(row.selfHash, hViaPreImage.digest())).toBe(0);
+
+      // And the preimage must decode to the same canonical payload
+      // (catches drift between writer's JSON shape and what's stored).
+      expect(JSON.parse(preImageBuf.toString('utf8'))).toEqual(payload);
     }
 
     // Sanity: occurredAt is within the test window.

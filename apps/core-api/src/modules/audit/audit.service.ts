@@ -95,11 +95,72 @@ export class AuditService {
   /**
    * Emit an audit row inside an already-open transaction. Matches the
    * invariant that domain writes + their audit record commit together.
+   *
+   * Two concurrency-correctness moves land before the chain-head read
+   * (migration 0021 / Wave 0 Round 2B):
+   *
+   *   1. **Global advisory lock.** Two writers seeing the same
+   *      `priorTail.selfHash` would both write rows whose `prevHash`
+   *      points to the same predecessor, forking the chain.
+   *      `pg_advisory_xact_lock(hashtext('audit:global'))` serialises
+   *      all audit writes until the row's INSERT commits. The trigger
+   *      functions in migration 0021 take the SAME lock so trigger-
+   *      driven writes and service-driven writes share the lock space.
+   *      We use a global lock (not per-tenant) because the SECURITY
+   *      DEFINER triggers read the global chain head — a per-tenant
+   *      lock would let two cross-tenant writers both read the same
+   *      global tail and fork the chain.
+   *   2. **Canonical pre-image persistence.** `audit_events.metadata`
+   *      is JSONB and Postgres recanonicalises keys on store, so a
+   *      verifier reading the row back cannot recompute the digest
+   *      input byte-for-byte from the columns alone. We persist the
+   *      exact UTF-8 JSON pre-image hashed into `selfHash` into the
+   *      new `digestPreImage` column. The chain-verify CLI reads
+   *      `prevHash || digestPreImage` and asserts the sha256 equals
+   *      `selfHash`.
+   *
+   * What `digestPreImage` enables (per-row reproducibility):
+   *   - An attacker editing any of `action`, `resourceType`,
+   *     `resourceId`, `tenantId`, `actorUserId`, `metadata`,
+   *     `occurredAt` AFTER write diverges the recomputed digest
+   *     from the stored `selfHash`. Caught by the chain-verify CLI.
+   *
+   * What it does NOT cover (out of scope for Round 2B):
+   *   - **`ipAddress` / `userAgent` are stored but not hashed.** They
+   *     are observational metadata about the actor, not part of the
+   *     audit-row's logical identity. Editing them post-write goes
+   *     undetected by the chain.
+   *   - **Multi-strand prev-link verification** under the documented
+   *     multi-strand semantics. The trigger functions write rows that
+   *     link into the global chain regardless of the row's `tenantId`,
+   *     so a per-tenant verifier filtering to (tenant, NULL) and
+   *     walking `prevHash → predecessor.selfHash` reports false
+   *     mismatches whenever a different tenant's row sits between two
+   *     of the verifier's strand-member rows. Per-row reproducibility
+   *     is the trust anchor this PR ships; prev-link verification at
+   *     multi-strand granularity is deferred.
+   *
+   * Trigger functions in migration 0021 are sister writers — they
+   * build their own canonical pre-image via `json_build_object(...)`
+   * and persist the same `digestPreImage` shape. Drift between this
+   * service's payload and the triggers' payload is caught by the
+   * `migration-0021-audit-chain.test.ts` digest-recomputation
+   * assertions.
    */
   async recordWithin(
     tx: Prisma.TransactionClient,
     event: AuditEventInput,
   ): Promise<void> {
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(hashtext('audit:global'))`,
+    );
+
+    // No `WHERE selfHash IS NOT NULL` filter here — the column is
+    // NOT NULL at the schema level (audit_events.selfHash BYTEA NOT
+    // NULL), so the filter the data-architect recommended for the
+    // chain-head SELECT is redundant in this code path. The trigger
+    // functions keep the filter inline in their raw SQL since the
+    // cost there is zero and it makes the read self-documenting.
     const prev = await tx.auditEvent.findFirst({
       orderBy: { id: 'desc' },
       select: { selfHash: true },
@@ -114,9 +175,10 @@ export class AuditService {
       metadata: event.metadata ?? null,
       occurredAt: occurredAt.toISOString(),
     };
+    const digestPreImage = Buffer.from(JSON.stringify(payload), 'utf8');
     const hash = createHash('sha256');
     if (prev?.selfHash) hash.update(prev.selfHash);
-    hash.update(JSON.stringify(payload));
+    hash.update(digestPreImage);
     const selfHash = hash.digest();
 
     const data: Prisma.AuditEventCreateInput = {
@@ -130,6 +192,7 @@ export class AuditService {
       occurredAt,
       prevHash: prev?.selfHash ?? null,
       selfHash,
+      digestPreImage,
     };
     if (event.metadata !== undefined) {
       data.metadata = event.metadata as Prisma.InputJsonValue;

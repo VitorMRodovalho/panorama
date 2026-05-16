@@ -63,9 +63,25 @@ Panorama ships with sane defaults (see `apps/core-api/src/config/security.ts`):
   knob to disable the gate entirely — that is intentional.
 - All outbound fetches disable follow-redirects unless the caller opts in
 - Rate limiting on auth endpoints (configurable per-tenant)
-- Audit log appended to every write operation (tamper-evident hash chain)
-  _(NOTE: audit-flagged that the notification tamper trigger breaks the chain —
-  see issue [#41](https://github.com/VitorMRodovalho/panorama/issues/41))_
+- Audit log appended to every write operation, with per-row reproducible
+  digests. Migration 0021 persists the canonical pre-image alongside each
+  row's `selfHash`, so an operator-run verifier can recompute
+  `sha256(prevHash || digestPreImage)` byte-for-byte from the stored columns
+  and assert it equals `selfHash` — tamper of any logical column (action,
+  resourceType, resourceId, tenantId, actorUserId, metadata, occurredAt)
+  after write is caught. The SECURITY DEFINER triggers (notification
+  status-tamper, PAT resurrection) and the TypeScript writer all take a
+  global advisory lock (`pg_advisory_xact_lock(hashtext('audit:global'))`)
+  before reading the chain head, eliminating the chain-fork race surfaced in
+  issue [#41](https://github.com/VitorMRodovalho/panorama/issues/41). The
+  notification trigger also fires on `tenantId` column changes (not just
+  status) and raises `tenantId_immutable_post_create` to block cross-tenant
+  retargeting. Verifier: `pnpm --filter @panorama/core-api chain-verify`
+  (runbook:
+  [`docs/runbooks/verify-audit-chain.md`](./docs/runbooks/verify-audit-chain.md)).
+  Out of scope for the per-row check: `ipAddress` / `userAgent` are stored
+  but not hashed (observational metadata); multi-strand prev-link verification
+  is documented in the runbook as a separate future workstream.
 
 ## Audit trail
 
