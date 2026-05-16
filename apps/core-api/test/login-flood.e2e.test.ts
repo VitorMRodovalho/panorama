@@ -1,3 +1,8 @@
+// MUST be set BEFORE AppModule import — the guard registration is
+// gated on this env var at module-import time. See app.module.ts
+// throttlerEnabled() for rationale.
+process.env['THROTTLER_ENABLED'] = '1';
+
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';

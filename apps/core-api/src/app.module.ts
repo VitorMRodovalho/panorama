@@ -74,6 +74,18 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
   ? [{ module: MaintenanceModule, global: false }]
   : [];
 
+/**
+ * ThrottlerGuard is skipped in NODE_ENV=test unless the caller
+ * explicitly opts in via THROTTLER_ENABLED=1. Existing e2e tests
+ * hit /auth/login multiple times during setup; the auth bucket
+ * (10/min) would block them. The login-flood.e2e test sets
+ * THROTTLER_ENABLED=1 to opt in.
+ */
+function throttlerEnabled(): boolean {
+  if (process.env['NODE_ENV'] !== 'test') return true;
+  return process.env['THROTTLER_ENABLED'] === '1';
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -111,7 +123,11 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     // ThrottlerModule.forRoot config is dead metadata. Wave 0 Round 2
     // (ADR-0014 prerequisite): the synthetic-flood test in
     // test/login-flood.e2e.test.ts exercises the auth bucket.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Skipped in test environment unless THROTTLER_ENABLED=1 — see
+    // throttlerEnabled() above.
+    ...(throttlerEnabled()
+      ? [{ provide: APP_GUARD, useClass: ThrottlerGuard }]
+      : []),
   ],
 })
 export class AppModule {}
