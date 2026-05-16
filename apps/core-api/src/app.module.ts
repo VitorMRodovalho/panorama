@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './modules/prisma/prisma.module.js';
 import { TenantModule } from './modules/tenant/tenant.module.js';
 import { AssetModule } from './modules/asset/asset.module.js';
@@ -82,6 +83,7 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     ThrottlerModule.forRoot([
       { name: 'global', ttl: 60_000, limit: 120 },
       { name: 'auth', ttl: 60_000, limit: 10 },
+      { name: 'upload', ttl: 60_000, limit: 5 },
     ]),
     PrismaModule,
     TenantModule,
@@ -103,6 +105,13 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     // Audit + Redis are wired so the boot audits commit cleanly.
     BootAuditModule,
     // 0.2: PluginHostModule, I18nModule.forRootAsync.
+  ],
+  providers: [
+    // ThrottlerGuard wired as a global APP_GUARD — without this, the
+    // ThrottlerModule.forRoot config is dead metadata. Wave 0 Round 2
+    // (ADR-0014 prerequisite): the synthetic-flood test in
+    // test/login-flood.e2e.test.ts exercises the auth bucket.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
