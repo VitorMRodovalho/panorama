@@ -11,6 +11,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   CreateInvitationSchema,
@@ -140,6 +141,7 @@ export class InvitationController {
 
   @Post('accept')
   @HttpCode(200)
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   async finalizeAccept(
     @Query('t') token: string | undefined,
     @Req() req: Request,
