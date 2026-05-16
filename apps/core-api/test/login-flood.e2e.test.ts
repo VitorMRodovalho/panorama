@@ -1,8 +1,3 @@
-// MUST be set BEFORE AppModule import — the guard registration is
-// gated on this env var at module-import time. See app.module.ts
-// throttlerEnabled() for rationale.
-process.env['THROTTLER_ENABLED'] = '1';
-
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
@@ -40,6 +35,10 @@ describe('abuse: login flood (Wave 0 Round 2)', () => {
   beforeAll(async () => {
     process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? 'a'.repeat(32);
     process.env.DATABASE_URL = APP_URL;
+    // Opt this test specifically into the throttler. Other e2e tests
+    // share a cached AppModule, but skipIf is evaluated per-request,
+    // so the env change here turns the guard on for our 15 POSTs.
+    process.env['THROTTLER_ENABLED'] = '1';
 
     // Reset is needed because the throttler bucket persists across
     // tests within a process; an empty DB ensures the login lookups
@@ -68,6 +67,9 @@ describe('abuse: login flood (Wave 0 Round 2)', () => {
   }, 60_000);
 
   afterAll(async () => {
+    // Clear the opt-in so tests that run after this one don't get
+    // surprise-throttled by an inherited env.
+    delete process.env['THROTTLER_ENABLED'];
     await app?.close();
   });
 

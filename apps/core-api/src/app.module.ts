@@ -74,29 +74,27 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
   ? [{ module: MaintenanceModule, global: false }]
   : [];
 
-/**
- * ThrottlerGuard is skipped in NODE_ENV=test unless the caller
- * explicitly opts in via THROTTLER_ENABLED=1. Existing e2e tests
- * hit /auth/login multiple times during setup; the auth bucket
- * (10/min) would block them. The login-flood.e2e test sets
- * THROTTLER_ENABLED=1 to opt in.
- */
-function throttlerEnabled(): boolean {
-  if (process.env['NODE_ENV'] !== 'test') return true;
-  return process.env['THROTTLER_ENABLED'] === '1';
-}
-
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 120 },
-      { name: 'auth', ttl: 60_000, limit: 10 },
-      { name: 'upload', ttl: 60_000, limit: 5 },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'global', ttl: 60_000, limit: 120 },
+        { name: 'auth', ttl: 60_000, limit: 10 },
+        { name: 'upload', ttl: 60_000, limit: 5 },
+      ],
+      // skipIf is evaluated per-request (NOT per module-load), so
+      // existing e2e tests that share a cached AppModule instance
+      // get the bypass when THROTTLER_ENABLED is unset, while the
+      // login-flood.e2e test gets the throttle when it sets
+      // THROTTLER_ENABLED=1 right before its own POSTs.
+      skipIf: () =>
+        process.env['NODE_ENV'] === 'test' &&
+        process.env['THROTTLER_ENABLED'] !== '1',
+    }),
     PrismaModule,
     TenantModule,
     RedisModule,
@@ -122,12 +120,10 @@ function throttlerEnabled(): boolean {
     // ThrottlerGuard wired as a global APP_GUARD — without this, the
     // ThrottlerModule.forRoot config is dead metadata. Wave 0 Round 2
     // (ADR-0014 prerequisite): the synthetic-flood test in
-    // test/login-flood.e2e.test.ts exercises the auth bucket.
-    // Skipped in test environment unless THROTTLER_ENABLED=1 — see
-    // throttlerEnabled() above.
-    ...(throttlerEnabled()
-      ? [{ provide: APP_GUARD, useClass: ThrottlerGuard }]
-      : []),
+    // test/login-flood.e2e.test.ts exercises the auth bucket. The
+    // bypass for non-flood tests is handled by skipIf in the module
+    // config above, not at provider registration.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
