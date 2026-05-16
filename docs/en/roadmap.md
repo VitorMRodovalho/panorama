@@ -1,6 +1,6 @@
 # Roadmap
 
-Target versions and tenant-visible milestones. Living document — last updated 2026-04-18.
+Target versions and tenant-visible milestones. Living document — last updated 2026-05-16.
 
 ## 0.1 — Scaffold (shipped 2026-04-17)
 
@@ -63,15 +63,26 @@ Target versions and tenant-visible milestones. Living document — last updated 
           0.3 (ADR-0009 §"Conflict detection" notes this).
 - [ ] **Step 5** — Snipe-IT API compatibility shim read-only
 
-## 0.3 — Inspections, maintenance, enterprise prep (target Sept 2026)
+## 0.3 — Inspections, maintenance, public-preview readiness (target Sept 2026)
 
 - [~] Configurable checklists (per asset type), photo evidence, EXIF strip
       — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md). Backend
       and web UI feature-complete (steps 2–11). Canary rollout (step 13)
       remains — feature stays dark behind `FEATURE_INSPECTIONS=false`
-      until a pilot tenant validates. See
+      until the public preview opens and a design partner validates. See
       [`docs/en/inspections.md`](./inspections.md) for the operator brief.
-- [ ] Asset maintenances, Snipe-IT-compatible maintenance flow
+- [~] Asset maintenances, Snipe-IT-compatible maintenance flow
+      — see [ADR-0016](../adr/0016-asset-maintenance-flow.md).
+      Feature-complete for Community pending canary; backend + web UI
+      shipped across PRs #132 / #136 / #139 / #140. `FEATURE_MAINTENANCE`
+      ready to flip with first design partner. Enterprise email channel +
+      sister sweeps remain.
+- [~] **Wave 0 — public-preview readiness** (the gate on the hosted URL)
+      — see [`docs/audits/HANDOFF-2026-05-16-wave0-scan.md`](../audits/HANDOFF-2026-05-16-wave0-scan.md)
+      for the round-by-round plan + the 6-agent scan that produced it.
+      ADR-0014 (Public hosted instance), ADR-0018 (Observability), ADR-0019
+      (Worker boundary), ADR-0020 (Self-serve OIDC signup) all landed in
+      Round 0; backend hardening + endpoints + UX work follow.
 - [ ] Mileage + time-based alerts
 - [ ] CSV exports for every list view
 - [ ] Training-expiry gating
@@ -79,13 +90,17 @@ Target versions and tenant-visible milestones. Living document — last updated 
 - [ ] Just-in-time tenant membership based on `allowedEmailDomains` match
       at first OIDC login (gates the enterprise SCIM story)
 
-## 0.4 — Notifications + reports + webhooks (target Oct 2026)
+## 0.4 — Public preview live + notifications + reports (target Oct 2026)
 
+- [ ] Hosted preview URL opens publicly (Wave 0 acceptance closed)
+- [ ] First design partners onboarded via the seeded smoke-tenant pattern
+      — they ARE the canary (per ADR-0014 §A reasoning)
 - [ ] Event bus (NATS JetStream), outbox pattern, delivery retries
 - [ ] Email, Teams, Slack, webhook channels
 - [ ] Saved reports, schedule to email, CSV/XLSX/PDF render
-- [ ] First closed-beta customer live
-- [ ] `panorama-enterprise` private repo spun up; white-label + SOC-2 pack start
+- [ ] Day-60 metrics decision (per [ADR-0014 §3](../adr/0014-public-hosted-instance.md))
+      — go/no-go on paid SKU draft
+- [ ] `panorama-enterprise` private repo decision (gated on day-60 metrics signal)
 
 ## 1.0 GA (target: Q1 2027)
 

@@ -6,9 +6,6 @@ export default defineConfig({
   outDir: '../dist-docs',
   cleanUrls: true,
   lastUpdated: true,
-  // Pre-alpha docs — PT-BR/ES translation stubs intentionally link to
-  // files that will exist later. Tighten once the translations land.
-  ignoreDeadLinks: true,
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
