@@ -17,7 +17,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "chain-verify": "tsx src/scripts/verify-audit-chain.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
