@@ -1,7 +1,8 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { PerTenantThrottlerGuard } from './shared/throttler/per-tenant-throttler.guard.js';
 import { PrismaModule } from './modules/prisma/prisma.module.js';
 import { TenantModule } from './modules/tenant/tenant.module.js';
 import { AssetModule } from './modules/asset/asset.module.js';
@@ -117,13 +118,14 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     // 0.2: PluginHostModule, I18nModule.forRootAsync.
   ],
   providers: [
-    // ThrottlerGuard wired as a global APP_GUARD — without this, the
-    // ThrottlerModule.forRoot config is dead metadata. Wave 0 Round 2
-    // (ADR-0014 prerequisite): the synthetic-flood test in
-    // test/login-flood.e2e.test.ts exercises the auth bucket. The
+    // PerTenantThrottlerGuard wired as a global APP_GUARD — without
+    // this, the ThrottlerModule.forRoot config is dead metadata. The
+    // subclass overrides getTracker(req) to key by `${tenantId}:${ip}`
+    // (authenticated routes) or just `${ip}` (anonymous routes). The
     // bypass for non-flood tests is handled by skipIf in the module
-    // config above, not at provider registration.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // config above, not at provider registration. Wave 0 Round 2: see
+    // test/login-flood.e2e.test.ts.
+    { provide: APP_GUARD, useClass: PerTenantThrottlerGuard },
   ],
 })
 export class AppModule {}
