@@ -464,6 +464,9 @@ export default async function ReservationsPage({
                                   <input
                                     type="text"
                                     name="note"
+                                    aria-label={messages.t(
+                                      'reservation.batch.approve.note_placeholder',
+                                    )}
                                     placeholder={messages.t(
                                       'reservation.batch.approve.note_placeholder',
                                     )}
@@ -500,6 +503,9 @@ export default async function ReservationsPage({
                                     minLength={1}
                                     maxLength={500}
                                     rows={2}
+                                    aria-label={messages.t(
+                                      'reservation.action.reject.note_placeholder',
+                                    )}
                                     placeholder={messages.t(
                                       'reservation.action.reject.note_placeholder',
                                     )}
@@ -534,6 +540,9 @@ export default async function ReservationsPage({
                                 <input
                                   type="text"
                                   name="reason"
+                                  aria-label={messages.t(
+                                    'reservation.batch.cancel.note_placeholder',
+                                  )}
                                   placeholder={messages.t(
                                     'reservation.batch.cancel.note_placeholder',
                                   )}
@@ -578,6 +587,9 @@ export default async function ReservationsPage({
                                 type="text"
                                 name="note"
                                 maxLength={500}
+                                aria-label={messages.t(
+                                  'reservation.action.approve.note_placeholder',
+                                )}
                                 placeholder={messages.t(
                                   'reservation.action.approve.note_placeholder',
                                 )}
@@ -630,6 +642,9 @@ export default async function ReservationsPage({
                                 minLength={1}
                                 maxLength={500}
                                 rows={2}
+                                aria-label={messages.t(
+                                  'reservation.action.reject.note_placeholder',
+                                )}
                                 placeholder={messages.t(
                                   'reservation.action.reject.note_placeholder',
                                 )}
@@ -661,6 +676,9 @@ export default async function ReservationsPage({
                             <input
                               type="number"
                               name="mileage"
+                              aria-label={messages.t(
+                                'reservation.action.checkout.mileage_placeholder',
+                              )}
                               placeholder={messages.t(
                                 'reservation.action.checkout.mileage_placeholder',
                               )}
@@ -671,6 +689,9 @@ export default async function ReservationsPage({
                             <input
                               type="text"
                               name="condition"
+                              aria-label={messages.t(
+                                'reservation.action.checkout.condition_placeholder',
+                              )}
                               placeholder={messages.t(
                                 'reservation.action.checkout.condition_placeholder',
                               )}
@@ -692,6 +713,9 @@ export default async function ReservationsPage({
                             <input
                               type="number"
                               name="mileage"
+                              aria-label={messages.t(
+                                'reservation.action.checkin.mileage_placeholder',
+                              )}
                               placeholder={messages.t(
                                 'reservation.action.checkin.mileage_placeholder',
                               )}
@@ -702,6 +726,9 @@ export default async function ReservationsPage({
                             <input
                               type="text"
                               name="condition"
+                              aria-label={messages.t(
+                                'reservation.action.checkin.condition_placeholder',
+                              )}
                               placeholder={messages.t(
                                 'reservation.action.checkin.condition_placeholder',
                               )}
@@ -714,6 +741,9 @@ export default async function ReservationsPage({
                             <input
                               type="text"
                               name="damageNote"
+                              aria-label={messages.t(
+                                'reservation.action.checkin.damage_note_placeholder',
+                              )}
                               placeholder={messages.t(
                                 'reservation.action.checkin.damage_note_placeholder',
                               )}

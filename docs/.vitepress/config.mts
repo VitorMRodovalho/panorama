@@ -6,8 +6,13 @@ export default defineConfig({
   outDir: '../dist-docs',
   cleanUrls: true,
   lastUpdated: true,
-  // Pre-alpha docs — PT-BR/ES translation stubs intentionally link to
-  // files that will exist later. Tighten once the translations land.
+  // TODO (Wave 0 follow-up): tighten dead-link checking. 19 pre-existing
+  // dead links exist across audits/HANDOFF-2026-04-23, en/self-hosting,
+  // en/licensing, en/index, adr/0012 + 0013, pt-br/es READMEs (which
+  // legitimately link to repo-root README.<lang>.md), and runbooks/
+  // secrets-inventory's forward-ref to secrets-rotation.md (Round 6).
+  // Removing this flag surfaced them all but the surface is larger than
+  // Round 1 scope — defer the cleanup to a focused follow-up.
   ignoreDeadLinks: true,
 
   head: [

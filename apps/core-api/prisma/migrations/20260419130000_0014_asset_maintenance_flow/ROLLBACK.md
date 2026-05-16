@@ -1,10 +1,38 @@
 # Rollback — migration 0014 (asset maintenance flow, ADR-0016)
 
-Destructive — drops two tables, one enum, one trigger function +
-trigger, four+ added columns. Photos in S3 are NOT deleted by this
+**Destructive** — drops two tables, one enum, one trigger function +
+trigger, seven added columns. Photos in S3 are NOT deleted by this
 rollback (audit-safe; manual `mc rm --recursive` if needed).
 
-Run in this order; each block is idempotent.
+## Pre-flight (operator MUST verify BEFORE running SQL)
+
+The running app will throw on missing tables if the rollback SQL
+runs while `FEATURE_MAINTENANCE=true`. Execute pre-flight in this
+order:
+
+1. **Flip the feature flag** — set `FEATURE_MAINTENANCE=false`:
+   ```
+   fly secrets set --app panorama-staging FEATURE_MAINTENANCE=false
+   ```
+   (Or set in `.env` for self-host.)
+
+2. **Restart core-api** — `fly deploy --strategy rolling` for the
+   hosted instance, or `pm2 restart core-api` for self-host. Verify
+   `/health` returns OK after all instances cycle.
+
+3. **Confirm no in-flight maintenance writes** — the SQL block
+   below acquires brief ACCESS EXCLUSIVE locks; check
+   `pg_stat_activity` for any pending `INSERT INTO asset_maintenances`
+   queries and let them complete first.
+
+4. **Communicate the rollback window** to any operators who care
+   about active maintenance tickets — they survive the rollback as
+   audit-event history but the UI/admin surface disappears.
+
+## SQL revert (privileged role)
+
+Run from a psql session against `$DATABASE_PRIVILEGED_URL`. Each
+block is idempotent (uses `IF EXISTS`).
 
 ```sql
 BEGIN;
@@ -58,7 +86,7 @@ DELETE FROM "_prisma_migrations"
 COMMIT;
 ```
 
-## Notes
+## Data-loss warnings
 
 - **Photos in S3** are not removed by the rollback. After confirming
   no business need, run:
@@ -95,10 +123,21 @@ COMMIT;
   only the discriminator is gone. Manual ops process can re-handle
   via reservation cancel / mileage-in.
 
-- **FEATURE_MAINTENANCE** flag should be set to `false` BEFORE running
-  the rollback (otherwise the running app will throw on missing
-  tables until restart). Rollback ordering:
-  1. Set `FEATURE_MAINTENANCE=false` in env.
-  2. Restart core-api.
-  3. Run the rollback SQL.
-  4. Verify `\d asset_maintenances` returns "does not exist".
+## When you would actually revert
+
+Three scenarios that justify rolling back 0014:
+
+1. Maintenance feature causing a critical bug in a tenant that needs
+   immediate isolation (and `FEATURE_MAINTENANCE=false` per-tenant
+   is not enough)
+2. Schema-level data corruption that requires re-applying with a
+   patched migration
+3. ADR-0016 superseded by a follow-up ADR that requires schema reset
+
+## Re-apply pattern
+
+After rollback, re-apply via standard `prisma migrate deploy`. The
+migration is idempotent; no special handling required. The system-
+user demotion step (§5 above) means a re-apply re-promotes the
+demoted users — they retain their `userId` so audit-event references
+stay intact.

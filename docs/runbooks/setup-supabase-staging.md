@@ -169,7 +169,14 @@ Outside Supabase, create the Fly app pointing at the URLs from step 1:
 ```bash
 flyctl apps create panorama-staging --org personal
 flyctl secrets set --app panorama-staging \
-  DATABASE_URL="postgres://postgres:...@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1&sslmode=require" \
+  DATABASE_URL="postgres://postgres:...@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10&sslmode=require" \
+  # connection_limit=10 — per Prisma client × 2 clients (app + privileged
+  # per ADR-0015) × Fly instances ≤ 100 to leave headroom under Supabase
+  # Pro pooler's 200 client-conn cap. Public-preview budget assumes ≤2
+  # Fly instances + 50 active tenants × 5 concurrent users × ~0.04 active
+  # fraction = ~10 in-flight × 2 clients = 20 client conns per instance.
+  # If you ever scale beyond 4 instances, lower this or request the
+  # Supabase pooler cap bump first.
   DATABASE_PRIVILEGED_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
   DATABASE_DIRECT_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
   REDIS_URL="rediss://default:...@<upstash-endpoint>:6379" \

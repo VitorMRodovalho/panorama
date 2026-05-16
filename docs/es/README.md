@@ -4,15 +4,20 @@ Esta carpeta contiene las versiones en español de la documentación de producto
 y arquitectura. El README del proyecto trilingüe está en
 [`../../README.es.md`](../../README.es.md).
 
-Documentos principales (las traducciones se añaden a medida que cada documento
-se estabiliza en inglés — los ADRs permanecen en inglés por regla, para evitar
-desincronización entre versiones):
+## Estado de las traducciones
 
-- [Arquitectura](./arquitectura.md) — en preparación (será traducción de `../en/architecture.md`)
-- [Matriz de funcionalidades](./matriz-de-funcionalidades.md) — en preparación
-- [Roadmap](./roadmap.md) — en preparación
-- [Licenciamiento](./licenciamiento.md) — en preparación
+La referencia canónica es la versión en inglés en [`../en/`](../en/). La
+traducción al español se añade a medida que cada documento se
+estabiliza en inglés. Los ADRs permanecen en inglés por regla, para
+evitar desincronización entre versiones.
 
-Mientras tanto, la referencia canónica es la versión en inglés en
-[`../en/`](../en/). Las contribuciones de traducción son muy bienvenidas —
-abrir un PR con `[docs][es]` en el título.
+**En preparación** (todavía no traducidos — siga la versión en inglés):
+
+- Arquitectura → [`../en/architecture.md`](../en/architecture.md)
+- Matriz de funcionalidades → [`../en/feature-matrix.md`](../en/feature-matrix.md)
+- Roadmap → [`../en/roadmap.md`](../en/roadmap.md)
+- Licenciamiento → [`../en/licensing.md`](../en/licensing.md)
+- Self-hosting → [`../en/self-hosting.md`](../en/self-hosting.md)
+
+Las contribuciones de traducción son muy bienvenidas — abrir un PR con
+`[docs][es]` en el título.
