@@ -90,6 +90,35 @@ secret in their respective consoles. Our procedure:
    if the IdP supports it; check provider docs)
 6. **Rollback**: re-set the prior secret in fly + IdP
 
+## Cloudflare Turnstile (self-serve signup CAPTCHA)
+
+Per ADR-0020 §5. Only consumed when `FEATURE_SELF_SERVE_SIGNUP=true`;
+self-hosts that keep signup off can leave this unset.
+
+| Variable | Where | Sensitivity | Notes |
+|---|---|---|---|
+| `TURNSTILE_SECRET` | env, Fly secrets | **Secret** — server-side siteverify token | Paired with a public site key embedded in the homepage form |
+| `TURNSTILE_SITE_VERIFY_URL` | env (optional) | Non-secret (URL) | Defaults to Cloudflare's prod endpoint; overridden in e2e tests via a stub server |
+| `SIGNUP_FAILURE_LATENCY_FLOOR_MS` | env (optional) | Non-secret (integer) | Defaults to `600`. ADR-0020 §5 timing floor for the constant-latency 400 envelope; only override below `600` in tests |
+
+**Rotation procedure:**
+
+1. Cloudflare dashboard → Turnstile → site → rotate secret key
+2. `fly secrets set --app panorama-hosted TURNSTILE_SECRET=...`
+3. Rolling deploy
+4. In the Cloudflare dashboard, revoke the prior secret after the
+   rolling deploy completes (Cloudflare keeps the prior key valid
+   briefly during rotation; check dashboard for the exact window)
+5. **Validation**: submit a real signup from a fresh browser; the
+   server-side siteverify call must succeed
+6. **Rollback**: re-set the prior secret in fly + Cloudflare
+
+**Boot guard**: `SignupConfigService` throws
+`TURNSTILE_SECRET must be set when FEATURE_SELF_SERVE_SIGNUP=true`
+if the flag is on and the secret is missing. The flag is gated in
+`app.module.ts`; self-hosters who leave it off (the default) won't
+hit this guard.
+
 ## S3-compatible object storage (Cloudflare R2 in staging)
 
 | Variable | Where | Sensitivity | Notes |
@@ -199,7 +228,7 @@ quickly identify what's safe to log.
 - `APP_BASE_URL`, `APP_VERSION`, `CORE_API_URL`, `WEB_ORIGIN`
 - `NODE_ENV`, `PORT`
 - `ALLOW_STAGING_SEED`, `FEATURE_INSPECTIONS`, `FEATURE_MAINTENANCE`,
-  `FEATURE_SELF_SERVE_SIGNUP` (future per ADR-0020)
+  `FEATURE_SELF_SERVE_SIGNUP` (per ADR-0020 — gates Turnstile + signup endpoints)
 - `OIDC_GOOGLE_HOSTED_DOMAIN`, `OIDC_GOOGLE_ISSUER`,
   `OIDC_GOOGLE_TRUSTED_HD_DOMAINS`, `OIDC_MICROSOFT_TENANT`,
   `OIDC_ALLOW_INSECURE_ISSUER`
@@ -245,10 +274,10 @@ bucket behavior assuming a correctly-configured value.
 
 ## Total count
 
-- **Secrets requiring rotation procedure:** 14 (Database ×5,
-  Session ×1, OIDC ×2, S3 ×2, SMTP ×2, Redis ×1, SEED ×1)
-- **Future secrets pending ADR implementation:** 2 (Sentry DSN,
-  CAPTCHA secret)
+- **Secrets requiring rotation procedure:** 15 (Database ×5,
+  Session ×1, OIDC ×2, Turnstile ×1, S3 ×2, SMTP ×2, Redis ×1,
+  SEED ×1)
+- **Future secrets pending ADR implementation:** 1 (Sentry DSN)
 - **Non-secret env vars:** ~19 (listed above, including the new
   `TRUST_PROXY_HOPS` load-bearing config)
 

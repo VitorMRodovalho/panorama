@@ -9,6 +9,7 @@ import {
 import { Prisma, type TenantMembership, type Tenant } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PanoramaAuditAction } from '../audit/audit-actions.js';
 import { PatMembershipCache } from '../auth/pat-membership-cache.service.js';
 
 /**
@@ -42,12 +43,33 @@ export const MEMBERSHIP_STATUSES = ['active', 'invited', 'suspended'] as const;
 export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 
 export interface CreateTenantWithOwnerParams {
+  /**
+   * Optional explicit Tenant.id. Self-serve signup (ADR-0020 §2a)
+   * passes a freshly-minted UUID here AND as `slug` so the URL slug
+   * is opaque + unguessable. Admin / seed surfaces leave this
+   * undefined and let Prisma default to a fresh UUID.
+   */
+  id?: string;
   slug: string;
   name: string;
   displayName: string;
   locale?: string;
   timezone?: string;
   allowedEmailDomains?: string[];
+  /**
+   * ADR-0020 §3 — true ONLY for self-serve OIDC signup. The PR 2
+   * verify endpoint flips this back to false on token consume. Admin
+   * + seed surfaces default to false (verified at creation).
+   */
+  pendingVerification?: boolean;
+  /**
+   * Extra fields merged into the audit metadata for the
+   * `panorama.tenant.created` row. Signup passes `{ provider,
+   * ctaSource }` so the audit row carries the funnel-signal source
+   * (R5) and the IdP that minted the identity. Admin surfaces leave
+   * this undefined and the audit row carries only the default keys.
+   */
+  metadataExtra?: Record<string, unknown>;
   ownerUserId: string;
   /** Who triggered the creation — populated in the audit row. */
   actorUserId?: string | null;
@@ -114,7 +136,9 @@ export class TenantAdminService {
           timezone: params.timezone ?? 'UTC',
           allowedEmailDomains: params.allowedEmailDomains ?? [],
           systemActorUserId: systemUser.id,
+          pendingVerification: params.pendingVerification ?? false,
         };
+        if (params.id !== undefined) tenantData.id = params.id;
         const tenant = await tx.tenant.create({ data: tenantData });
         await tx.tenantMembership.create({
           data: {
@@ -136,15 +160,25 @@ export class TenantAdminService {
         });
 
         await this.audit.recordWithin(tx, {
-          action: 'panorama.tenant.created',
+          action: PanoramaAuditAction.TenantCreated,
           resourceType: 'tenant',
           resourceId: tenant.id,
           tenantId: tenant.id,
           actorUserId: params.actorUserId ?? params.ownerUserId,
+          // metadataExtra is spread FIRST so canonical keys (slug /
+          // ownerUserId / ownerMembershipId / pendingVerification)
+          // cannot be clobbered by a misshapen caller. The signup
+          // controller is the only metadataExtra source today
+          // ({ provider, ctaSource, oidcPathTaken, viaHdOverride }),
+          // and none of those collide — but this ordering is the
+          // defensive default rather than an emergent property of
+          // the current call sites.
           metadata: {
+            ...(params.metadataExtra ?? {}),
             slug: tenant.slug,
             ownerUserId: params.ownerUserId,
             ownerMembershipId: ownerMembership.id,
+            pendingVerification: params.pendingVerification ?? false,
           },
         });
 

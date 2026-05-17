@@ -53,6 +53,24 @@ export interface OidcStartParams {
   provider: 'google' | 'microsoft';
   redirectTo: string;
   tenantHint?: string;
+  /**
+   * Override the IdP-registered redirect_uri for this flow. The login
+   * flow uses the default (`${baseUrl}/auth/oidc/${provider}/callback`);
+   * the self-serve signup flow (ADR-0020) overrides to
+   * `${baseUrl}/auth/signup/${provider}/callback` so the IdP redirects
+   * land on a distinct controller. Self-hosters must register both
+   * redirect_uris with their OIDC provider when enabling
+   * `FEATURE_SELF_SERVE_SIGNUP`.
+   */
+  redirectUri?: string;
+  /**
+   * Override the `state` parameter sent to the IdP. The login flow
+   * uses an in-process `randomState()` paired with the OAuth-state
+   * cookie; the signup flow (ADR-0020 §1a) passes the Redis-backed
+   * `SignupStateStore` key directly so the callback can `GETDEL` it
+   * one-time. Length / encoding is the caller's responsibility.
+   */
+  state?: string;
 }
 
 export interface OidcStartResult {
@@ -186,7 +204,7 @@ export class OidcService {
     } = await loadOidc();
 
     const config = await this.config(params.provider);
-    const state = randomState();
+    const state = params.state ?? randomState();
     const nonce = randomNonce();
     const codeVerifier = randomPKCECodeVerifier();
     const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
@@ -195,7 +213,7 @@ export class OidcService {
     const scopes = ['openid', 'email', 'profile', ...(providerCfg.extraScopes ?? [])];
 
     const url = buildAuthorizationUrl(config, {
-      redirect_uri: this.redirectUri(params.provider),
+      redirect_uri: params.redirectUri ?? this.redirectUri(params.provider),
       scope: scopes.join(' '),
       state,
       nonce,

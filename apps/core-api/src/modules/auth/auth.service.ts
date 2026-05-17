@@ -383,6 +383,150 @@ export class AuthService {
   }
 
   /**
+   * Resolve an OIDC user-info into a Panorama user without requiring
+   * any active membership (the signup pathway — ADR-0020 §1).
+   *
+   * Reuses the same `evaluateOidcGate` + `find-or-create` resolution
+   * as `loginWithOidc` so the email-verification + workspace-hd
+   * contracts stay identical across login and signup. Differs in:
+   *
+   *   - On gate refusal, records `AuthOidcRefused` (same as login)
+   *     and throws. The signup controller catches and rewrites to
+   *     the timing-padded 400 envelope.
+   *   - On success, does NOT emit `AuthOidcLogin` — signup uses the
+   *     pair `(TenantSignupInitiated, TenantCreated)` as its audit
+   *     trail instead.
+   *   - Returns `{ userId, displayName, pathTaken }`. The caller
+   *     uses these to drive `createTenantWithOwner` (per §1 + §2:
+   *     one tenant per successful signup).
+   *
+   * The closure-internal find-or-create is structurally identical
+   * to `loginWithOidc`'s resolution — duplicated rather than
+   * factored because the audit emission shape diverges (login emits
+   * a success row; signup does not).
+   */
+  async resolveOidcUserForSignup(
+    provider: 'google' | 'microsoft',
+    userInfo: OidcUserInfo,
+    context: { ipAddress?: string | null; userAgent?: string | null } = {},
+  ): Promise<{
+    userId: string;
+    displayName: string;
+    pathTaken: 'existing_identity' | 'email_link' | 'new_user';
+    viaHdOverride: boolean;
+  }> {
+    const email = userInfo.email.toLowerCase().trim();
+    const gate = this.evaluateOidcGate(provider, userInfo, email);
+    if (!gate.ok) {
+      await this.recordOidcRefusal(provider, userInfo, email, gate.reason, context);
+      this.log.warn(
+        {
+          provider,
+          reason: gate.reason,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          emailDomain: emailDomain(email),
+          hd: userInfo.hd,
+        },
+        'signup_oidc_gate_refused',
+      );
+      throw new UnauthorizedException(gate.reason);
+    }
+
+    const allowEmailLink = !gate.viaHdOverride;
+    const displayName =
+      userInfo.displayName?.trim() ||
+      [userInfo.firstName, userInfo.lastName].filter(Boolean).join(' ').trim() ||
+      email;
+
+    const resolution = await this.prisma.runAsSuperAdmin(
+      async (tx) => {
+        const existing = await tx.authIdentity.findUnique({
+          where: { provider_subject: { provider, subject: userInfo.subject } },
+        });
+        if (existing) {
+          await tx.authIdentity.update({
+            where: { id: existing.id },
+            data: { lastUsedAt: new Date(), emailAtLink: email },
+          });
+          return {
+            kind: 'ok' as const,
+            userId: existing.userId,
+            pathTaken: 'existing_identity' as const,
+          };
+        }
+
+        const byEmail = await tx.user.findUnique({ where: { email } });
+        if (byEmail) {
+          if (!allowEmailLink) {
+            return { kind: 'refused' as const };
+          }
+          await tx.authIdentity.create({
+            data: {
+              userId: byEmail.id,
+              provider,
+              subject: userInfo.subject,
+              emailAtLink: email,
+              lastUsedAt: new Date(),
+            },
+          });
+          return {
+            kind: 'ok' as const,
+            userId: byEmail.id,
+            pathTaken: 'email_link' as const,
+          };
+        }
+
+        const created = await tx.user.create({
+          data: {
+            email,
+            displayName,
+            firstName: userInfo.firstName ?? null,
+            lastName: userInfo.lastName ?? null,
+          },
+        });
+        await tx.authIdentity.create({
+          data: {
+            userId: created.id,
+            provider,
+            subject: userInfo.subject,
+            emailAtLink: email,
+            lastUsedAt: new Date(),
+          },
+        });
+        return {
+          kind: 'ok' as const,
+          userId: created.id,
+          pathTaken: 'new_user' as const,
+        };
+      },
+      { reason: 'signup find-or-create oidc identity' },
+    );
+
+    if (resolution.kind === 'refused') {
+      const reason = 'oidc_account_link_requires_verified_email' as const;
+      await this.recordOidcRefusal(provider, userInfo, email, reason, context);
+      this.log.warn(
+        {
+          provider,
+          reason,
+          subjectHash: hashSubject(provider, userInfo.subject),
+          emailDomain: emailDomain(email),
+          hd: userInfo.hd,
+        },
+        'signup_oidc_refused_account_link',
+      );
+      throw new UnauthorizedException(reason);
+    }
+
+    return {
+      userId: resolution.userId,
+      displayName,
+      pathTaken: resolution.pathTaken,
+      viaHdOverride: gate.viaHdOverride,
+    };
+  }
+
+  /**
    * Build a PanoramaSession from a userId. Fails if the user has no
    * active memberships — auth without a tenant isn't useful in Panorama
    * and prevents later code paths from handling a null tenantId.
@@ -392,8 +536,21 @@ export class AuthService {
       async (tx) => {
         const user = await tx.user.findUnique({ where: { id: userId } });
         if (!user) return null;
+        // ADR-0020 §3: tenants in `pendingVerification` are invisible
+        // to the session layer until PR 2's verify endpoint flips the
+        // bit. Without this filter, a user who self-served signup
+        // could open the standard /auth/oidc login flow and receive
+        // a working session on the unverified tenant — bypassing the
+        // §3 "first login is blocked until the verification token is
+        // consumed" contract from the parallel login surface. The
+        // filter applies to BOTH login and signup callers because
+        // `buildSessionForUser` is shared.
         const memberships = await tx.tenantMembership.findMany({
-          where: { userId, status: 'active' },
+          where: {
+            userId,
+            status: 'active',
+            tenant: { pendingVerification: false },
+          },
           include: { tenant: true },
           orderBy: { createdAt: 'asc' },
         });
@@ -404,9 +561,11 @@ export class AuthService {
 
     if (!result || !result.user) throw new UnauthorizedException('user_not_found');
     if (result.memberships.length === 0) {
-      // An account with no active tenant is effectively a pending invitation
-      // state. We refuse the session; the web layer should surface a
-      // "waiting for an admin to invite you" view.
+      // An account with no active VERIFIED tenant is effectively a
+      // pending invitation state (or a pre-verify signup). We refuse
+      // the session; the web layer surfaces a "verify your email" or
+      // "waiting for an admin to invite you" view depending on whether
+      // pending tenants exist for this user.
       throw new UnauthorizedException('no_tenant_memberships');
     }
 
