@@ -362,6 +362,19 @@ export const PanoramaAuditAction = {
    * chars of the recipient email).
    */
   TenantExportEmailDispatchFailed: 'panorama.tenant.export_email_dispatch_failed',
+  /**
+   * Tenant-scoped settings change (Round 4 PR5 / #48). Per-tenant event.
+   * Fired by `TenantAdminService.updateSettings` when an Owner flips a
+   * tenant-level toggle from the admin settings UI. Today only covers
+   * `autoOpenMaintenanceFromInspection`; future toggle additions extend
+   * the same audit action with new metadata fields.
+   *
+   * Metadata: `field` (canonical setting name, e.g.
+   * `autoOpenMaintenanceFromInspection`), `previousValue`,
+   * `newValue`. Operators correlating "why did the maintenance auto-
+   * opener stop firing today" use this row.
+   */
+  TenantSettingsUpdated: 'panorama.tenant.settings_updated',
 } as const;
 
 export type PanoramaAuditAction =

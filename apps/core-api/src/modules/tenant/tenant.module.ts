@@ -1,6 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
-import { TenantAdminController, TenantOwnershipController } from './tenant-admin.controller.js';
+import {
+  TenantAdminController,
+  TenantOwnershipController,
+  TenantSettingsController,
+} from './tenant-admin.controller.js';
 import { TenantAdminService } from './tenant-admin.service.js';
 
 /**
@@ -16,7 +20,7 @@ import { TenantAdminService } from './tenant-admin.service.js';
  */
 @Module({
   imports: [forwardRef(() => AuthModule)],
-  controllers: [TenantAdminController, TenantOwnershipController],
+  controllers: [TenantAdminController, TenantOwnershipController, TenantSettingsController],
   providers: [TenantAdminService],
   exports: [TenantAdminService],
 })
