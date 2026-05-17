@@ -1,7 +1,7 @@
 {
   "_doc": "Allowlist gate for prisma.runAsSuperAdmin call sites. Closes #58 (RLS-CI). Each entry is a file path + the count of CURRENTLY-JUSTIFIED runAsSuperAdmin calls in it + a one-line rationale. The CI script `scripts/check-runAsSuperAdmin-allowlist.ts` compares the actual count against the budget and fails if a file exceeds its budget. Lower the budget when a site migrates to runInTenant; raise only with reviewer sign-off documenting why a tenant-scoped op needs the privileged path.",
   "_review_policy": "Any PR that raises a budget MUST be reviewed by security-reviewer. Lowering a budget is encouraged.",
-  "_last_audit": "2026-05-17 — auth.service.ts bumped 6 → 7 for ADR-0020 §1 resolveOidcUserForSignup (signup find-or-create runs pre-tenant; security-reviewer approved across PR #212's three review passes).",
+  "_last_audit": "2026-05-17 — email-verification.service.ts added budget 2 for ADR-0020 §3 mint/consume; auth.service.ts at 7 from ADR-0020 §1 resolveOidcUserForSignup.",
   "files": {
     "apps/core-api/src/modules/audit/audit.service.ts": {
       "budget": 1,
@@ -10,6 +10,10 @@
     "apps/core-api/src/modules/auth/auth.service.ts": {
       "budget": 7,
       "rationale": "Login + signup flows: identity lookup + find-or-create run before tenant context exists (the credential / OIDC subject IS what selects the tenant). Six pre-existing login sites + one ADR-0020 §1 resolveOidcUserForSignup added in PR #212 (security-reviewer approved across three review passes on the diff)."
+    },
+    "apps/core-api/src/modules/email-verification/email-verification.service.ts": {
+      "budget": 2,
+      "rationale": "ADR-0020 §3 mint+consume paths. Both run from a logged-out browser (no session, no tenant context): mintAndDispatch is invoked by the signup callback before the session would exist; consume is invoked by POST /auth/verify which the user reaches via the email-link page also pre-session. panorama_app has no GRANT on email_verifications, so super-admin is the only viable role."
     },
     "apps/core-api/src/modules/auth/discovery.service.ts": {
       "budget": 1,

@@ -128,6 +128,7 @@ model Tenant {
   inspectionPhotos        InspectionPhoto[]
   assetMaintenances       AssetMaintenance[]
   maintenancePhotos       MaintenancePhoto[]
+  emailVerifications      EmailVerification[]
 
   @@map("tenants")
 }
@@ -171,8 +172,43 @@ model User {
   maintenancesAssigned       AssetMaintenance[]    @relation("MaintenanceAssignee")
   maintenancesCompleted      AssetMaintenance[]    @relation("MaintenanceCompletedBy")
   maintenancePhotosUploaded  MaintenancePhoto[]    @relation("MaintenancePhotoUploader")
+  emailVerifications         EmailVerification[]
 
   @@map("users")
+}
+
+/// ADR-0020 §3 — one-time-use email-verification tokens minted at
+/// self-serve signup. Consumed via POST /auth/verify; flips
+/// `tenants.pendingVerification` to false in the same transaction.
+/// Per-email rate cap (3/24h, see EmailVerificationService) is
+/// enforced via Redis, not a DB-side partial unique, because the
+/// cap counts DISPATCH ATTEMPTS (including already-consumed tokens)
+/// rather than open rows.
+///
+/// All access goes through `prisma.runAsSuperAdmin` because the
+/// verify endpoint runs from a logged-out browser (no tenant
+/// context) — panorama_app does NOT receive GRANTs on this table,
+/// and there is no RLS policy because there is no need for tenant-
+/// scoped read.
+model EmailVerification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId   String    @db.Uuid
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Lowercased + trimmed email from the OIDC id_token. Per ADR §3,
+  /// NEVER a user-supplied form field — the IdP-asserted email is
+  /// the only legitimate verification target (phishing-by-proxy
+  /// defense).
+  emailLower String
+  /// sha256 hex of the plaintext token. Plaintext never persisted.
+  tokenHash  String    @unique
+  expiresAt  DateTime  @db.Timestamptz(6)
+  consumedAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([tenantId])
+  @@map("email_verifications")
 }
 
 enum UserStatus {

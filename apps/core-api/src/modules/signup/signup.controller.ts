@@ -18,6 +18,7 @@ import { getRequestSession } from '../auth/session.middleware.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PanoramaAuditAction } from '../audit/audit-actions.js';
 import { TenantAdminService } from '../tenant/tenant-admin.service.js';
+import { EmailVerificationService } from '../email-verification/email-verification.service.js';
 import { SignupConfigService } from './signup.config.js';
 import {
   SignupStateStore,
@@ -95,6 +96,7 @@ export class SignupController {
     private readonly stateStore: SignupStateStore,
     private readonly turnstile: TurnstileVerifier,
     private readonly limits: SignupRateLimits,
+    private readonly verification: EmailVerificationService,
     private readonly audit: AuditService,
   ) {}
 
@@ -323,6 +325,18 @@ export class SignupController {
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
 
+    // §3 per-email cap — fail-closed BEFORE creating the tenant so
+    // a throttled email doesn't leave behind an orphan pending
+    // tenant. Bucket: 3 verification dispatches per email per 24h.
+    // Trip emits TenantVerificationThrottled. `checkEmailCap`
+    // normalizes the email internally so we pass the IdP-asserted
+    // form here.
+    const capDecision = await this.verification.checkEmailCap(userInfo.email);
+    if (!capDecision.allowed) {
+      await this.verification.recordThrottled(userInfo.email);
+      return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
+    }
+
     // §2 + §2a + §3 — one tenant per successful signup. Tenant.id +
     // Tenant.slug = freshly-minted UUID (opaque). Tenant ships with
     // `pendingVerification=true`; PR 2's verify endpoint flips it.
@@ -347,6 +361,23 @@ export class SignupController {
     } catch (err) {
       this.log.error({ err: String(err) }, 'signup_tenant_create_failed');
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
+    }
+
+    // §3 mint verification token + dispatch email. SMTP failure logs
+    // loud but does NOT roll back the tenant — the operator-driven
+    // resend (PR 2b) is the fallback for stuck users; everyone else
+    // sees the email. The cap check above already reserved one
+    // dispatch slot for this email; that slot stays consumed
+    // regardless of SMTP outcome.
+    try {
+      await this.verification.mintAndDispatch({
+        userId: resolved.userId,
+        tenantId,
+        tenantDisplayName: displayName,
+        email: userInfo.email,
+      });
+    } catch (err) {
+      this.log.error({ err: String(err), tenantId }, 'signup_mint_dispatch_failed');
     }
 
     // §3 — DO NOT establish a session here. The tenant carries
@@ -534,13 +565,28 @@ function hashUserAgent(userAgent: string | null): string | null {
   return createHash('sha256').update(userAgent).digest('hex');
 }
 
+/** Cap the OIDC `name` claim at a sensible length + strip control
+ * characters before persisting it as `Tenant.displayName`. Without
+ * this, a malicious IdP could ship a 10kB name with embedded ANSI /
+ * NUL bytes; the value would round-trip through Tenant rows,
+ * audit-event metadata (becoming part of the chain digest pre-image),
+ * and email subject lines (exceeding RFC 5322 line-length limits).
+ * 200 chars matches typical UI render budgets; control chars are
+ * stripped via a class match on the C0 + C1 control ranges + DEL.
+ */
+function sanitizeDisplayName(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/[\x00-\x1f\x7f-\x9f]/g, '').trim().slice(0, 200);
+}
+
 function friendlyDisplayName(resolvedName: string, email: string): string {
   // OIDC `name` claim is usually the user's full name and works as
   // both Tenant.name and Tenant.displayName for a one-person org. If
   // the IdP didn't send a name (rare), fall back to the local-part
   // of the email so the tenant has SOMETHING readable in the UI.
-  const trimmed = resolvedName.trim();
-  if (trimmed.length > 0 && !trimmed.includes('@')) return trimmed;
+  const safe = sanitizeDisplayName(resolvedName);
+  if (safe.length > 0 && !safe.includes('@')) return safe;
   const at = email.indexOf('@');
-  return at > 0 ? email.slice(0, at) : email;
+  const fallback = at > 0 ? email.slice(0, at) : email;
+  return sanitizeDisplayName(fallback);
 }
