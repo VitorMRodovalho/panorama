@@ -22,7 +22,7 @@ import {
   isPrivateIPv6,
   loadObjectStorageConfig,
 } from './object-storage.config.js';
-import { INSPECTION_PHOTO_KEY_REGEX } from './object-storage.keys.js';
+import { validateObjectKeyShape } from './object-storage.keys.js';
 
 /**
  * ObjectStorageService (ADR-0012 §3).
@@ -160,7 +160,7 @@ export class ObjectStorageService implements OnModuleInit {
    * $executeRawUnsafe) would fail here before S3 sees the call.
    */
   assertKeyForTenant(key: string, tenantId: string): void {
-    if (!INSPECTION_PHOTO_KEY_REGEX.test(key)) {
+    if (!validateObjectKeyShape(key)) {
       throw new Error('object_storage_key_invalid_shape');
     }
     const prefix = `tenants/${tenantId}/`;
@@ -211,7 +211,27 @@ export class ObjectStorageService implements OnModuleInit {
    */
   async getSignedUrl(
     key: string,
-    opts: { tenantId: string; expiresIn?: number; thumbnail?: boolean },
+    opts: {
+      tenantId: string;
+      expiresIn?: number;
+      thumbnail?: boolean;
+      /**
+       * Override the `Content-Type` S3 returns on GET. Defaults to
+       * `image/jpeg` (inspection photo legacy). Tenant-data export
+       * keys MUST pass `application/gzip` (security-reviewer PR 4
+       * BLOCKER 1: hardcoding JPEG meant `application/gzip` bodies
+       * were served with JPEG headers + `attachment; filename="photo.
+       * jpg"`, breaking the download UX + tripping inline malware
+       * scanners that parsed the gzip as a malformed JPEG).
+       */
+      responseContentType?: string;
+      /**
+       * Override the `Content-Disposition` S3 returns. Defaults to
+       * the photo-shaped attachment. Pass an export-specific
+       * filename for tenant-data downloads.
+       */
+      responseContentDisposition?: string;
+    },
   ): Promise<string> {
     this.assertKeyForTenant(key, opts.tenantId);
     const ttl = opts.expiresIn
@@ -222,8 +242,9 @@ export class ObjectStorageService implements OnModuleInit {
         new GetObjectCommand({
           Bucket: this.cfg.bucketPhotos,
           Key: key,
-          ResponseContentDisposition: 'attachment; filename="photo.jpg"',
-          ResponseContentType: 'image/jpeg',
+          ResponseContentDisposition:
+            opts.responseContentDisposition ?? 'attachment; filename="photo.jpg"',
+          ResponseContentType: opts.responseContentType ?? 'image/jpeg',
         }),
         { expiresIn: ttl },
       );

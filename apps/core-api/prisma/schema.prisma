@@ -145,6 +145,7 @@ model Tenant {
   maintenancePhotos       MaintenancePhoto[]
   emailVerifications      EmailVerification[]
   deletionTokens          TenantDeletionToken[]
+  exports                 TenantExport[]
 
   @@map("tenants")
 }
@@ -191,8 +192,57 @@ model User {
   emailVerifications         EmailVerification[]
   tenantsAsDeletionRequester Tenant[]              @relation("TenantDeletionRequester")
   tenantDeletionTokens       TenantDeletionToken[]
+  tenantExportsRequested     TenantExport[]
 
   @@map("users")
+}
+
+/// ADR-0020 §8 — tenant-data export job ledger. One row per request
+/// from the `POST /tenants/:tenantId/export` endpoint (the
+/// session-gated `GET /tenants/:tenantId/exports/:jobId/download`
+/// minted by the PR-4 amendment is the read surface; the write
+/// surface that creates rows is POST). The worker
+/// uploads a gzipped JSON document of every tenant-scoped row to S3,
+/// mints a presigned URL ≤24h, and emails it to the requesting
+/// Owner. The audit trail (`panorama.tenant.exported`) records the
+/// object key + TTL + recipient hash but NEVER the signed URL
+/// itself (which embeds AWS credentials in query parameters).
+///
+/// `status` is a free-text enum (not a Postgres ENUM type) so a
+/// future status (`expired`, `purged`, ...) is an additive
+/// code-only change. Today's values:
+///   - `queued`     — controller enqueued; worker idle
+///   - `processing` — worker picked up; serialising + uploading
+///   - `completed`  — uploaded; objectKey + expiresAt + completedAt
+///                     populated
+///   - `failed`     — worker errored; failedReason populated
+///
+/// All access via runAsSuperAdmin — panorama_app has no GRANT.
+model TenantExport {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @db.Uuid
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedByUserId String?   @db.Uuid
+  requestedBy       User?     @relation(fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  status            String    @default("queued")
+  /// S3 object key (e.g. `tenants/{uuid}/exports/{job-uuid}.json.gz`).
+  /// Populated on completion. Never the signed URL.
+  objectKey         String?
+  objectSizeBytes   BigInt?
+  /// When the presigned URL embedded in the completion email
+  /// expires. Independent of the actual object's S3 lifecycle —
+  /// the object may live longer than the URL (operator can re-mint
+  /// from the objectKey + the same audit-trail attestation).
+  expiresAt         DateTime? @db.Timestamptz(6)
+  completedAt       DateTime? @db.Timestamptz(6)
+  /// Short tag from the worker error (e.g. `Error`, `TimeoutError`,
+  /// `S3UploadError`). Never the full stack trace.
+  failedReason      String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([status])
+  @@map("tenant_exports")
 }
 
 /// ADR-0020 §7 — one-time-use deletion-confirmation tokens minted by
