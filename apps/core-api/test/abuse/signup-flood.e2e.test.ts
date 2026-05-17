@@ -312,7 +312,7 @@ async function buildSignupTestApp(opts: { trustProxy: 0 | 1 }): Promise<SignupTe
   const app = moduleRef.createNestApplication<NestExpressApplication>({
     logger: ['error', 'warn'],
   });
-  (app as NestExpressApplication).set('trust proxy', opts.trustProxy);
+  app.set('trust proxy', opts.trustProxy);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -181,13 +181,22 @@ export class SignupController {
 
   @Get(':provider/callback')
   async callback(
-    @Query('code') code: string | undefined,
-    @Query('state') stateKey: string | undefined,
-    @Query('error') idpError: string | undefined,
+    @Query('code') rawCode: unknown,
+    @Query('state') rawState: unknown,
+    @Query('error') rawIdpError: unknown,
     @Req() req: Request,
     @Res({ passthrough: false }) res: Response,
   ): Promise<void> {
     const startedAt = Date.now();
+    // Express parses duplicate query params into arrays; the @Query
+    // decorator's `string | undefined` type is a TS convenience but
+    // does NOT enforce shape at runtime. CodeQL flagged the raw
+    // values reaching `.slice(...)` as type-confusion. Narrow to
+    // strings at the boundary so every downstream consumer sees the
+    // shape it expects.
+    const code = typeof rawCode === 'string' ? rawCode : null;
+    const stateKey = typeof rawState === 'string' ? rawState : null;
+    const idpError = typeof rawIdpError === 'string' ? rawIdpError : null;
 
     // §4 buckets 1 + 2 FIRST (same rationale as in start()): cap
     // any pre-state-consume audit-emit flood. The callback handler
@@ -212,7 +221,7 @@ export class SignupController {
 
     // §1a — signup callback is logged-out-only.
     if (getRequestSession(req)) {
-      await this.recordStateMismatch('session_attached', stateKey ?? null, null);
+      await this.recordStateMismatch('session_attached', stateKey, null);
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
 
@@ -222,11 +231,11 @@ export class SignupController {
     // vice versa).
     const consumed = await this.stateStore.consume(stateKey ?? '');
     if (consumed.kind === 'missing') {
-      await this.recordStateMismatch('missing', stateKey ?? null, null);
+      await this.recordStateMismatch('missing', stateKey, null);
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
     if (consumed.kind === 'wrong_purpose') {
-      await this.recordStateMismatch('wrong_purpose', stateKey ?? null, null);
+      await this.recordStateMismatch('wrong_purpose', stateKey, null);
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
     const record = consumed.record;
@@ -237,7 +246,7 @@ export class SignupController {
     if (typeof idpError === 'string' && idpError.length > 0) {
       const safeCode = idpError.slice(0, 64).replace(/[^a-z_-]/gi, '') || 'unknown';
       this.log.warn({ provider, idp_error: safeCode }, 'signup_oidc_idp_error');
-      await this.recordStateMismatch('idp_error', stateKey ?? null, null, safeCode);
+      await this.recordStateMismatch('idp_error', stateKey, null, safeCode);
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
     if (!code || !stateKey) {
