@@ -246,8 +246,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm license:check
 
-  ensure-community-complete:
-    name: Community flows work without Enterprise
+  no-enterprise-imports:
+    name: No enterprise imports in community sources
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -257,10 +257,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Asserts Enterprise packages are not referenced in Community sources.
-      # See scripts/ensure-community-complete.ts (Wave 2d.D / #69 / replaces
-      # the prior `grep ... && exit 1 || exit 0` which masked grep's exit 2).
-      - run: pnpm ensure:community-complete
+      # Static gate for ADR-0002 (oss/commercial split). Round 5 PR1 / #49
+      # renamed `ensure:community-complete` → `check:no-enterprise-imports`
+      # (the prior name claimed a functional assertion the script could not
+      # deliver) and extended the scan to {.js,.mjs,.cjs,.yml,.yaml} +
+      # repo-root package.json + .github/ tree. The companion functional
+      # gate that asserts the community flows work end-to-end is now
+      # `apps/core-api/test/community-smoke.e2e.test.ts` (runs inside the
+      # `Unit tests` job above).
+      - run: pnpm check:no-enterprise-imports
 
   container-scan:
     name: Filesystem SCA (Trivy)
