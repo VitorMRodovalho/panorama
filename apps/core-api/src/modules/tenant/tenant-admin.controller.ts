@@ -125,3 +125,85 @@ export class TenantOwnershipController {
     return { tenantId, activeOwners, isSpof: activeOwners <= 1 };
   }
 }
+
+/**
+ * Tenant settings (Round 4 PR5 / #48). Owner-only for writes; admin
+ * (owner / fleet_admin) reads are permitted because the settings UI
+ * surfaces the current state inside the admin shell and a fleet_admin
+ * may want to read-only inspect before recommending the Owner flip.
+ *
+ * Lives on a dedicated controller path so the Owner-only authz check
+ * doesn't accidentally cover read-eligible endpoints in the same
+ * controller (mirrors the OwnershipController pattern above).
+ */
+const UpdateSettingsSchema = z
+  .object({
+    autoOpenMaintenanceFromInspection: z.boolean().optional(),
+  })
+  .refine((v) => v.autoOpenMaintenanceFromInspection !== undefined, {
+    message: 'at_least_one_field_required',
+  });
+
+const ADMIN_READ_ROLES = new Set(['owner', 'fleet_admin']);
+
+@Controller('tenants/:tenantId/settings')
+export class TenantSettingsController {
+  constructor(private readonly tenants: TenantAdminService) {}
+
+  @Get()
+  async get(
+    @Param('tenantId') tenantId: string,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const session = this.requireAdminRead(req, tenantId);
+    void session;
+    return this.tenants.getSettings(tenantId);
+  }
+
+  @Patch()
+  @HttpCode(200)
+  async update(
+    @Param('tenantId') tenantId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<unknown> {
+    const session = this.requireOwner(req, tenantId);
+    const parsed = UpdateSettingsSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('invalid_body');
+
+    return this.tenants.updateSettings({
+      tenantId,
+      ...(parsed.data.autoOpenMaintenanceFromInspection !== undefined
+        ? {
+            autoOpenMaintenanceFromInspection:
+              parsed.data.autoOpenMaintenanceFromInspection,
+          }
+        : {}),
+      actorUserId: session.userId,
+    });
+  }
+
+  private requireAdminRead(req: Request, tenantId: string): PanoramaSession {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException('authentication_required');
+    if (session.currentTenantId !== tenantId) {
+      throw new UnauthorizedException('tenant_mismatch');
+    }
+    if (!ADMIN_READ_ROLES.has(session.currentRole)) {
+      throw new UnauthorizedException('admin_role_required');
+    }
+    return session;
+  }
+
+  private requireOwner(req: Request, tenantId: string): PanoramaSession {
+    const session = getRequestSession(req);
+    if (!session) throw new UnauthorizedException('authentication_required');
+    if (session.currentTenantId !== tenantId) {
+      throw new UnauthorizedException('tenant_mismatch');
+    }
+    if (session.currentRole !== 'owner') {
+      throw new UnauthorizedException('owner_role_required');
+    }
+    return session;
+  }
+}

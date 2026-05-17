@@ -83,6 +83,22 @@ export interface UpdateMembershipParams {
   actorUserId: string;
 }
 
+export interface UpdateTenantSettingsParams {
+  tenantId: string;
+  /** When provided, flips the per-tenant gate that lets a
+      NEEDS_MAINTENANCE inspection auto-open a maintenance ticket
+      (Round 4 PR5 / #48 fold-in). When undefined, the field is left
+      unchanged so future settings can be added to the same payload
+      without forcing every caller to specify every field. */
+  autoOpenMaintenanceFromInspection?: boolean;
+  actorUserId: string;
+}
+
+export interface TenantSettings {
+  tenantId: string;
+  autoOpenMaintenanceFromInspection: boolean;
+}
+
 export interface NominateOwnerParams {
   tenantSlug: string;
   email: string;
@@ -385,6 +401,72 @@ export class TenantAdminService {
   // ---------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------
+  // Settings (Round 4 PR5 — autoOpenMaintenanceFromInspection toggle)
+  // ---------------------------------------------------------------------
+
+  async getSettings(tenantId: string): Promise<TenantSettings> {
+    return this.prisma.runInTenant(tenantId, async (tx) => {
+      const tenant = await tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, autoOpenMaintenanceFromInspection: true },
+      });
+      if (!tenant) throw new NotFoundException('tenant_not_found');
+      return {
+        tenantId: tenant.id,
+        autoOpenMaintenanceFromInspection: tenant.autoOpenMaintenanceFromInspection,
+      };
+    });
+  }
+
+  async updateSettings(params: UpdateTenantSettingsParams): Promise<TenantSettings> {
+    const nextValue = params.autoOpenMaintenanceFromInspection;
+    if (nextValue === undefined) {
+      throw new BadRequestException('nothing_to_update');
+    }
+    return this.prisma.runInTenant(params.tenantId, async (tx) => {
+      const existing = await tx.tenant.findUnique({
+        where: { id: params.tenantId },
+        select: { id: true, autoOpenMaintenanceFromInspection: true },
+      });
+      if (!existing) throw new NotFoundException('tenant_not_found');
+
+      // No-op when the value matches — skip the audit row so the
+      // operator timeline reads cleanly. updateMembership uses the
+      // same shape (audit only on actual transition).
+      if (existing.autoOpenMaintenanceFromInspection === nextValue) {
+        return {
+          tenantId: existing.id,
+          autoOpenMaintenanceFromInspection: existing.autoOpenMaintenanceFromInspection,
+        };
+      }
+
+      const updated = await tx.tenant.update({
+        where: { id: params.tenantId },
+        data: { autoOpenMaintenanceFromInspection: nextValue },
+        select: { id: true, autoOpenMaintenanceFromInspection: true },
+      });
+
+      await this.audit.recordWithin(tx, {
+        action: PanoramaAuditAction.TenantSettingsUpdated,
+        resourceType: 'tenant',
+        resourceId: params.tenantId,
+        tenantId: params.tenantId,
+        actorUserId: params.actorUserId,
+        metadata: {
+          field: 'autoOpenMaintenanceFromInspection',
+          previousValue: existing.autoOpenMaintenanceFromInspection,
+          newValue: nextValue,
+        },
+      });
+
+      return {
+        tenantId: updated.id,
+        autoOpenMaintenanceFromInspection: updated.autoOpenMaintenanceFromInspection,
+      };
+    });
+  }
 
   async countActiveOwners(tenantId: string): Promise<number> {
     return this.prisma.runInTenant(

@@ -60,6 +60,7 @@ export async function AppShell({ children }: { children: ReactNode }): Promise<R
           label: messages.t('nav.admin_inspection_templates'),
         },
         { href: '/admin/blackouts', label: messages.t('nav.admin_blackouts') },
+        { href: '/admin/settings', label: messages.t('nav.admin_settings') },
       ]
     : [];
 
