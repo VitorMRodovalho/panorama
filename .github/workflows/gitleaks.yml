@@ -14,7 +14,7 @@ jobs:
     name: Scan for committed secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Full history so we catch secrets added in older commits too
           fetch-depth: 0
