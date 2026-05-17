@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 
 interface InspectionRow {
   id: string;
@@ -90,14 +91,14 @@ export default async function InspectionsPage({
 
   return (
     <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>{messages.t('nav.inspections')}</h1>
-          <div>
+        <PageHeader
+          title={messages.t('nav.inspections')}
+          actions={
             <Link href="/inspections/new" className="panorama-button">
               {messages.t('inspection.start')}
             </Link>
-          </div>
-        </div>
+          }
+        />
 
         {sp.error ? (
           <div className="panorama-banner-warning">

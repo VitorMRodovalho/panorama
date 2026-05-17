@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import { createTemplateAction } from '../actions';
 
 interface CategorySlim {
@@ -66,12 +67,14 @@ export default async function NewTemplatePage({
 
   return (
     <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>{messages.t('inspection.template.create')}</h1>
-          <Link href="/admin/inspection-templates" className="panorama-button secondary">
-            {messages.t('inspection.template.new.back')}
-          </Link>
-        </div>
+        <PageHeader
+          title={messages.t('inspection.template.create')}
+          actions={
+            <Link href="/admin/inspection-templates" className="panorama-button secondary">
+              {messages.t('inspection.template.new.back')}
+            </Link>
+          }
+        />
 
         {sp.error ? (
           <div className="panorama-banner-warning">

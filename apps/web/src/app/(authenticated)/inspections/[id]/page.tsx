@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import {
   cancelInspectionAction,
   completeInspectionAction,
@@ -124,12 +125,14 @@ export default async function InspectionDetailPage({
 
   return (
     <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>{inspection.templateSnapshot.name}</h1>
-          <Link href="/inspections" className="panorama-button secondary">
-            ← {messages.t('nav.inspections')}
-          </Link>
-        </div>
+        <PageHeader
+          title={inspection.templateSnapshot.name}
+          actions={
+            <Link href="/inspections" className="panorama-button secondary">
+              ← {messages.t('nav.inspections')}
+            </Link>
+          }
+        />
 
         <div className="panorama-card" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>

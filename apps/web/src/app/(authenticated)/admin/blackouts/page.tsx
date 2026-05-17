@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import { createBlackoutAction, deleteBlackoutAction } from './actions';
 
 interface BlackoutView {
@@ -107,22 +108,17 @@ export default async function BlackoutsAdminPage({
 
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <h1 style={{ margin: 0 }}>{messages.t('blackout.list.title')}</h1>
-        <Link
-          href="/reservations/calendar"
-          className="panorama-button secondary"
-        >
-          ← {messages.t('nav.calendar')}
-        </Link>
-      </div>
+      <PageHeader
+        title={messages.t('blackout.list.title')}
+        actions={
+          <Link
+            href="/reservations/calendar"
+            className="panorama-button secondary"
+          >
+            ← {messages.t('nav.calendar')}
+          </Link>
+        }
+      />
 
       {sp.error ? (
         <div className="panorama-banner-warning">{messages.t(sp.error)}</div>

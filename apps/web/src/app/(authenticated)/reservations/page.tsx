@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import {
   approveBasketAction,
   approveReservationAction,
@@ -138,6 +139,14 @@ export default async function ReservationsPage({
 
   return (
     <>
+        <PageHeader
+          title={
+            <>
+              {messages.t('nav.reservations')}{' '}
+              <span className="panorama-pill">{items.length}</span>
+            </>
+          }
+        />
         {sp.error ? (
           <div className="panorama-banner-warning">{messages.t(sp.error)}</div>
         ) : null}
@@ -264,9 +273,11 @@ export default async function ReservationsPage({
           <div
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}
           >
+            {/* Count pill lives in the PageHeader h1 above — h2 here
+                stays as a section-scope label (filters + scope tabs)
+                without re-printing the count (ux-critic dedup feedback). */}
             <h2 style={{ margin: 0 }}>
-              {messages.t('reservation.list.title')}{' '}
-              <span className="panorama-pill">{items.length}</span>
+              {messages.t('reservation.list.title')}
             </h2>
             <nav style={{ display: 'flex', gap: 10, fontSize: 13 }}>
               <a

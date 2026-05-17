@@ -7,21 +7,18 @@ import { AppNav, type AppNavItem } from './app-nav';
 
 /**
  * AppShell — single header + nav + content frame for all authenticated
- * routes (#78 PILOT-11). Lives at `apps/web/src/app/(authenticated)/layout.tsx`
- * via Next.js route group; pages don't render their own header anymore.
+ * routes (#78 PILOT-11; Round 4 PR2 refactor for nav-order + overflow
+ * menus + inline-style cleanup).
  *
- * Pre-#78 each authenticated page rolled its own `<header>` + nav strip
- * with subtly different shapes — the assets page had no nav at all,
- * the calendar page had no header at all. This component centralises:
- *
- *   - Panorama branding + current-tenant pill
- *   - Tenant switcher (visible only when the user has >1 membership)
- *   - User name + role + sign-out
- *   - Primary nav row (path-aware highlights via the client `<AppNav>`)
- *
- * Out of pilot-minimal scope per the issue: responsive sidebar collapse,
- * notification bell, keyboard shortcuts, search. Those are queued in
- * Wave 1 #45.
+ * Round 4 PR2 changes vs the #78 original:
+ *   - Nav order: Calendar → Reservations → Inspections → Assets →
+ *     Maintenance (ops-verb order; closes persona C13 + ux-critic C7a).
+ *   - Admin items collapsed under "Admin ▾" overflow inside the
+ *     primary nav (closes persona C13).
+ *   - Tenant switcher + sign-out collapsed into a user overflow menu
+ *     in the header (frees ~120px; closes ux-critic C7c+d).
+ *   - All inline styles lifted into `globals.css` under `.panorama-*`
+ *     rules (closes ux-critic C7b).
  */
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
@@ -38,91 +35,104 @@ export async function AppShell({ children }: { children: ReactNode }): Promise<R
   );
   const messages = loadMessages(currentMembership?.tenantLocale);
 
-  // Pilot-minimal nav per issue #78. Maintenance gated on feature flag;
-  // admin links visible only to owner/fleet_admin. Calendar is its own
-  // entry so coordinators don't have to drill into Reservations to find
-  // it (persona-fleet-ops feedback in earlier reviews).
-  //
-  // All pre-pilot must-fix admin pages now exist: #75 Invitations,
-  // #76 Blackouts, #74-adjacent Inspection templates. Adding a new
-  // admin page = append a row here.
-  const navItems: AppNavItem[] = [
-    { href: '/assets', label: messages.t('nav.assets') },
-    { href: '/reservations', label: messages.t('nav.reservations') },
+  // Ops-verb primary nav (Round 4 PR2): Calendar comes first so a
+  // coordinator landing on the app can see the schedule before
+  // drilling into any specific row. Maintenance is gated on its
+  // feature flag.
+  const primaryNav: AppNavItem[] = [
     { href: '/reservations/calendar', label: messages.t('nav.calendar') },
+    { href: '/reservations', label: messages.t('nav.reservations') },
     { href: '/inspections', label: messages.t('nav.inspections') },
+    { href: '/assets', label: messages.t('nav.assets') },
     ...(featureMaintenance
       ? [{ href: '/maintenance', label: messages.t('nav.maintenance') }]
       : []),
-    ...(isAdmin
-      ? [
-          {
-            href: '/admin/invitations',
-            label: messages.t('nav.admin_invitations'),
-          },
-          {
-            href: '/admin/inspection-templates',
-            label: messages.t('nav.admin_inspection_templates'),
-          },
-          {
-            href: '/admin/blackouts',
-            label: messages.t('nav.admin_blackouts'),
-          },
-        ]
-      : []),
   ];
+
+  // Admin overflow — surfaced as an "Admin ▾" menu inside the primary
+  // nav for owner/fleet_admin only. Adding a new admin page = append
+  // a row here.
+  const adminNav: AppNavItem[] = isAdmin
+    ? [
+        { href: '/admin/invitations', label: messages.t('nav.admin_invitations') },
+        {
+          href: '/admin/inspection-templates',
+          label: messages.t('nav.admin_inspection_templates'),
+        },
+        { href: '/admin/blackouts', label: messages.t('nav.admin_blackouts') },
+      ]
+    : [];
+
+  const showSwitcher = session.memberships.length > 1;
 
   return (
     <>
       <header className="panorama-header">
-        <div>
+        <div className="panorama-header-brand">
           <strong>Panorama</strong>
-          <span className="panorama-pill">
+          {/* Tenant pill uses a distinct treatment vs the role pill in
+              the user menu — a maintenance manager working two yards
+              needs to glance at the header and KNOW which fleet's data
+              they're touching (mis-tenant approvals are how 45-minute
+              concurrency horrors compound). */}
+          <span className="panorama-tenant-pill">
             {currentMembership?.tenantDisplayName ??
               messages.t('shell.unknown_tenant')}
           </span>
-          {session.memberships.length > 1 ? (
-            <form
-              action={switchTenantAction}
-              style={{ display: 'inline-block', marginLeft: 12 }}
-            >
-              <select
-                className="panorama-select"
-                name="tenantId"
-                defaultValue={session.currentTenantId}
-                aria-label={messages.t('shell.switch_tenant_label')}
-              >
-                {session.memberships.map((m) => (
-                  <option key={m.tenantId} value={m.tenantId}>
-                    {m.tenantDisplayName} · {m.role}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="panorama-button secondary"
-                style={{ marginLeft: 6 }}
-              >
-                {messages.t('shell.switch_tenant_button')}
-              </button>
-            </form>
-          ) : null}
         </div>
-        <div>
-          <span style={{ marginRight: 12 }}>
-            {session.displayName}{' '}
+        <details className="panorama-user-menu">
+          {/* No aria-label: the visible displayName + role IS the
+              accessible name (ux-critic feedback — generic "User menu"
+              hid the user identity from screen readers). The chevron
+              affordance is supplied by the CSS ::after rule so a 5am
+              dispatch shed still gets the "this opens" cue without sun
+              glare hiding an 11px symbol. */}
+          <summary>
+            <span>{session.displayName}</span>
             <span className="panorama-pill">{session.currentRole}</span>
-          </span>
-          <form action={logoutAction} style={{ display: 'inline' }}>
-            <button type="submit" className="panorama-button secondary">
-              {messages.t('shell.sign_out')}
-            </button>
-          </form>
-        </div>
+          </summary>
+          <div className="panorama-user-menu-content">
+            {showSwitcher ? (
+              <div className="panorama-user-menu-section">
+                <span className="panorama-user-menu-label">
+                  {messages.t('shell.switch_tenant_label')}
+                </span>
+                <form action={switchTenantAction}>
+                  <select
+                    className="panorama-select"
+                    name="tenantId"
+                    defaultValue={session.currentTenantId}
+                    aria-label={messages.t('shell.switch_tenant_label')}
+                  >
+                    {session.memberships.map((m) => (
+                      <option key={m.tenantId} value={m.tenantId}>
+                        {m.tenantDisplayName} · {m.role}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="submit" className="panorama-button secondary">
+                    {messages.t('shell.switch_tenant_button')}
+                  </button>
+                </form>
+              </div>
+            ) : null}
+            <div className="panorama-user-menu-section">
+              <form action={logoutAction}>
+                <button type="submit" className="panorama-button secondary">
+                  {messages.t('shell.sign_out')}
+                </button>
+              </form>
+            </div>
+          </div>
+        </details>
       </header>
 
       <main className="panorama-content">
-        <AppNav items={navItems} />
+        <AppNav
+          items={primaryNav}
+          adminItems={adminNav}
+          adminLabel={messages.t('nav.admin_menu_label')}
+        />
         {children}
       </main>
     </>

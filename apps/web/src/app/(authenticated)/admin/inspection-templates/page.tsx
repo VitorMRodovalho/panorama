@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import { archiveTemplateAction } from './actions';
 
 interface TemplateRow {
@@ -56,17 +57,19 @@ export default async function AdminTemplatesPage({
 
   return (
     <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>{messages.t('nav.admin_inspection_templates')}</h1>
-          <div>
-            <Link href="/inspections" className="panorama-button secondary" style={{ marginRight: 8 }}>
-              ← {messages.t('nav.inspections')}
-            </Link>
-            <Link href="/admin/inspection-templates/new" className="panorama-button">
-              {messages.t('inspection.template.create')}
-            </Link>
-          </div>
-        </div>
+        <PageHeader
+          title={messages.t('nav.admin_inspection_templates')}
+          actions={
+            <>
+              <Link href="/inspections" className="panorama-button secondary">
+                ← {messages.t('nav.inspections')}
+              </Link>
+              <Link href="/admin/inspection-templates/new" className="panorama-button">
+                {messages.t('inspection.template.create')}
+              </Link>
+            </>
+          }
+        />
 
         {sp.error ? (
           <div className="panorama-banner-warning">
