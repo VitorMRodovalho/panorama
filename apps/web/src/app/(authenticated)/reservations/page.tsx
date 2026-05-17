@@ -103,8 +103,27 @@ export default async function ReservationsPage({
   );
   const messages = loadMessages(currentMembership?.tenantLocale);
 
-  const scopeParam = sp.scope === 'tenant' && isAdmin ? 'tenant' : 'mine';
-  const statusParam = (sp.status ?? 'open').toString();
+  // Round 4 PR4 (persona-fleet-ops blocker 1+3) — approvals queue
+  // discoverability. When an admin lands on /reservations from a fresh
+  // nav (NO query params at all), default to scope=tenant + status=
+  // pending so the daily-driver "what needs my decision" view is one
+  // click (Reservations in nav) instead of two (Reservations → Pending).
+  //
+  // Narrowed predicate (tech-lead concern PR4-rev1): "no params at all"
+  // — actions redirect back with banner params like ?error=, ?approved=,
+  // ?basket= etc. If we flipped on those, an admin who'd manually
+  // selected scope=mine would lose that state on any action return.
+  const isFreshNavigation = Object.keys(sp).length === 0;
+  const adminApprovalsLanding = isAdmin && isFreshNavigation;
+  const scopeParam =
+    sp.scope === 'tenant' && isAdmin
+      ? 'tenant'
+      : adminApprovalsLanding
+        ? 'tenant'
+        : 'mine';
+  const statusParam = (
+    sp.status ?? (adminApprovalsLanding ? 'pending' : 'open')
+  ).toString();
 
   const [resList, assetList] = await Promise.all([
     apiGet<ReservationListResponse>(

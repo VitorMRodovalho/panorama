@@ -40,6 +40,21 @@ function fmtErrorKey(raw: string): string {
   if (e.includes('basket_batch_disabled')) return 'reservation.error.basket_batch_disabled';
   if (e.includes('admin_role_required')) return 'reservation.error.admin_role_required';
   if (e.includes('note_required')) return 'reservation.error.note_required';
+  // Round 4 PR4 — stale-row banner. The advisory-lock + SERIALIZABLE
+  // path in ReservationService.decideWithin throws not_pending:{status}
+  // when a peer admin already decided the row. Map each terminal status
+  // to a specific key so the banner can say "already approved" /
+  // "already rejected" instead of a generic error.
+  //
+  // ApprovalStatus enum: PENDING_APPROVAL | AUTO_APPROVED | APPROVED |
+  // REJECTED. CANCELLED is a LIFECYCLE state, not an approval one — it
+  // surfaces via the separate `already_cancelled` exception thrown by
+  // decideWithin when the row's lifecycleStatus is CANCELLED. We map
+  // both to the stale-row banner family.
+  if (e.startsWith('not_pending:approved')) return 'reservation.error.stale.already_approved';
+  if (e.startsWith('not_pending:auto_approved')) return 'reservation.error.stale.already_approved';
+  if (e.startsWith('not_pending:rejected')) return 'reservation.error.stale.already_rejected';
+  if (e.includes('already_cancelled')) return 'reservation.error.stale.already_cancelled';
   return 'reservation.error.generic';
 }
 
