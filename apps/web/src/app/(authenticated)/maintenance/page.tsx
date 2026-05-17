@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import { openMaintenanceAction } from './actions';
 
 interface TicketRow {
@@ -97,7 +98,7 @@ export default async function MaintenancePage({
 
   return (
     <>
-        <h1 style={{ margin: '0 0 16px' }}>{messages.t('maintenance.list.title')}</h1>
+        <PageHeader title={messages.t('maintenance.list.title')} />
 
         {sp.error ? (
           <div className="panorama-banner-warning">{messages.t(sp.error)}</div>

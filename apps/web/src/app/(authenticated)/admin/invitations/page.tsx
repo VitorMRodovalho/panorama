@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import {
   resendInvitationAction,
   revokeInvitationAction,
@@ -89,16 +90,7 @@ export default async function InvitationsAdminPage({
 
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <h1 style={{ margin: 0 }}>{messages.t('invitation.list.title')}</h1>
-      </div>
+      <PageHeader title={messages.t('invitation.list.title')} />
 
       {sp.error ? (
         <div className="panorama-banner-warning">{messages.t(sp.error)}</div>

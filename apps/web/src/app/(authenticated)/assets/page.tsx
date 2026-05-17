@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 
 const ADMIN_ROLES = new Set(['owner', 'fleet_admin']);
 
@@ -49,6 +50,14 @@ export default async function AssetsPage(): Promise<ReactNode> {
 
   return (
     <>
+      <PageHeader
+        title={
+          <>
+            {messages.t('nav.assets')}{' '}
+            <span className="panorama-pill">{items.length}</span>
+          </>
+        }
+      />
       {showOwnerBanner ? (
           <div className="panorama-banner-warning">
             <strong>{messages.t('asset.spof_banner.title')}</strong>{' '}
@@ -56,10 +65,6 @@ export default async function AssetsPage(): Promise<ReactNode> {
           </div>
         ) : null}
         <div className="panorama-card">
-          <h2 style={{ margin: '0 0 16px' }}>
-            {messages.t('nav.assets')}{' '}
-            <span className="panorama-pill">{items.length}</span>
-          </h2>
           {!assetsRes.ok ? (
             <p className="panorama-error">
               {messages.t('asset.list.failed', { status: assetsRes.status })}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages, type SupportedLocale } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 
 interface ReservationView {
   id: string;
@@ -106,61 +107,63 @@ export default async function ReservationCalendarPage({
 
   return (
     <>
-
-      <div className="panorama-card">
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-            flexWrap: 'wrap',
-            gap: 8,
-          }}
-        >
-          <h2 style={{ margin: 0 }}>
+      <PageHeader
+        title={
+          <>
             {messages.t('calendar.title', { days })}{' '}
             <span className="panorama-pill">
               {messages.t('calendar.asset_count', { count: assetsToShow.length })}
             </span>
-          </h2>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* #76 PILOT-05: deep-link from calendar to the blackout admin
-                page so coordinators don't have to know the URL. Admin-only;
-                the page itself re-checks the role + redirects. */}
-            {isAdmin ? (
-              <Link href="/admin/blackouts" className="panorama-button secondary">
-                {messages.t('calendar.add_blackout')}
-              </Link>
-            ) : null}
-          <nav style={{ display: 'flex', gap: 10, fontSize: 13 }}>
+          </>
+        }
+        actions={
+          isAdmin ? (
+            // #76 PILOT-05: deep-link from calendar to the blackout admin
+            // page so coordinators don't have to know the URL. Admin-only;
+            // the page itself re-checks the role + redirects.
+            <Link href="/admin/blackouts" className="panorama-button secondary">
+              {messages.t('calendar.add_blackout')}
+            </Link>
+          ) : null
+        }
+      />
+
+      <div className="panorama-card">
+        <nav
+          style={{
+            display: 'flex',
+            gap: 10,
+            fontSize: 13,
+            justifyContent: 'flex-end',
+            flexWrap: 'wrap',
+            marginBottom: 12,
+          }}
+        >
+          <a
+            href={`/reservations/calendar?scope=mine&days=${days}`}
+            style={{ fontWeight: requestedScope === 'mine' ? 600 : 400 }}
+          >
+            {messages.t('calendar.scope.mine')}
+          </a>
+          {isAdmin ? (
             <a
-              href={`/reservations/calendar?scope=mine&days=${days}`}
-              style={{ fontWeight: requestedScope === 'mine' ? 600 : 400 }}
+              href={`/reservations/calendar?scope=tenant&days=${days}`}
+              style={{ fontWeight: requestedScope === 'tenant' ? 600 : 400 }}
             >
-              {messages.t('calendar.scope.mine')}
+              {messages.t('calendar.scope.tenant')}
             </a>
-            {isAdmin ? (
-              <a
-                href={`/reservations/calendar?scope=tenant&days=${days}`}
-                style={{ fontWeight: requestedScope === 'tenant' ? 600 : 400 }}
-              >
-                {messages.t('calendar.scope.tenant')}
-              </a>
-            ) : null}
-            <span>·</span>
-            {[7, 14, 30].map((d) => (
-              <a
-                key={d}
-                href={`/reservations/calendar?scope=${requestedScope}&days=${d}`}
-                style={{ fontWeight: days === d ? 600 : 400 }}
-              >
-                {messages.t('calendar.days_label', { days: d })}
-              </a>
-            ))}
-          </nav>
-          </div>
-        </div>
+          ) : null}
+          <span>·</span>
+          {[7, 14, 30].map((d) => (
+            <a
+              key={d}
+              href={`/reservations/calendar?scope=${requestedScope}&days=${d}`}
+              style={{ fontWeight: days === d ? 600 : 400 }}
+            >
+              {messages.t('calendar.days_label', { days: d })}
+            </a>
+          ))}
+        </nav>
 
         <CalendarLegend t={messages.t} />
 

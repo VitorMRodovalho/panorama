@@ -40,6 +40,94 @@ a {
   padding: 16px 24px;
   border-bottom: 1px solid var(--pan-border);
   background: var(--pan-surface);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.panorama-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Tenant pill — distinct emphasis vs the role pill so a multi-tenant
+   user can glance-check "which fleet's data am I looking at" before
+   acting (persona-fleet-ops). Treated like a button-shaped chip with
+   accent fill instead of muted background. */
+.panorama-tenant-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  background: rgba(63, 182, 154, 0.12);
+  border: 1px solid var(--pan-accent);
+  color: var(--pan-text);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* User overflow menu (`<details>` widget). Holds tenant switcher +
+   sign-out. Native widget = keyboard accessible + zero client JS. */
+.panorama-user-menu {
+  position: relative;
+}
+.panorama-user-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid var(--pan-border);
+  border-radius: 6px;
+  background: var(--pan-bg);
+  color: var(--pan-text);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.panorama-user-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.panorama-user-menu > summary::after {
+  content: '▾';
+  /* Bigger than a typical chevron — drivers in 5am sun glare need to
+     see this is a menu trigger without squinting (persona-fleet-ops
+     "where's sign out" concern). */
+  font-size: 14px;
+  color: var(--pan-text);
+  margin-left: 2px;
+}
+.panorama-user-menu[open] > summary::after {
+  content: '▴';
+}
+.panorama-user-menu-content {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 240px;
+  background: var(--pan-surface);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+.panorama-user-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.panorama-user-menu-section + .panorama-user-menu-section {
+  border-top: 1px solid var(--pan-border);
+  padding-top: 10px;
+}
+.panorama-user-menu-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pan-muted);
 }
 
 .panorama-content {
@@ -48,6 +136,163 @@ a {
   max-width: 1100px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* Primary nav strip — was inline-styled inside app-nav.tsx.
+   Centralised here so layout shifts go through one place. */
+.panorama-nav {
+  margin-bottom: 16px;
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.panorama-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.panorama-nav-link {
+  color: var(--pan-accent);
+  text-decoration: none;
+}
+.panorama-nav-link[aria-current='page'] {
+  font-weight: 600;
+}
+.panorama-nav-sep {
+  color: var(--pan-muted);
+}
+/* Admin overflow nav menu (`<details>` widget inside the primary nav). */
+.panorama-nav-admin {
+  position: relative;
+}
+.panorama-nav-admin > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 14px;
+  color: var(--pan-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.panorama-nav-admin > summary::-webkit-details-marker {
+  display: none;
+}
+.panorama-nav-admin > summary::after {
+  content: '▾';
+  font-size: 10px;
+  color: var(--pan-muted);
+}
+.panorama-nav-admin[open] > summary::after {
+  content: '▴';
+}
+.panorama-nav-admin-content {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  background: var(--pan-surface);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+}
+.panorama-nav-admin-content > a {
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--pan-text);
+  font-size: 13px;
+}
+.panorama-nav-admin-content > a:hover,
+.panorama-nav-admin-content > a:focus-visible {
+  background: var(--pan-bg);
+}
+.panorama-nav-admin-content > a[aria-current='page'] {
+  font-weight: 600;
+  color: var(--pan-accent);
+}
+
+/* Mobile breakpoint (persona-fleet-ops Round 4 PR2 ask). Below
+   720px: stack the header rows, push the user-menu under the brand
+   instead of wrap-and-collide, give primary nav horizontal scroll so
+   five items + Admin overflow don't wrap unpredictably across phone
+   widths. Threshold picked to match the existing form-grid breakpoint
+   so both surfaces flip together. */
+@media (max-width: 720px) {
+  .panorama-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .panorama-header-brand {
+    justify-content: space-between;
+  }
+  .panorama-user-menu {
+    align-self: stretch;
+  }
+  .panorama-user-menu > summary {
+    justify-content: space-between;
+  }
+  .panorama-user-menu-content {
+    /* Drop the absolute positioning on phones — content cards under the
+       trigger so the menu can't drift off the right edge or float
+       behind page content. */
+    position: static;
+    right: auto;
+    top: auto;
+    box-shadow: none;
+    margin-top: 8px;
+  }
+  .panorama-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .panorama-nav-admin-content {
+    /* Same reasoning as user-menu-content: avoid right-edge clipping on
+       narrow viewports. */
+    left: auto;
+    right: 0;
+  }
+}
+
+/* Page-header component — h1 + optional description + actions. */
+.panorama-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin: 0 0 20px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.panorama-page-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.panorama-page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+.panorama-page-description {
+  margin: 0;
+  color: var(--pan-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.panorama-page-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .panorama-card {

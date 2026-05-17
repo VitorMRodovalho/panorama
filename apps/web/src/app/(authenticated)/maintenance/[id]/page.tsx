@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import {
   cancelMaintenanceAction,
   completeMaintenanceAction,
@@ -98,13 +99,14 @@ export default async function MaintenanceDetailPage({
 
   return (
     <>
-        <div style={{ marginBottom: 8 }}>
-          <Link href="/maintenance" className="panorama-button secondary">
-            ← {messages.t('maintenance.list.title')}
-          </Link>
-        </div>
-
-        <h1 style={{ marginTop: 8 }}>{ticket.title}</h1>
+        <PageHeader
+          title={ticket.title}
+          actions={
+            <Link href="/maintenance" className="panorama-button secondary">
+              ← {messages.t('maintenance.list.title')}
+            </Link>
+          }
+        />
         <div style={{ marginBottom: 16 }}>
           <StatusPill status={ticket.status} t={messages.t} />
           <span className="panorama-pill" style={{ marginLeft: 6 }}>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { apiGet } from '@/lib/api';
 import { loadMessages } from '@/lib/i18n';
 import { getCurrentSession } from '@/lib/session';
+import { PageHeader } from '@/components/page-header';
 import { startInspectionAction } from '../actions';
 
 interface AssetSlim {
@@ -55,12 +56,14 @@ export default async function NewInspectionPage({
 
   return (
     <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h1 style={{ margin: 0 }}>{messages.t('inspection.start')}</h1>
-          <Link href="/inspections" className="panorama-button secondary">
-            ← {messages.t('nav.inspections')}
-          </Link>
-        </div>
+        <PageHeader
+          title={messages.t('inspection.start')}
+          actions={
+            <Link href="/inspections" className="panorama-button secondary">
+              ← {messages.t('nav.inspections')}
+            </Link>
+          }
+        />
 
         {sp.error ? (
           <div className="panorama-banner-warning">
