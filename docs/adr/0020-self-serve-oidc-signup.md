@@ -501,32 +501,75 @@ RESTRICT` locks the contract.
 
 ### 8. Data export
 
-Self-serve data export is its own endpoint, not coupled to deletion:
-`GET /tenants/:tenantId/export` (Owner-only). Per security-reviewer's
-abuse defenses:
+Self-serve data export is its own endpoint, not coupled to deletion.
+Two routes (amended during PR 4 implementation):
+
+- **`POST /tenants/:tenantId/export`** (Owner-only) — request a new
+  export. The original ADR draft said GET, but every call mutates
+  state (inserts a `tenant_exports` row + emits audit), so the
+  verb is POST. Returns 202 Accepted with `{ jobId, status:
+  'queued' }`.
+- **`GET /tenants/:tenantId/exports/:jobId/download`** (Owner-only,
+  session-gated) — the completion email links HERE, not directly to
+  a presigned S3 URL. The endpoint verifies the session, mints a
+  short-lived (60s) presigned URL, and 302-redirects. Rationale:
+  corporate mail-security gateways and link-preview bots prefetch
+  every URL in inbound email; a presigned S3 URL in the email body
+  would get downloaded by the scanner BEFORE the user clicks. A
+  Panorama-route link, hit unauthenticated by the scanner, returns
+  401 (cached) — the file bytes never leave S3 to the scanner.
+
+Per security-reviewer's abuse defenses:
 
 - Rate limit: 1 export per tenant per 24h, via Redis bucket, fail-
   closed
 - Async: response is a job id; the actual export runs in a queue,
-  delivered as a signed S3 URL via email when complete
+  delivered as a link to the session-gated download endpoint when
+  complete
 - Audit-emit on every call (`panorama.tenant.export_requested` +
-  `panorama.tenant.exported`)
+  `panorama.tenant.exported`); SMTP failures emit
+  `panorama.tenant.export_email_dispatch_failed` so operators see
+  the gap without grepping logs
 - Inline export of a 100k-row tenant on a hot HTTP path is itself a
   DoS vector; async-only is non-negotiable
 
-**Signed-URL contract.** The pre-signed S3 URL delivered in the
-completion email has TTL ≤24h. The URL itself is **never written to
-any log line, audit row, or persisted record** — the URL embeds
-credentials and persisting it is a credential leak. The audit row
-for `panorama.tenant.exported` records:
+**Signed-URL contract (amended).** The presigned S3 URL the
+download endpoint mints has TTL **60 seconds** — just long enough
+for the browser to follow the 302. The URL is **never written to
+any log line, audit row, persisted record, or email body** — it
+exists only for the duration of the 302 response. The tenant_exports
+row's `expiresAt` records the LONG-LIVED 24h window during which
+the Panorama download endpoint remains valid; that window is the
+"TTL ≤24h" the original draft mentioned, decoupled from the
+much-shorter actual S3 URL TTL.
 
-- The S3 object key (e.g., `exports/tenant-{uuid}/{job-id}.tar.gz`)
-- The TTL the URL was minted with
-- The recipient email (the Owner's IdP-asserted email)
+The audit row for `panorama.tenant.exported` records:
+
+- The S3 object key (e.g., `tenants/{uuid}/exports/{uuid}.json.gz`)
+- The `windowSeconds` the download endpoint will honor (≤86400)
+- The recipient hash (sha256 first-8 chars; NOT the raw email per
+  the audit-events PII discipline)
 
 NOT the signed URL, NOT the query parameters that carry the
 signature. Operators retrieving the export object via the audit
 trail re-mint a signed URL from the key + their own AWS credentials.
+
+**Object-key shape.** `tenants/{tenant-uuid}/exports/{job-uuid}.json.gz`
+(see `object-storage.keys.ts:TENANT_EXPORT_KEY_REGEX`). Single
+gzipped JSON document, not a tarball — the contents are one
+`{ panoramaExport: ..., tables: { ... } }` object and tar adds no
+structural win for a single-file payload.
+
+**MVP serializer set.** PR 4 ships per-tenant rows for tenants,
+tenant_memberships, users (members only), categories, manufacturers,
+asset_models, assets, reservations, blackout_slots, invitations
+(WITHOUT `tokenHash`), inspection_templates,
+inspection_template_items, inspections, inspection_responses,
+asset_maintenances. Excluded (follow-up work): inspection_photos /
+maintenance_photos binary blobs, personal_access_tokens (secret
+material), notification_events (audience scope unclear),
+audit_events filtered by tenantId (chain-strand windowing TBD).
+New tenant-scoped tables MUST extend `serializeTenantExport`.
 
 The signup → export path satisfies the "show data-export before
 signup" persona-fleet-ops principle: the homepage has a "see what

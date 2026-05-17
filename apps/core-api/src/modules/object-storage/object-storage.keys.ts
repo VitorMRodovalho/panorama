@@ -15,6 +15,19 @@ import { z } from 'zod';
 export const INSPECTION_PHOTO_KEY_REGEX =
   /^tenants\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/inspections\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/photos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/;
 
+/**
+ * Tenant-data-export object-key shape (ADR-0020 §8).
+ *
+ *   ^tenants/{tenant-uuid}/exports/{job-uuid}\.json\.gz$
+ *
+ * One file per export job. Gzipped JSON instead of tar.gz because
+ * the contents are a single document (a single
+ * `{ tables: { table_name: [...] } }` object) and pulling in a tar
+ * library adds dep weight for no structural win.
+ */
+export const TENANT_EXPORT_KEY_REGEX =
+  /^tenants\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/exports\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json\.gz$/;
+
 const UuidSchema = z.guid();
 
 /**
@@ -42,4 +55,24 @@ export function tenantIdFromInspectionPhotoKey(key: string): string | null {
   if (!match) return null;
   // Layout: tenants/{tenantId}/...
   return key.split('/', 2)[1] ?? null;
+}
+
+/**
+ * Build the S3 key for a tenant-data-export job (ADR-0020 §8).
+ * Same UUID-validation contract as inspectionPhotoKey.
+ */
+export function tenantExportKey(tenantId: string, jobId: string): string {
+  UuidSchema.parse(tenantId);
+  UuidSchema.parse(jobId);
+  return `tenants/${tenantId}/exports/${jobId}.json.gz`;
+}
+
+/**
+ * Validate a key against the union of accepted shapes (inspection
+ * photo OR tenant export). `assertKeyForTenant` in
+ * ObjectStorageService routes through this so new key shapes are
+ * added in ONE place.
+ */
+export function validateObjectKeyShape(key: string): boolean {
+  return INSPECTION_PHOTO_KEY_REGEX.test(key) || TENANT_EXPORT_KEY_REGEX.test(key);
 }

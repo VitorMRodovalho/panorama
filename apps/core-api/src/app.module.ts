@@ -25,6 +25,7 @@ import { BootAuditModule } from './modules/boot-audit/boot-audit.module.js';
 import { SignupModule } from './modules/signup/signup.module.js';
 import { EmailVerificationModule } from './modules/email-verification/email-verification.module.js';
 import { TenantDeletionModule } from './modules/tenant-deletion/tenant-deletion.module.js';
+import { TenantExportModule } from './modules/tenant-export/tenant-export.module.js';
 
 /**
  * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
@@ -55,9 +56,15 @@ function inspectionsEnabled(): boolean {
   return raw !== 'false' && raw !== '0' && raw !== 'no';
 }
 
+// ObjectStorageModule used to live inside `conditionalInspections`
+// because inspections were the original consumer. ADR-0020 §8's
+// tenant-data-export surface (PR 4) needs the same S3 client, so the
+// module is now ALWAYS loaded — the `S3_*` env vars must be set on
+// every deployment regardless of FEATURE_INSPECTIONS. The
+// inspection-specific modules (PhotoPipeline + Inspection) remain
+// gated.
 const conditionalInspections: DynamicModule[] = inspectionsEnabled()
   ? [
-      { module: ObjectStorageModule, global: false },
       { module: PhotoPipelineModule, global: false },
       { module: InspectionModule, global: false },
     ]
@@ -145,6 +152,8 @@ const conditionalSelfServeSignup: DynamicModule[] = selfServeSignupEnabled()
     ImportModule,
     EmailVerificationModule,
     TenantDeletionModule,
+    ObjectStorageModule,
+    TenantExportModule,
     ...conditionalCompatShim,
     ...conditionalInspections,
     ...conditionalMaintenance,

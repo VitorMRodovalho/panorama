@@ -1,7 +1,7 @@
 {
   "_doc": "Allowlist gate for prisma.runAsSuperAdmin call sites. Closes #58 (RLS-CI). Each entry is a file path + the count of CURRENTLY-JUSTIFIED runAsSuperAdmin calls in it + a one-line rationale. The CI script `scripts/check-runAsSuperAdmin-allowlist.ts` compares the actual count against the budget and fails if a file exceeds its budget. Lower the budget when a site migrates to runInTenant; raise only with reviewer sign-off documenting why a tenant-scoped op needs the privileged path.",
   "_review_policy": "Any PR that raises a budget MUST be reviewed by security-reviewer. Lowering a budget is encouraged.",
-  "_last_audit": "2026-05-17 — tenant-deletion.service.ts added budget 6 for ADR-0020 §7 request/confirm/cancel/veto/listDue/purgeOne (tenant_deletion_tokens table has no GRANT to panorama_app, and the purge flow crosses the tenant boundary by construction).",
+  "_last_audit": "2026-05-17 — tenant-export.service.ts added budget 8 for ADR-0020 §8 enqueue + runJob lifecycle (tenant_exports has no GRANT to panorama_app; the worker runs outside any session/tenant context).",
   "files": {
     "apps/core-api/src/modules/audit/audit.service.ts": {
       "budget": 1,
@@ -50,6 +50,10 @@
     "apps/core-api/src/modules/tenant-deletion/tenant-deletion.service.ts": {
       "budget": 6,
       "rationale": "ADR-0020 §7 request/confirm/cancel/veto + the purge cron's list+per-tenant paths. All six sites operate on tenant_deletion_tokens which has NO grant to panorama_app, so RLS-scoped access is unavailable by construction. The purge cron's per-tenant tx ALSO crosses the tenant boundary at delete time (NULL systemActorUserId + delete user + delete tenant)."
+    },
+    "apps/core-api/src/modules/tenant-export/tenant-export.service.ts": {
+      "budget": 10,
+      "rationale": "ADR-0020 §8 enqueue + runJob lifecycle + PR-4-amendment session-gated download surface. enqueue (1) inserts the tenant_exports row + emits TenantExportRequested. runJob's worker path issues several runAsSuperAdmin txs (fetch row, mark processing, serialize all tenant tables in one consistent snapshot, mark completed + emit TenantExported, recipient lookup, mark failed branch + emit TenantExportFailed, dispatchEmail refetch, lookupJobIdByObjectKey for the email URL). getDownloadable + the dispatch-failure audit emission round out the 10 sites. tenant_exports has no GRANT to panorama_app and the worker has no session/tenant context, so super-admin is the only viable role."
     },
     "apps/core-api/src/modules/notification/notification.dispatcher.ts": {
       "budget": 5,

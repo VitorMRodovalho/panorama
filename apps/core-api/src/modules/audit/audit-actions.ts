@@ -315,6 +315,53 @@ export const PanoramaAuditAction = {
    * SET NULL).
    */
   TenantDeleted: 'panorama.tenant.deleted',
+  /**
+   * Tenant-data export request enqueued (ADR-0020 §8). Per-tenant
+   * event. Emitted by the POST /tenants/:id/export endpoint inside
+   * the same tx that inserts the `tenant_exports` row. The audit
+   * row tracks request intent regardless of whether the worker
+   * later succeeds or fails — the sibling `TenantExported` /
+   * `TenantExportFailed` rows record completion outcomes.
+   *
+   * Metadata: `jobId` (the tenant_exports.id; ties to the
+   * completion row), `requestedByUserId`.
+   */
+  TenantExportRequested: 'panorama.tenant.export_requested',
+  /**
+   * Tenant-data export job completed (ADR-0020 §8). Per-tenant event.
+   * Emitted by the worker after the gzipped JSON has been uploaded
+   * to S3 and the completion email has been dispatched.
+   *
+   * Metadata: `jobId`, `objectKey` (the S3 key — operators can
+   * re-mint a signed URL from this + their own AWS credentials),
+   * `objectSizeBytes`, `signedUrlTtlSeconds` (how long the email's
+   * presigned URL stays valid), `recipientHash` (sha256 first-8
+   * chars of the recipient email). NEVER the signed URL itself —
+   * it embeds AWS credentials and persisting it is a credential
+   * leak per the §8 amendment.
+   */
+  TenantExported: 'panorama.tenant.exported',
+  /**
+   * Tenant-data export job failed (ADR-0020 §8). Per-tenant event.
+   * Emitted by the worker's catch path. The tenant_exports row's
+   * `status` flips to `'failed'` with the matching `failedReason`.
+   *
+   * Metadata: `jobId`, `errKind` (short error name, e.g. `Error`,
+   * `S3UploadError`).
+   */
+  TenantExportFailed: 'panorama.tenant.export_failed',
+  /**
+   * Completion email dispatch failed AFTER the export was
+   * successfully uploaded to S3 (ADR-0020 §8, PR 4 amendment).
+   * Per-tenant event. The job's tenant_exports row stays in
+   * `completed` status — operators can re-fetch the object via
+   * the audit row's `objectKey` and resend manually until a
+   * resend endpoint ships.
+   *
+   * Metadata: `jobId`, `errKind`, `recipientHash` (sha256 first-8
+   * chars of the recipient email).
+   */
+  TenantExportEmailDispatchFailed: 'panorama.tenant.export_email_dispatch_failed',
 } as const;
 
 export type PanoramaAuditAction =
