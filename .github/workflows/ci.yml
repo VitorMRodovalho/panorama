@@ -15,7 +15,7 @@ jobs:
     name: Lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -90,7 +90,7 @@ jobs:
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -206,7 +206,7 @@ jobs:
     name: Web unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -223,7 +223,7 @@ jobs:
     name: i18n coverage (EN = PT-BR = ES)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -237,7 +237,7 @@ jobs:
     name: Dependency licence scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -250,7 +250,7 @@ jobs:
     name: No enterprise imports in community sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -289,7 +289,7 @@ jobs:
     # Pinned action version (was @master) per OSSF Scorecard
     # pinned-deps. Bumps go through deliberate review.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Trivy report (SARIF, never blocks)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
