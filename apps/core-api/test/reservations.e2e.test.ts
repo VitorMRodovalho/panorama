@@ -573,4 +573,88 @@ describe('reservation flow e2e', () => {
     });
     expect(approve.status).toBe(200);
   });
+
+  it('CONCURRENT single-row approve → first wins 200, second deterministically 400 not_pending:approved (Round 4 PR4 advisory lock)', async () => {
+    // Persona-fleet-ops blocker 1: two admins clicked approve on the
+    // same reservation at the same time and silently double-decided.
+    // pg_advisory_xact_lock(hashtext('reservation:'||id)) inside the
+    // SERIALIZABLE tx serialises this so the second admin's call
+    // throws a deterministic `not_pending:approved` BadRequest that
+    // the frontend maps to a stale-row banner.
+    const driverCookie = await loginCookie(driverUser.email, driverUser.password);
+    const created = await fetch(`${url}/reservations`, {
+      method: 'POST',
+      headers: { cookie: driverCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        assetId: secondAssetId,
+        startAt: isoAt(2000),
+        endAt: isoAt(2002),
+      }),
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+
+    const adminCookie = await loginCookie(adminUser.email, adminUser.password);
+    const fire = () =>
+      fetch(`${url}/reservations/${id}/approve`, {
+        method: 'POST',
+        headers: { cookie: adminCookie, 'content-type': 'application/json' },
+        body: '{}',
+      });
+
+    const [resA, resB] = await Promise.all([fire(), fire()]);
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const loserBody = (await (resA.status === 400 ? resA : resB).json()) as {
+      message: string;
+    };
+    expect(loserBody.message).toBe('not_pending:approved');
+  });
+
+  it('CONCURRENT approve+reject on same row → deterministic 200 + 400 (advisory lock serialises conflicting verbs)', async () => {
+    // Same lock contract as approve-vs-approve: whichever tx wins the
+    // advisory lock decides the row, the other re-reads inside the
+    // same SERIALIZABLE tx and observes a terminal approvalStatus →
+    // throws not_pending:{status}. Test asserts the loser sees the
+    // WINNER's terminal state, not a generic conflict.
+    const driverCookie = await loginCookie(driverUser.email, driverUser.password);
+    const created = await fetch(`${url}/reservations`, {
+      method: 'POST',
+      headers: { cookie: driverCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        assetId: secondAssetId,
+        startAt: isoAt(2100),
+        endAt: isoAt(2102),
+      }),
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+
+    const adminCookie = await loginCookie(adminUser.email, adminUser.password);
+    const fireApprove = () =>
+      fetch(`${url}/reservations/${id}/approve`, {
+        method: 'POST',
+        headers: { cookie: adminCookie, 'content-type': 'application/json' },
+        body: '{}',
+      });
+    const fireReject = () =>
+      fetch(`${url}/reservations/${id}/reject`, {
+        method: 'POST',
+        headers: { cookie: adminCookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ note: 'race-loser reject' }),
+      });
+
+    const [resA, resB] = await Promise.all([fireApprove(), fireReject()]);
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const loserRes = resA.status === 400 ? resA : resB;
+    const loserBody = (await loserRes.json()) as { message: string };
+    // Winner could be either approve or reject; loser's message
+    // reflects the winning terminal status.
+    expect(['not_pending:approved', 'not_pending:rejected']).toContain(
+      loserBody.message,
+    );
+  });
 });

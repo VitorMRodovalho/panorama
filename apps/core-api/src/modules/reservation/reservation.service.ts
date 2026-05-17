@@ -709,6 +709,36 @@ export class ReservationService {
     target: 'APPROVED' | 'REJECTED',
   ): Promise<Reservation> {
     const { actor, reservationId, note } = params;
+
+    // Round 4 PR4 — pg_advisory_xact_lock on the reservation id
+    // serialises concurrent approve/reject attempts on the same row.
+    // SERIALIZABLE isolation (set in `decide()`) already guarantees
+    // correctness — without the advisory lock, the second admin's tx
+    // would commit-fail with a serialization_failure that we'd have
+    // to map to a user-facing message. The advisory lock makes the
+    // second tx BLOCK briefly, then re-read the row inside this
+    // same tx and observe approvalStatus !== PENDING_APPROVAL → throw
+    // a deterministic `not_pending:{status}` exception that the
+    // frontend renders as "already decided by {approver}" (persona-
+    // fleet-ops blocker 1: 45-minute double-approval scar).
+    //
+    // hashtext gives us a stable int8 (Postgres 11+) from the
+    // composed key. Lock-key namespace is "reservation:<uuid>" —
+    // distinct from any future advisory-lock surface; the surrounding
+    // runInTenant GUC isolates the tx, but the advisory lock itself
+    // is database-global (Postgres behaviour, not a leak).
+    //
+    // CALLER NOTE: approveBasket / rejectBasket call this in a loop
+    // inside a single SERIALIZABLE tx. Each iteration grabs a fresh
+    // xact-lock keyed on its row id; ALL locks are held until basket
+    // commit. For a 50-row basket, that's 50 advisory locks held
+    // simultaneously. Acceptable at current basket sizes; revisit if
+    // basket cap rises significantly.
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      `reservation:${reservationId}`,
+    );
+
     const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
     if (!existing || existing.tenantId !== actor.tenantId) {
       throw new NotFoundException('reservation_not_found');
