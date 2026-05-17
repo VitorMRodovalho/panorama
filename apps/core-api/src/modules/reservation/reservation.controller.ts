@@ -31,6 +31,7 @@ import {
 import {
   ReservationService,
   type ReservationContext,
+  type ReservationListRow,
 } from './reservation.service.js';
 import { BlackoutService } from './blackout.service.js';
 import { getRequestSession } from '../auth/session.middleware.js';
@@ -109,7 +110,7 @@ export class ReservationController {
     if (parsed.data.from) listParams.from = new Date(parsed.data.from);
     if (parsed.data.to) listParams.to = new Date(parsed.data.to);
     const items = await this.reservations.list(listParams);
-    return { items: items.map((r) => this.shape(r)) };
+    return { items: items.map((r) => this.shapeListRow(r)) };
   }
 
   @Post(':id/cancel')
@@ -338,6 +339,22 @@ export class ReservationController {
       damageNote: r.damageNote,
       isOverdue: r.isOverdue,
       createdAt: r.createdAt,
+    };
+  }
+
+  /**
+   * Extended shape for list rows — adds approverName / checkedOutByName /
+   * checkedInByName + previousAssetDamageNote (Round 4 PR3). Only the
+   * list endpoint surfaces these; single-row shape stays IDs-only to
+   * keep mutation responses lean.
+   */
+  private shapeListRow(r: ReservationListRow): unknown {
+    return {
+      ...(this.shape(r) as object),
+      approverName: r.approverName,
+      checkedOutByName: r.checkedOutByName,
+      checkedInByName: r.checkedInByName,
+      previousAssetDamageNote: r.previousAssetDamageNote,
     };
   }
 

@@ -38,6 +38,15 @@ interface ReservationView {
   damageNote: string | null;
   isOverdue: boolean;
   createdAt: string;
+  // Round 4 PR3 — actor displayNames returned by the list endpoint.
+  approverName: string | null;
+  checkedOutByName: string | null;
+  checkedInByName: string | null;
+  // Round 4 PR3 — damageNote from the most recent prior reservation on
+  // the same asset (persona-fleet-ops C8: prior-shift damage shouldn't
+  // surprise the next operator at checkout). Populated only when the
+  // row is currently BOOKED and a prior damaged-return exists.
+  previousAssetDamageNote: string | null;
 }
 
 interface ReservationListResponse {
@@ -348,6 +357,26 @@ export default async function ReservationsPage({
                     </td>
                     <td>
                       {humaniseApproval(messages.t, r.approvalStatus)}
+                      {/* Round 4 PR3 — show approver's name in-cell when
+                          the row has been approved/rejected. Persona-fleet-
+                          ops blocker 2: a coordinator looking at the approval
+                          queue can answer "who decided this?" without a
+                          second click. */}
+                      {r.approverName &&
+                      (r.approvalStatus === 'APPROVED' ||
+                        r.approvalStatus === 'REJECTED') ? (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: 13,
+                            color: 'var(--pan-muted)',
+                          }}
+                        >
+                          {messages.t('reservation.actor.approved_by', {
+                            name: r.approverName,
+                          })}
+                        </div>
+                      ) : null}
                       {/* OPS-01 (#33): surface the approver's note so the
                           requester sees *why* a reservation was rejected (or
                           approved with caveats) without having to walk to
@@ -380,6 +409,59 @@ export default async function ReservationsPage({
                     </td>
                     <td>
                       {humaniseLifecycle(messages.t, r.lifecycleStatus)}
+                      {/* Round 4 PR3 — checkout/checkin actor names in-cell.
+                          Persona-fleet-ops blocker 2: a coordinator scanning
+                          the table can attribute "who got these keys" and
+                          "who took the return" without drilling. */}
+                      {r.checkedOutByName ? (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: 13,
+                            color: 'var(--pan-muted)',
+                          }}
+                        >
+                          {messages.t('reservation.actor.checked_out_by', {
+                            name: r.checkedOutByName,
+                          })}
+                        </div>
+                      ) : null}
+                      {r.checkedInByName ? (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: 13,
+                            color: 'var(--pan-muted)',
+                          }}
+                        >
+                          {messages.t('reservation.actor.checked_in_by', {
+                            name: r.checkedInByName,
+                          })}
+                        </div>
+                      ) : null}
+                      {/* Round 4 PR3 / persona-fleet-ops C8 +
+                          ux-critic Q2 — compact prior-damage pill in
+                          the lifecycle cell for BOOKED rows so a
+                          coordinator scanning the queue at 5am sees
+                          "this asset came back damaged last shift"
+                          BEFORE clicking Check-out. Full damageNote
+                          text + the action remains inside the
+                          check-out disclosure to avoid the double-
+                          amber-callout pattern. */}
+                      {r.previousAssetDamageNote ? (
+                        <span
+                          className="panorama-pill"
+                          style={{
+                            marginLeft: 6,
+                            background: '#854d0e',
+                            color: '#fde68a',
+                            fontWeight: 600,
+                          }}
+                          title={r.previousAssetDamageNote}
+                        >
+                          {messages.t('reservation.previous_damage.pill')}
+                        </span>
+                      ) : null}
                       {/* #77 PILOT-04 — overdue pill is the visual signal
                           ops needs to chase a forgotten check-in. Renders
                           on (a) currently-actionable overdue returns
@@ -684,6 +766,34 @@ export default async function ReservationsPage({
                           </summary>
                           <form action={checkoutReservationAction} className="panorama-inline-form">
                             <input type="hidden" name="id" value={r.id} />
+                            {/* Round 4 PR3 / persona-fleet-ops C8 sibling —
+                                surface prior reservation's damageNote on the
+                                same asset BEFORE the operator commits the
+                                check-out. The FleetManager scar: maintenance
+                                closed a damage ticket and the next driver
+                                rolled out without knowing the cosmetic / minor
+                                damage history. The callout doesn't gate the
+                                action — it's a "look at the asset, this is
+                                what the last shift saw" reminder. */}
+                            {r.previousAssetDamageNote ? (
+                              <div
+                                style={{
+                                  padding: '6px 8px',
+                                  fontSize: 12,
+                                  lineHeight: 1.4,
+                                  color: '#7a3a00',
+                                  background: '#fff4e0',
+                                  border: '1px solid #f0c890',
+                                  borderRadius: 4,
+                                  marginBottom: 6,
+                                }}
+                              >
+                                <strong style={{ display: 'block', marginBottom: 2 }}>
+                                  {messages.t('reservation.checkout.prior_damage_label')}
+                                </strong>
+                                {r.previousAssetDamageNote}
+                              </div>
+                            ) : null}
                             <input
                               type="number"
                               name="mileage"
