@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { TenantModule } from '../tenant/tenant.module.js';
+import { EmailVerificationModule } from '../email-verification/email-verification.module.js';
 import { SignupConfigService } from './signup.config.js';
 import { SignupController } from './signup.controller.js';
 import { SignupStateStore } from './signup-state.store.js';
@@ -25,7 +26,7 @@ import { TurnstileVerifier } from './turnstile-verifier.service.js';
  *     automatically.
  */
 @Module({
-  imports: [forwardRef(() => AuthModule), TenantModule],
+  imports: [forwardRef(() => AuthModule), TenantModule, EmailVerificationModule],
   controllers: [SignupController],
   providers: [SignupConfigService, SignupStateStore, SignupRateLimits, TurnstileVerifier],
 })

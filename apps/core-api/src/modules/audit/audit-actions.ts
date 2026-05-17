@@ -148,32 +148,82 @@ export const PanoramaAuditAction = {
    */
   TenantSignupInitiated: 'panorama.tenant.signup_initiated',
   /**
-   * Verification email dispatched after a successful signup
-   * (ADR-0020 §3). Per-tenant event (the tenant exists in
-   * `pending_verification` state by this point). Fired after the
-   * SMTP submit returns success — bounces are tracked separately
-   * (out of scope for this event).
+   * Verification token minted (tenant row inserted, email-row
+   * persisted, SMTP submit attempted). Per-tenant event (the tenant
+   * exists in `pending_verification` state by this point).
+   *
+   * Emit happens INSIDE the mint transaction — so the row is present
+   * even if the subsequent SMTP submit fails. A separate
+   * `TenantVerificationDispatchFailed` row signals the SMTP-side
+   * outcome; readers correlating the pair distinguish "minted +
+   * delivered" from "minted but SMTP refused" by the presence /
+   * absence of the dispatch-failed sibling within the same
+   * tokenKeyPrefix window.
    *
    * Metadata: `emailHash` (sha256 of normalized lowercase email —
    * the raw email is on `actorUser`, no need to duplicate), `ttl`
    * (token TTL in seconds, currently 86400), `tokenKeyPrefix`
-   * (first 8 chars of the token — ties this row to the consume
-   * row).
+   * (first 8 hex chars of the sha256 tokenHash — ties this row to
+   * the consume row and to any matching dispatch-failed sibling).
    */
   TenantVerificationSent: 'panorama.tenant.verification_sent',
+  /**
+   * SMTP submission for a verification email failed AFTER the token
+   * row was committed. Per-tenant event. Emitted out-of-band (own
+   * `audit.record` transaction) because the mint tx already
+   * committed by the time the dispatch attempt runs.
+   *
+   * The user-facing impact: the tenant exists in
+   * `pending_verification` state but the recipient never received
+   * the email. PR 2b's resend endpoint is the operator-driven
+   * recovery; until then, the user can re-signup (consuming a
+   * second §3 cap slot) or the maintainer can hand-flip the
+   * tenant via super-admin tooling.
+   *
+   * Metadata: `emailHash`, `tokenKeyPrefix` (ties to the
+   * `TenantVerificationSent` row whose dispatch failed), `errKind`
+   * (short string from the caught error name, e.g. `Error`,
+   * `TimeoutError`).
+   */
+  TenantVerificationDispatchFailed: 'panorama.tenant.verification_dispatch_failed',
   /**
    * Verification token consumed via POST /auth/verify (ADR-0020
    * §3). Per-tenant event. The tenant transitions from
    * `pending_verification` to `active` in the same transaction
-   * that writes this row. One-time-use is enforced by deleting the
-   * token row in the same transaction.
+   * that writes this row. One-time-use is enforced by setting the
+   * row's `consumedAt` timestamp (NOT a DELETE — preserving the
+   * row leaves a verifier-readable audit trail of the
+   * successful consume, and the row is reaped later by a cleanup
+   * sweep, not at consume time).
    *
-   * Metadata: `tokenKeyPrefix` (ties to the verification_sent
-   * row), `elapsedMs` (time between dispatch and consume — used
-   * for "verification took N hours" UX telemetry without standing
-   * up product analytics).
+   * Metadata: `tokenKeyPrefix` (first 8 hex chars of the sha256
+   * tokenHash — ties to the verification_sent row), `elapsedMs`
+   * (time between dispatch and consume — used for "verification
+   * took N hours" UX telemetry without standing up product
+   * analytics).
    */
   TenantVerified: 'panorama.tenant.verified',
+  /**
+   * POST /auth/verify refused. Cluster-wide event (`tenantId=null`)
+   * — the verify endpoint is reached from a logged-out browser
+   * before any tenant context applies. SIEM SHOULD alert on
+   * sustained non-zero rate (probable token-brute or audit-DoS).
+   * Possible reasons:
+   *   - `session_attached` — caller arrived with an authenticated
+   *     session; the verify endpoint is logged-out-only (mirrors
+   *     ADR-0020 §1a's signup-callback contract for the verify
+   *     surface).
+   *   - `rate_limit_ip` — POST /auth/verify per-IP bucket tripped
+   *     (5/IP/hour, parity with signup-initiate).
+   *   - `rate_limit_subnet` — POST /auth/verify per-subnet bucket
+   *     tripped (50/IPv4-/24 or IPv6-/64/24h, parity with
+   *     signup-initiate).
+   *
+   * Metadata: `reason` (one of the above), `keyHash` (sha256
+   * first-16 chars of the per-IP or per-subnet bucket key — only
+   * set for the rate_limit_* reasons).
+   */
+  AuthVerifyRefused: 'panorama.auth.verify_refused',
   /**
    * Self-serve signup refused because the OIDC identity (or its
    * email) already maps to an existing Panorama account (ADR-0020
