@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { subnetKey } from '../src/shared/throttler/subnet-key.js';
+import { normalizeIpForBucket, subnetKey } from '../src/shared/throttler/subnet-key.js';
 
 describe('subnetKey — IPv4', () => {
   it('keys distinct IPs in same /24 to the same bucket', () => {
@@ -93,5 +93,35 @@ describe('subnetKey — edge cases', () => {
   it('collapses all unknown inputs to ONE shared bucket (fail-closed)', () => {
     expect(subnetKey('garbage1')).toBe(subnetKey('garbage2'));
     expect(subnetKey('garbage1')).toBe(subnetKey(undefined));
+  });
+});
+
+describe('normalizeIpForBucket', () => {
+  it('strips the ::ffff: prefix so v4-mapped and raw v4 share a bucket', () => {
+    expect(normalizeIpForBucket('::ffff:1.2.3.4')).toBe('1.2.3.4');
+    expect(normalizeIpForBucket('::ffff:1.2.3.4')).toBe(normalizeIpForBucket('1.2.3.4'));
+  });
+
+  it('is case-insensitive on the ::ffff: prefix', () => {
+    expect(normalizeIpForBucket('::FFFF:1.2.3.4')).toBe('1.2.3.4');
+  });
+
+  it('passes raw IPv4 through verbatim', () => {
+    expect(normalizeIpForBucket('203.0.113.5')).toBe('203.0.113.5');
+  });
+
+  it('passes raw IPv6 through verbatim (no general canonicalization)', () => {
+    // The helper intentionally does NOT canonicalize general IPv6
+    // shapes — that responsibility lives in subnetKey which derives
+    // a /64 prefix. consumeIp's per-IP key keeps the raw form so
+    // distinct IPv6 hosts don't collide on truncation.
+    expect(normalizeIpForBucket('2001:db8::1')).toBe('2001:db8::1');
+    expect(normalizeIpForBucket('::1')).toBe('::1');
+  });
+
+  it('collapses missing / empty to unknown (fail-closed)', () => {
+    expect(normalizeIpForBucket(undefined)).toBe('unknown');
+    expect(normalizeIpForBucket(null)).toBe('unknown');
+    expect(normalizeIpForBucket('')).toBe('unknown');
   });
 });

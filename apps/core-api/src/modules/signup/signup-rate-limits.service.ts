@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { RateLimiter, type RateLimitDecision } from '../redis/rate-limiter.js';
-import { subnetKey } from '../../shared/throttler/subnet-key.js';
+import { normalizeIpForBucket, subnetKey } from '../../shared/throttler/subnet-key.js';
 
 /**
  * Three-bucket signup rate limiter (ADR-0020 §4).
@@ -62,7 +62,11 @@ export class SignupRateLimits {
   constructor(private readonly limiter: RateLimiter) {}
 
   consumeIp(ip: string | null | undefined): Promise<RateLimitDecision> {
-    return this.limiter.consume(IP_PREFIX + (ip ?? 'unknown'), IP_LIMIT, IP_WINDOW_MS);
+    return this.limiter.consume(
+      IP_PREFIX + normalizeIpForBucket(ip),
+      IP_LIMIT,
+      IP_WINDOW_MS,
+    );
   }
 
   consumeSubnet(ip: string | null | undefined): Promise<RateLimitDecision> {

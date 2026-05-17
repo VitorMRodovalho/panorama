@@ -14,6 +14,33 @@
  * `'unknown'` bucket — fail-closed (all unparsed traffic shares one
  * slot rather than each unparsed string getting its own).
  */
+/**
+ * Strip the `::ffff:` IPv6-mapped IPv4 prefix so the same client IP
+ * maps to a single rate-limit bucket regardless of how Express
+ * resolved `req.ip` at this hop. Dual-stack deployments occasionally
+ * surface the same address as `1.2.3.4` on one ingress path and
+ * `::ffff:1.2.3.4` on another (e.g., Fly's IPv6 edge front of an
+ * IPv4-only origin); leaving the prefix in place doubles the per-IP
+ * budget for that one client (security-reviewer follow-up concern #6
+ * from PR #212).
+ *
+ * Non-mapped inputs pass through verbatim — this helper does NOT
+ * canonicalise general IPv6 (zone stripping, leading-zero collapse,
+ * `::` placement) because those normalisations belong in `subnetKey`
+ * which derives a /64 prefix anyway. The narrow scope here matches
+ * the security-reviewer's concern and keeps the IPv6 surface
+ * behaviour-identical to the previous code path.
+ *
+ * Missing / empty input collapses to `'unknown'` — same fail-closed
+ * shape `subnetKey` uses, so a misconfigured proxy doesn't mint
+ * unique bucket slots per garbage value.
+ */
+export function normalizeIpForBucket(ip: string | undefined | null): string {
+  if (ip === undefined || ip === null || ip === '') return 'unknown';
+  const v4Mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+  return v4Mapped ? v4Mapped[1]! : ip;
+}
+
 export function subnetKey(ip: string | undefined | null): string {
   if (ip === undefined || ip === null || ip === '') {
     return 'unknown';
