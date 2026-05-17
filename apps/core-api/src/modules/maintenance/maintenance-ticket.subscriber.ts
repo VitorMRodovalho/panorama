@@ -131,6 +131,18 @@ export class MaintenanceTicketSubscriber implements ChannelHandler {
           return;
         }
 
+        if (!tenant.systemActorUserId) {
+          // Tenant is mid-deletion (ADR-0020 §7 purge cron nulls this
+          // column just before dropping the system user + the tenant
+          // row). Auto-suggest can't author tickets without a system
+          // actor; skip cleanly so the dispatcher marks the event
+          // dispatched and the in-flight purge proceeds.
+          this.log.warn(
+            { eventId: event.id, eventType: event.eventType, tenantId },
+            'auto_suggest_skipped_tenant_purging',
+          );
+          return;
+        }
         const params = await this.buildParams(tx, event, tenant.systemActorUserId);
         if (!params) {
           // PASS outcome on inspection.completed → no ticket. The event

@@ -49,7 +49,9 @@ describe('migration 0021 — audit chain reproducibility', () => {
       where: { id: a.id },
       select: { systemActorUserId: true },
     });
-    userId = aRow.systemActorUserId;
+    // Migration 0024 makes systemActorUserId nullable; live tenants
+    // always have it set immediately after createTenantWithOwner.
+    userId = aRow.systemActorUserId!;
 
     const b = await createTenantForTest(admin, {
       slug: 'mig21-b',

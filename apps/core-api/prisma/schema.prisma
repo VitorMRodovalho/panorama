@@ -80,8 +80,13 @@ model Tenant {
   /// Seeded at tenant creation. Migration 0014 backfills existing
   /// tenants then SETs NOT NULL. Migration 0015 adds the FK
   /// constraint enforcing referential integrity (DATA-04 / #42).
-  systemActorUserId                    String    @db.Uuid
-  systemActor                          User      @relation("TenantSystemActor", fields: [systemActorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  ///
+  /// NULLABLE as of ADR-0020 §7 (migration 0024): the purge cron
+  /// NULLs this column before deleting the system user and then the
+  /// tenant. Live tenants always have it set; null only during the
+  /// brief purge sequence.
+  systemActorUserId                    String?   @db.Uuid
+  systemActor                          User?     @relation("TenantSystemActor", fields: [systemActorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   /// ADR-0016 §5 toggle: when true, FAIL/NEEDS_MAINTENANCE
   /// inspection outcomes AND damageFlag check-in events auto-open
   /// a draft maintenance ticket. Defaults FALSE per security +
@@ -110,6 +115,16 @@ model Tenant {
   /// existed before signup continue to write the default). PR 2 adds
   /// the route guard reading this column and the flip endpoint.
   pendingVerification                  Boolean   @default(false)
+  /// ADR-0020 §7 — T+7d the purge cron will execute the delete. NULL
+  /// = not scheduled. Set by POST /tenants/:id/delete-confirm;
+  /// cleared by POST /tenants/:id/delete-cancel and POST
+  /// /tenants/:id/delete-veto.
+  deletionScheduledAt                  DateTime? @db.Timestamptz(6)
+  /// ADR-0020 §7 — the Owner that initiated the delete-request. ON
+  /// DELETE SET NULL so a user account deletion does not block the
+  /// tenant cool-off bookkeeping.
+  deletionRequestedByUserId            String?   @db.Uuid
+  deletionRequestedBy                  User?     @relation("TenantDeletionRequester", fields: [deletionRequestedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAt                            DateTime  @default(now())
   updatedAt                            DateTime  @updatedAt
   deletedAt                            DateTime?
@@ -129,6 +144,7 @@ model Tenant {
   assetMaintenances       AssetMaintenance[]
   maintenancePhotos       MaintenancePhoto[]
   emailVerifications      EmailVerification[]
+  deletionTokens          TenantDeletionToken[]
 
   @@map("tenants")
 }
@@ -173,8 +189,43 @@ model User {
   maintenancesCompleted      AssetMaintenance[]    @relation("MaintenanceCompletedBy")
   maintenancePhotosUploaded  MaintenancePhoto[]    @relation("MaintenancePhotoUploader")
   emailVerifications         EmailVerification[]
+  tenantsAsDeletionRequester Tenant[]              @relation("TenantDeletionRequester")
+  tenantDeletionTokens       TenantDeletionToken[]
 
   @@map("users")
+}
+
+/// ADR-0020 §7 — one-time-use deletion-confirmation tokens minted by
+/// POST /tenants/:id/delete-request, fanned out by email to ALL
+/// active Owners of the tenant. Consumed by POST /tenants/:id/
+/// delete-confirm (any Owner may consume; one token per request,
+/// regardless of Owner count). 24h TTL — if no Owner confirms within
+/// the window, the request is moot and the user can re-request.
+///
+/// Lifecycle:
+///   - request: insert row, fan out email, emit
+///     panorama.tenant.delete_requested
+///   - confirm: mark consumedAt, set Tenant.deletionScheduledAt to
+///     T+7d, emit panorama.tenant.delete_confirmed
+///   - cancel: clear Tenant.deletionScheduledAt; the unconsumed token
+///     stays in place (will fail to consume because the tenant has no
+///     scheduled deletion; the second consume returns no-op)
+///
+/// All access via runAsSuperAdmin — panorama_app has no GRANT.
+model TenantDeletionToken {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @db.Uuid
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedByUserId String    @db.Uuid
+  requestedBy       User      @relation(fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  /// sha256 hex of the plaintext token. Plaintext never persisted.
+  tokenHash         String    @unique
+  expiresAt         DateTime  @db.Timestamptz(6)
+  consumedAt        DateTime? @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([tenantId])
+  @@map("tenant_deletion_tokens")
 }
 
 /// ADR-0020 §3 — one-time-use email-verification tokens minted at

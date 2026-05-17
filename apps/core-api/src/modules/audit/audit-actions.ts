@@ -298,6 +298,23 @@ export const PanoramaAuditAction = {
    * `platform_maintainer`), `previouslyScheduledAt`.
    */
   TenantDeleteVeto: 'panorama.tenant.delete_veto',
+  /**
+   * Tenant data purged by the ADR-0020 §7 cron after the 7-day
+   * cool-off elapsed without cancel / veto. Per-tenant event,
+   * emitted INSIDE the purge tx BEFORE the cascade DELETE so the
+   * row carries `tenantId = <the tenant being purged>` for the
+   * per-tenant audit strand. The audit_events table has no FK to
+   * tenants(id), so the row survives the cascade and the strand's
+   * tail is the deletion event itself.
+   *
+   * Metadata: `slug`, `displayName` (snapshot pre-purge),
+   * `scheduledAt` (the deletionScheduledAt the cron honoured),
+   * `requestedByUserId` (the Owner that confirmed the deletion;
+   * may be NULL if the User account was deleted between confirm
+   * and purge — `tenants.deletionRequestedByUserId` is ON DELETE
+   * SET NULL).
+   */
+  TenantDeleted: 'panorama.tenant.deleted',
 } as const;
 
 export type PanoramaAuditAction =
