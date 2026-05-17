@@ -24,6 +24,7 @@ import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.mod
 import { BootAuditModule } from './modules/boot-audit/boot-audit.module.js';
 import { SignupModule } from './modules/signup/signup.module.js';
 import { EmailVerificationModule } from './modules/email-verification/email-verification.module.js';
+import { TenantDeletionModule } from './modules/tenant-deletion/tenant-deletion.module.js';
 
 /**
  * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
@@ -143,6 +144,7 @@ const conditionalSelfServeSignup: DynamicModule[] = selfServeSignupEnabled()
     HealthModule,
     ImportModule,
     EmailVerificationModule,
+    TenantDeletionModule,
     ...conditionalCompatShim,
     ...conditionalInspections,
     ...conditionalMaintenance,

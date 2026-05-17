@@ -190,7 +190,11 @@ describe('maintenance auto-suggest tether e2e', () => {
       where: { id: tenantId },
       select: { systemActorUserId: true },
     });
-    systemActorUserId = tenantRow!.systemActorUserId;
+    // Newly created tenant — systemActorUserId is set by
+    // createTenantWithOwner. Nullable as of migration 0024 to
+    // accommodate the ADR-0020 §7 purge cron's null-then-delete
+    // sequence; not relevant here.
+    systemActorUserId = tenantRow!.systemActorUserId!;
     await adminDb.tenantMembership.create({
       data: { tenantId, userId: driverUser.id, role: 'driver', status: 'active' },
     });

@@ -459,11 +459,45 @@ channel when the credential compromise also captures the inbox
   `panorama.tenant.delete_cancelled` event, not two (deduplicate by
   checking `deletionScheduledAt IS NULL` before emitting).
 
-Cascade ordering note (per data-architect C6 in Wave 0 scan):
-`Tenant.systemActorUserId` has `ON DELETE RESTRICT`. The deletion
-service MUST NULL this column (or delete the system user) BEFORE
-attempting the cascade-delete on the tenant row. This is service-
-layer logic, not a schema change.
+Cascade ordering note (per data-architect C6 in Wave 0 scan,
+extended during PR 3 tech-lead review):
+
+The deletion service MUST issue its writes in **this exact order**,
+inside one super-admin transaction with `SET LOCAL
+panorama.bypass_owner_check = 'on'` (so the migration-0005
+`enforce_at_least_one_owner` trigger doesn't refuse the cascade
+when the last Owner membership goes away):
+
+  1. **Emit `panorama.tenant.deleted` audit row** BEFORE any
+     mutation — the row's `tenantId` carries the per-tenant strand
+     anchor; `audit_events` has no FK to `tenants` so the row
+     survives the cascade.
+  2. **NULL `Tenant.systemActorUserId`** — clears the
+     `tenants.systemActorUserId` → `users(id)` `ON DELETE RESTRICT`
+     FK. Migration 0024 made the column nullable specifically for
+     this step.
+  3. **DELETE the tenant** — `ON DELETE CASCADE` clears every
+     tenant-scoped row, including the ones that hold User-side
+     `ON DELETE RESTRICT` FKs against the system user:
+     - `asset_maintenances.createdByUserId` (migration 0014) —
+       auto-suggested tickets the system user authored
+     - `inspection_templates.createdByUserId` (migration 0012) —
+       starter templates (rare for the system user but possible
+       via seed paths)
+     - `blackout_slots.createdByUserId` (migration 0006) — never
+       written by the system user today but ON DELETE RESTRICT
+       holds the same shape, so the order matters if it ever is
+  4. **DELETE the system user** — now an orphan, the user-side
+     RESTRICT FKs are vacuous because the cascading delete in
+     step 3 already cleared every referencing row.
+
+The previous (PR 3 pre-fix) order — `NULL systemActorUserId →
+DELETE user → DELETE tenant` — silently worked for tenants that
+never had a maintenance / inspection / blackout written by the
+system user, and tripped on the `asset_maintenances` RESTRICT for
+every tenant that did. PR 3's e2e regression at `tenant-deletion.
+e2e.test.ts > purge cron: cascade survives asset_maintenances
+RESTRICT` locks the contract.
 
 ### 8. Data export
 

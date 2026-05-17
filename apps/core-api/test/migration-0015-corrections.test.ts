@@ -48,7 +48,9 @@ describe('migration 0015 — Wave 1 corrections', () => {
       where: { id: tenant.id },
       select: { systemActorUserId: true },
     });
-    userId = tenantRow.systemActorUserId;
+    // Migration 0024 makes systemActorUserId nullable; live tenants
+    // always have it set immediately after createTenantWithOwner.
+    userId = tenantRow.systemActorUserId!;
   }, 60_000);
 
   afterAll(async () => {
