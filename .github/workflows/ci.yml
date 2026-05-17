@@ -202,6 +202,23 @@ jobs:
           path: apps/core-api/coverage/
           retention-days: 14
 
+  web-test:
+    name: Web unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Workspace package dist/ has to exist for @panorama/i18n's JSON
+      # bundles + @panorama/shared types to resolve under vitest. Mirrors
+      # the core-api test job's pre-build at line 141.
+      - run: pnpm --filter '!@panorama/core-api' --filter '!@panorama/web' build
+      - run: pnpm --filter @panorama/web test
+
   i18n-coverage:
     name: i18n coverage (EN = PT-BR = ES)
     runs-on: ubuntu-latest
