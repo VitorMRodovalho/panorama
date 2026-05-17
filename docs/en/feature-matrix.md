@@ -47,12 +47,15 @@ Two complementary gates guard the always-complete promise. Today the
 repo is community-only by construction — the `panorama-enterprise`
 private repo is gated on day-60 metrics per [ADR-0002](../adr/0002-oss-commercial-split.md)
 and does not exist yet — so the static gate has nothing to find by
-design. The functional gate is the load-bearing assertion that the
-flows above keep working as the codebase evolves; when the enterprise
-repo lands, the static gate begins enforcing the additive-only
-contract (no `@panorama/enterprise-*` references slipping into the
-community sources) and the functional gate continues to prove the
-flows still work without enterprise code installed.
+design. It runs in well under a second on every PR and exists today
+as a tripwire for the additive-only contract that activates when the
+enterprise repo lands; don't delete it as dead weight before then.
+The functional gate is the load-bearing assertion that the flows
+above keep working as the codebase evolves; when the enterprise repo
+lands, the static gate begins enforcing the additive-only contract
+(no `@panorama/enterprise-*` references slipping into the community
+sources) and the functional gate continues to prove the flows still
+work without enterprise code installed.
 
 | Flow (matrix promise) | Functional test | Static gate |
 |---|---|---|

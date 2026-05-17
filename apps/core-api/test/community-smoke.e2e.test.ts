@@ -63,10 +63,22 @@ import { resetTestDb } from './_reset-db.js';
  *   - QR scan endpoint: no by-tag asset-lookup endpoint exists today
  *     (only GET /assets returns the tag column). When that endpoint
  *     lands, add an essentials:asset-by-tag assertion here.
+ *   - Direct GET /assets/:id and GET /reservations/:id cross-tenant
+ *     isolation: those endpoints don't exist in the community surface
+ *     today (only list endpoints + GET /maintenances/:id). The
+ *     cross-tenant assertion below uses every endpoint that DOES exist;
+ *     when an asset- or reservation-show endpoint lands, extend the
+ *     essentials:cross-tenant-isolation block to cover them.
  *   - Inspection-driven auto-suggest of maintenance tickets: covered
  *     in inspection-maintenance.e2e.test.ts. The lifecycle here uses
  *     reservation-checkin-with-damage as the manual entry point because
  *     that's the more common ops trigger.
+ *
+ * Environment assumption: `test/_setup.ts` turns `FEATURE_INSPECTIONS`,
+ * `FEATURE_MAINTENANCE`, and `FEATURE_SELF_SERVE_SIGNUP` ON before any
+ * test imports. That matches the post-canary community-default posture
+ * documented in the inspection + maintenance handoffs; the smoke is
+ * NOT a "defaults-off boot" assertion.
  *
  * Why a single user-story walk + composition assertions, not per-flow
  * isolated tests: the per-flow assertions already exist in sibling files
@@ -450,13 +462,22 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     );
     expect(list.items.map((i) => i.id)).not.toContain(assetAId);
 
+    // Tenant B's /reservations list must not surface A's reservation
+    // (the lifecycle test created it in tenant A; tenant B should not
+    // see it on any scope).
+    const reservations = await fetch(`${url}/reservations`, { headers: { cookie: bCookie } });
+    const r = await expectJson<{ items: Array<{ id: string }> }>(reservations, 200);
+    expect(r.items.map((i) => i.id)).not.toContain(reservationId);
+
     // Tenant B's /maintenances list must not surface A's ticket.
     const tickets = await fetch(`${url}/maintenances`, { headers: { cookie: bCookie } });
     const t = await expectJson<{ items: Array<{ id: string }> }>(tickets, 200);
     expect(t.items.map((i) => i.id)).not.toContain(maintenanceTicketId);
 
     // Tenant B GETing A's specific maintenance ticket: 404 (RLS hides
-    // the row, controller turns the missing row into NotFound).
+    // the row, controller turns the missing row into NotFound). This
+    // is the only by-id GET on the community surface today (no
+    // /assets/:id or /reservations/:id); extend when those land.
     const direct = await fetch(`${url}/maintenances/${maintenanceTicketId}`, {
       headers: { cookie: bCookie },
     });
@@ -477,17 +498,22 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     // Drive the worker directly. BullMQ is not running in test mode;
     // the controller's enqueue is best-effort and the test seam is
     // TenantExportService.runJob (see tenant-export.controller.ts §79-91).
+    // This seam is for tests only; production callers go through the
+    // queue, never directly.
     const exportSvc = app.get(TenantExportService);
     await exportSvc.runJob(jobId);
 
     const row = await adminDb.tenantExport.findUniqueOrThrow({ where: { id: jobId } });
-    // Acceptable terminal states: completed (happy path with email
-    // dispatched against MailHog) or failed (if email dispatch
-    // hiccupped — the export artifact itself reached object storage
-    // before dispatchEmail ran, which is what this assertion cares
-    // about). 'queued' or 'processing' would mean runJob did not
-    // execute end-to-end.
-    expect(['completed', 'failed']).toContain(row.status);
+    // Tight assertion: the happy path is "completed + objectKey set".
+    // markFailed never sets objectKey (service L268-275), so accepting
+    // either terminal state would silently mask a partial-failure
+    // regression on a synchronous test seam where we control all
+    // inputs. If MinIO or SMTP misbehaves in CI, surface that as a
+    // real failure with the row's failedReason on the message — don't
+    // tolerate.
+    expect(row.status, `tenant-export terminal state (failedReason=${row.failedReason ?? 'n/a'})`).toBe(
+      'completed',
+    );
     expect(row.objectKey).toBeTruthy();
   });
 
@@ -495,7 +521,11 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     // The audit log is queryable via PrismaClient (no dedicated
     // controller — the rows are exposed to ops via tenant-export and
     // via the planned audit UI). Assert the chain has each expected
-    // action for tenant A, in order, with the correct actor links.
+    // action for tenant A, with reservation-lifecycle actions
+    // appearing in causal order. NOTE: if an earlier `it()` in this
+    // suite failed and never emitted its expected action, you'll see
+    // a cascade of "missing audit action" failures here — diagnose
+    // the upstream failure first.
     const rows = await adminDb.auditEvent.findMany({
       where: { tenantId: tenantAId },
       orderBy: { id: 'asc' },
@@ -503,9 +533,7 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     });
     const actions = rows.map((r) => r.action);
 
-    // Each must appear at least once. Order isn't strictly asserted
-    // (audit emits can interleave with hook events); presence is the
-    // composition signal the gate cares about.
+    // Presence check — every promised state change emitted at least once.
     const expected = [
       'panorama.tenant.created',
       'panorama.reservation.created',
@@ -520,5 +548,26 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     for (const action of expected) {
       expect(actions, `missing audit action ${action}`).toContain(action);
     }
+
+    // Order check — the reservation lifecycle subset MUST appear in
+    // causal sequence: created < approved < checked_out < checked_in.
+    // A regression that emits checked_in before approved is a real
+    // bug the presence check alone would miss. Scan as a monotone
+    // subsequence over the action stream.
+    const lifecycleSequence = [
+      'panorama.reservation.created',
+      'panorama.reservation.approved',
+      'panorama.reservation.checked_out',
+      'panorama.reservation.checked_in',
+    ];
+    let cursor = 0;
+    for (const action of actions) {
+      if (action === lifecycleSequence[cursor]) cursor++;
+      if (cursor === lifecycleSequence.length) break;
+    }
+    expect(
+      cursor,
+      `reservation lifecycle out of order; got ${JSON.stringify(actions)}`,
+    ).toBe(lifecycleSequence.length);
   });
 });
