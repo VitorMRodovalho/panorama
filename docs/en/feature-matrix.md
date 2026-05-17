@@ -38,6 +38,40 @@ These flows are **always complete** in Community:
 - View the audit log
 - Migrate from Snipe-IT
 
-If any of those depended on Enterprise code to be end-to-end usable, the
-split has broken. The CI `ensure-community-complete` job asserts that the
-Community test suite passes without the Enterprise packages installed.
+If any of those depended on Enterprise code to be end-to-end usable,
+the split has broken.
+
+### How CI proves this
+
+Two complementary gates guard the always-complete promise. Today the
+repo is community-only by construction — the `panorama-enterprise`
+private repo is gated on day-60 metrics per [ADR-0002](../adr/0002-oss-commercial-split.md)
+and does not exist yet — so the static gate has nothing to find by
+design. It runs in well under a second on every PR and exists today
+as a tripwire for the additive-only contract that activates when the
+enterprise repo lands; don't delete it as dead weight before then.
+The functional gate is the load-bearing assertion that the flows
+above keep working as the codebase evolves; when the enterprise repo
+lands, the static gate begins enforcing the additive-only contract
+(no `@panorama/enterprise-*` references slipping into the community
+sources) and the functional gate continues to prove the flows still
+work without enterprise code installed.
+
+| Flow (matrix promise) | Functional test | Static gate |
+|---|---|---|
+| Check out / check in | [`reservation-basket.e2e.test.ts`](../../apps/core-api/test/reservation-basket.e2e.test.ts), [`community-smoke.e2e.test.ts`](../../apps/core-api/test/community-smoke.e2e.test.ts) `essentials:reservation-lifecycle` | n/a (no enterprise surface) |
+| Book a vehicle, approve, return | [`reservation-basket.e2e.test.ts`](../../apps/core-api/test/reservation-basket.e2e.test.ts), `community-smoke.e2e.test.ts` `essentials:reservation-lifecycle` | n/a |
+| Blackout windows enforced | `community-smoke.e2e.test.ts` `essentials:blackout-rejection` | n/a |
+| Flag for maintenance, assign, track repair | [`maintenance.e2e.test.ts`](../../apps/core-api/test/maintenance.e2e.test.ts), [`inspection-maintenance.e2e.test.ts`](../../apps/core-api/test/inspection-maintenance.e2e.test.ts), `community-smoke.e2e.test.ts` `essentials:maintenance-track-repair` | n/a |
+| Cross-tenant isolation (RLS) | `community-smoke.e2e.test.ts` `essentials:cross-tenant-isolation`, every other `*.e2e.test.ts` per ADR-0006 | n/a |
+| Export any entity list to CSV | [`tenant-export.e2e.test.ts`](../../apps/core-api/test/tenant-export.e2e.test.ts), `community-smoke.e2e.test.ts` `essentials:csv-export-end-to-end` | n/a |
+| View the audit log | [`audit-chain-integrity.e2e.test.ts`](../../apps/core-api/test/audit-chain-integrity.e2e.test.ts), `community-smoke.e2e.test.ts` `essentials:audit-log-chain` | n/a |
+| Migrate from Snipe-IT | [`snipeit-compat-read.e2e.test.ts`](../../apps/core-api/test/snipeit-compat-read.e2e.test.ts), [`snipeit-compat-auth.e2e.test.ts`](../../apps/core-api/test/snipeit-compat-auth.e2e.test.ts) | n/a |
+| (Future) no `@panorama/enterprise-*` reference leaks in | n/a (no surface yet) | `no-enterprise-imports` CI job (`scripts/no-enterprise-imports.ts`) — scans `apps/` + `packages/` + `.github/` + repo-root `package.json`/`pnpm-lock.yaml` across `.ts/.tsx/.js/.mjs/.cjs/.json/.yml/.yaml` |
+
+Add a row to this table when a new always-complete flow lands;
+remove a row only if the flow is genuinely no longer a Community
+guarantee (a process change that should also update the matrix
+above). The `community-smoke.e2e.test.ts` file is the canonical
+composition test that walks the flows as one user story — it catches
+regressions in the seams between flows that per-flow tests cannot.
