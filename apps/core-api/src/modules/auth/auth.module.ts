@@ -49,6 +49,7 @@ import { RedisModule } from '../redis/redis.module.js';
   exports: [
     AuthConfigService,
     AuthService,
+    OidcService,
     PasswordService,
     PatMembershipCache,
     PersonalAccessTokenService,

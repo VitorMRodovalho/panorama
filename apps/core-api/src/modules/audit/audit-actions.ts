@@ -57,9 +57,9 @@ export const PanoramaAuditAction = {
    *   - `subnet` — 50/IPv4-/24 or IPv6-/64/day (residential proxy)
    *   - `oidc_sub` — 3/(iss, sub)/24h (single-IdP-account abuse)
    *
-   * Metadata: `bucket`, `key` (hashed — do NOT log raw IP or sub),
-   * `attemptIndex` (which attempt in the window tripped), `iss`
-   * (only set when `bucket === 'oidc_sub'`).
+   * Metadata: `bucket`, `keyHash` (sha256 first-16 chars — never
+   * the raw IP / subnet / sub), `iss` (only set when
+   * `bucket === 'oidc_sub'`).
    */
   AuthSignupRateLimitTripped: 'panorama.auth.signup_rate_limit_tripped',
   /**
@@ -88,14 +88,51 @@ export const PanoramaAuditAction = {
    *     signup callback, or vice versa)
    *   - `session_attached` — caller arrived with an existing
    *     authenticated session (signup is logged-out-only)
+   *   - `unknown_provider` — the `:provider` path segment is not
+   *     `google` or `microsoft`, or the provider is not configured
+   *     on this deployment. Carries no real CSRF signal but rides
+   *     the same audit row so the timing-padded refusal has a
+   *     consistent SIEM home.
+   *   - `callback_provider_mismatch` — the path `:provider` differs
+   *     from what the initiating state record locked in (an attacker
+   *     trying to swap providers mid-flow, or a misconfigured client).
+   *   - `idp_error` — the IdP redirected with `?error=...` (RFC 6749
+   *     §4.1.2.1). Operationally distinct from a state CSRF but
+   *     groups under the same SIEM channel for the signup-callback
+   *     refusal aggregate.
    *
    * Metadata: `reason` (one of the above), `stateKeyPrefix` (first
    * 8 chars of the state key — full key is sensitive), `iss` (if
-   * the OIDC callback was reached), `hasSession` (boolean).
+   * the OIDC callback was reached), `hasSession` (boolean),
+   * `idpErrorCode` (sanitized; only set when `reason === 'idp_error'`).
    */
   AuthSignupOidcStateMismatch: 'panorama.auth.signup_oidc_state_mismatch',
 
   // -------- panorama.tenant.* --------
+  /**
+   * Tenant provisioned. Per-tenant event. Fired by every tenant-
+   * creation path: `TenantAdminService.createTenantWithOwner` (the
+   * admin / seed surface) AND the self-serve OIDC signup callback
+   * (ADR-0020 §1). Migrated from a string-literal call site in
+   * `tenant-admin.service.ts` as part of the signup endpoint PR
+   * because the new emit site (signup callback) wants the enum
+   * anyway — the registry's "migrate as touched" policy applies.
+   *
+   * Metadata (varies by call site, common keys documented here):
+   *   - `slug` — Tenant.slug at creation. For self-serve signup
+   *     `slug === tenant.id` (UUID) per ADR-0020 §2a; for admin
+   *     creation it is the operator-supplied human-readable slug.
+   *   - `ownerUserId` — first Owner's user id
+   *   - `ownerMembershipId` — first Owner membership row id
+   *   - `pendingVerification` — true ONLY for self-serve signup
+   *     (ADR-0020 §3); identifies tenants the future verify endpoint
+   *     must unlock before the first login.
+   *   - `provider` — `google` / `microsoft` for signup; absent for
+   *     non-signup paths.
+   *   - `ctaSource` — R5 funnel-signal source on signup; absent for
+   *     non-signup paths.
+   */
+  TenantCreated: 'panorama.tenant.created',
   /**
    * Self-serve signup OIDC flow initiated (ADR-0020 §1). Cluster-
    * wide event (`tenantId=null`) — the tenant does not exist yet.
@@ -137,6 +174,20 @@ export const PanoramaAuditAction = {
    * up product analytics).
    */
   TenantVerified: 'panorama.tenant.verified',
+  /**
+   * Self-serve signup refused because the OIDC identity (or its
+   * email) already maps to an existing Panorama account (ADR-0020
+   * §2 "one tenant per email — initial signup"). Cluster-wide event
+   * (`tenantId=null`). Today, multi-tenant ownership rides through
+   * the existing invitation flow (ADR-0008); signup is reserved for
+   * net-new identities. If `pathTaken !== 'new_user'`, the callback
+   * emits this row and refuses with the standard timing-padded 400.
+   *
+   * Metadata: `pathTaken` (`existing_identity` / `email_link`),
+   * `provider`, `iss`, `subjectHash` (sha256 first-16 chars of
+   * provider:subject).
+   */
+  TenantSignupRefusedExistingAccount: 'panorama.tenant.signup_refused_existing_account',
   /**
    * Per-email verification cap (3 pending verifications per email
    * per 24h, ADR-0020 §3) hit. Cluster-wide event (`tenantId=null`)

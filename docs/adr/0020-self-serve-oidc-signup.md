@@ -100,19 +100,44 @@ the login callback:
   browser by definition. A logged-in user that wants to provision a
   second tenant uses the existing invitation flow (ADR-0008), not
   signup.
-- A state-record mismatch (missing / expired / wrong purpose /
-  session-attached) emits
+- A state-record mismatch emits
   `panorama.auth.signup_oidc_state_mismatch` (see §6) so SIEM can
-  alert on signup-CSRF attempts.
+  alert on signup-CSRF attempts. The `reason` field discriminates
+  the specific contract violation:
+  - `missing` — no Redis record for the supplied state key (expired
+    or forged)
+  - `wrong_purpose` — state record's `purpose !== 'signup'`
+    (confused-deputy across login/signup flows)
+  - `session_attached` — caller arrived with an existing session
+  - `unknown_provider` — `:provider` path is not `google` /
+    `microsoft`, or the provider is not configured on this deployment
+  - `callback_provider_mismatch` — path `:provider` does not match
+    the provider recorded at initiate (attempt to swap provider
+    mid-flow)
+  - `idp_error` — IdP redirected with `?error=...` per RFC 6749
+    §4.1.2.1; the sanitized code rides in `metadata.idpErrorCode`
 
 ### 2. One tenant per email (initial signup)
 
 Each successful OIDC signup creates exactly one tenant with the
-signup email's user as Tenant Owner. Future enhancement (deferred):
-allow a user to be Owner of multiple tenants by inviting themselves
-under a different email or by accepting an invitation to join an
-existing tenant — both already supported via the existing invitation
-flow (ADR-0008).
+signup email's user as Tenant Owner.
+
+**Implementation enforcement (PR 1):** the callback REFUSES the
+signup when `AuthService.resolveOidcUserForSignup` reports
+`pathTaken !== 'new_user'` — i.e. when the IdP identity is already
+linked to a Panorama account (`existing_identity`) or when the
+asserted email already maps to a pre-existing User row that would be
+newly linked (`email_link`). The refusal emits
+`panorama.tenant.signup_refused_existing_account` (see §6) and
+funnels through the §5 timing-padded 400 envelope. Without this
+check, a single Google/Microsoft account could mint up to 3 tenants
+per (iss, sub) per 24h (the §4 bucket-3 cap) via repeated signup
+attempts at the upper edge of the budget.
+
+Future enhancement (deferred): allow a user to be Owner of multiple
+tenants by inviting themselves under a different email or by
+accepting an invitation to join an existing tenant — both already
+supported via the existing invitation flow (ADR-0008).
 
 ### 2a. Tenant identifier is UUID; display name is free text
 
@@ -143,6 +168,19 @@ Even though OIDC IdPs already verify the email, Panorama emits a
 post-signup confirmation email with a one-time-use token (TTL: 24h).
 The tenant is provisioned in a `pending_verification` state; the
 first login is blocked until the verification token is consumed.
+
+**PR 1 boundary on the "first login is blocked" contract:** the
+signup callback (PR 1) intentionally does NOT establish a session
+when it provisions the tenant. The browser is redirected to
+`/?signup=verify` and the user is expected to consume the
+verification token (PR 2 surface) before any session is minted.
+Creating a live session in the callback would leave a window between
+PR 1 and PR 2 merges where an unverified tenant could be fully used
+— the literal §3 contract reading is that no session exists until
+the verification token is consumed, and PR 1 honours that. The
+`pendingVerification` column added in migration 0022 carries the
+state forward; PR 2 reads it in the verify endpoint and flips it
+back to false.
 
 This protects against:
 - IdP-issued tokens for emails the IdP itself hasn't verified (rare
@@ -198,16 +236,43 @@ signup-initiate endpoint). The third runs post-OIDC-resolution on
 the callback (once `iss` and `sub` claims are known from the
 verified id_token).
 
-**Throttler stack reference:** This endpoint rides on the throttler
-wired by PR #204 (`app.set('trust proxy', 1)` in `main.ts:18`,
-`ThrottlerModule` registered as `APP_GUARD`) and PR #205
-(`PerTenantThrottlerGuard` at
-`apps/core-api/src/shared/throttler/per-tenant-throttler.guard.ts`
-which falls back to `req.ip` for anonymous routes — exactly the
-case for signup-initiate). The signup endpoint is added to the first
-batch of `@Throttle`-decorated routes; the per-subnet and per-`(iss,
-sub)` buckets are added as additional `@Throttle` declarations or
-a sibling guard.
+**Throttler stack reference (amended during PR 1 implementation —
+service-level pivot):** Round 3 prereq PR #210 added `signupIp` +
+`signupSubnet` named buckets to `ThrottlerModule.forRoot` expecting
+the signup endpoint to ride them via `@Throttle` decorators. The
+PR 1 implementation discovered a fatal interaction with
+`@nestjs/throttler@6.5.0`: `ThrottlerGuard.canActivate` iterates
+EVERY named throttler on EVERY route (keyed per-(class, handler,
+name)), so `signupIp`'s 5/hour cap would silently apply to
+`/auth/login`, `/reservations`, and every other handler at 5/hour.
+Opting out would require `@SkipThrottle({signupIp: true,
+signupSubnet: true})` on every non-signup controller — brittle and
+forgettable.
+
+The implementation therefore moved all three §4 buckets to a
+service-level `SignupRateLimits`
+(`modules/signup/signup-rate-limits.service.ts`) that invokes the
+existing `RateLimiter` (Redis sliding-window, fail-closed) directly.
+The `ThrottlerModule` named-bucket entries for `signupIp` +
+`signupSubnet` are REMOVED in PR 1 (app.module.ts course-correct on
+PR #210). The remaining `ThrottlerModule` buckets (`global`,
+`auth`, `upload`) stay; the existing `PerTenantThrottlerGuard`
+(APP_GUARD) continues to enforce them on authenticated routes.
+
+Trade-offs of the pivot:
+
+- `+` Buckets are scoped to the signup endpoints by construction;
+  no rogue route inherits them.
+- `+` Each bucket trip emits `AuthSignupRateLimitTripped` with the
+  exact `bucket` label (`ip` / `subnet` / `oidc_sub`) for SIEM
+  correlation — the v6 `ThrottlerGuard` exception path doesn't
+  carry that label as cleanly.
+- `+` The §5 timing-padded 400 envelope is composed in one place
+  rather than overriding `throwThrottlingException`.
+- `-` PR #210's named-bucket investment in `ThrottlerModule.forRoot`
+  is partially reverted (the `signupIp` + `signupSubnet` entries
+  drop out). The `subnetKey()` utility from #210 is still load-
+  bearing (used by `SignupRateLimits.consumeSubnet`).
 
 **Trust-proxy contract is fragile and self-hosters must configure
 it.** `app.set('trust proxy', 1)` means "trust ONE hop." On the
@@ -302,13 +367,19 @@ endpoints that emit them ship (Round 3 prerequisite).
 - `panorama.tenant.signup_initiated` — at the moment the OIDC flow
   starts (registry addition)
 - `panorama.tenant.created` — at the moment the tenant is
-  provisioned in `pending_verification` state (existing event)
+  provisioned in `pending_verification` state (existing event,
+  migrated to registry enum in PR 1)
+- `panorama.tenant.signup_refused_existing_account` — §2 enforcement
+  in PR 1: the OIDC identity is already linked to a Panorama
+  account OR its email matches a pre-existing User row. Refusal
+  is fail-closed; the user is told to use the invitation flow
+  (ADR-0008) or sign in.
 - `panorama.tenant.verification_sent` — when the confirmation email
-  is dispatched (registry addition)
+  is dispatched (registry addition; PR 2)
 - `panorama.tenant.verified` — when the user POSTs the verification
-  token and the tenant becomes active (registry addition)
+  token and the tenant becomes active (registry addition; PR 2)
 - `panorama.tenant.verification_throttled` — per-email cap (§3) hit
-  (registry addition)
+  (registry addition; PR 2)
 
 **Anonymous-abuse signals:**
 - `panorama.auth.signup_rate_limit_tripped` — any of the three §4

@@ -20,6 +20,16 @@ if (!process.env['FEATURE_INSPECTIONS']) {
 if (!process.env['FEATURE_MAINTENANCE']) {
   process.env['FEATURE_MAINTENANCE'] = 'true';
 }
+if (!process.env['FEATURE_SELF_SERVE_SIGNUP']) {
+  process.env['FEATURE_SELF_SERVE_SIGNUP'] = 'true';
+}
+// SignupConfigService throws if TURNSTILE_SECRET is empty while
+// FEATURE_SELF_SERVE_SIGNUP=true. Tests mock TurnstileVerifier so
+// the secret value itself is never sent anywhere; this exists only
+// to clear the boot-time guard.
+if (!process.env['TURNSTILE_SECRET']) {
+  process.env['TURNSTILE_SECRET'] = 'test-turnstile-secret';
+}
 if (!process.env['SESSION_SECRET']) {
   process.env['SESSION_SECRET'] = 'a'.repeat(32);
 }

@@ -22,6 +22,7 @@ import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { ReservationModule } from './modules/reservation/reservation.module.js';
 import { SnipeitCompatModule } from './modules/snipeit-compat/snipeit-compat.module.js';
 import { BootAuditModule } from './modules/boot-audit/boot-audit.module.js';
+import { SignupModule } from './modules/signup/signup.module.js';
 
 /**
  * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
@@ -75,6 +76,23 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
   ? [{ module: MaintenanceModule, global: false }]
   : [];
 
+/**
+ * `FEATURE_SELF_SERVE_SIGNUP` (ADR-0020) gates SignupModule — the
+ * public-hosted self-serve OIDC signup surface. Default `false`; the
+ * hosted instance enables it. Self-hosters can flip the flag on their
+ * own deployment with the same defense-in-depth (multi-bucket rate
+ * limit, Turnstile CAPTCHA, email-verification gate, audit emissions)
+ * documented in the ADR. Same env-var shape as FEATURE_INSPECTIONS.
+ */
+function selfServeSignupEnabled(): boolean {
+  const raw = (process.env['FEATURE_SELF_SERVE_SIGNUP'] ?? 'false').toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'no';
+}
+
+const conditionalSelfServeSignup: DynamicModule[] = selfServeSignupEnabled()
+  ? [{ module: SignupModule, global: false }]
+  : [];
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -86,17 +104,20 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
         { name: 'global', ttl: 60_000, limit: 120 },
         { name: 'auth', ttl: 60_000, limit: 10 },
         { name: 'upload', ttl: 60_000, limit: 5 },
-        // Self-serve signup buckets (ADR-0020 §4 first two of three).
-        // Currently declared but not yet decorated on any route — the
-        // signup endpoint (Round 3 main) wires `@Throttle({ signupIp:
-        // ..., signupSubnet: ... })` and a sibling guard handles the
-        // subnet-keyed bucket via `subnetKey(req.ip)` from
-        // shared/throttler/subnet-key.ts. The third §4 bucket
-        // (3/(iss,sub)/24h) is a controller-level Redis check, not
-        // a ThrottlerModule bucket, because it runs post-OIDC-
-        // validation on the callback.
-        { name: 'signupIp', ttl: 3_600_000, limit: 5 },
-        { name: 'signupSubnet', ttl: 86_400_000, limit: 50 },
+        // Self-serve signup buckets (ADR-0020 §4) are NOT registered
+        // here. PR #210 added `signupIp` + `signupSubnet` named
+        // configs intending to wire them via `@Throttle` decorators,
+        // but the v6 ThrottlerGuard iterates every named throttler
+        // on every route (keyed per-(class, handler, name)) — so
+        // signupIp's 5/hour/IP cap would silently apply to
+        // /auth/login, /reservations, and every other handler.
+        // Opting out would require `@SkipThrottle({signupIp: true,
+        // signupSubnet: true})` on every non-signup controller,
+        // which is brittle. SignupRateLimits
+        // (modules/signup/signup-rate-limits.service.ts) instead
+        // invokes the existing `RateLimiter` service for all three
+        // §4 buckets (ip / subnet / oidc_sub), keeping them scoped
+        // to the signup endpoints by construction.
       ],
       // skipIf is evaluated per-request (NOT per module-load), so
       // existing e2e tests that share a cached AppModule instance
@@ -123,6 +144,7 @@ const conditionalMaintenance: DynamicModule[] = maintenanceEnabled()
     ...conditionalCompatShim,
     ...conditionalInspections,
     ...conditionalMaintenance,
+    ...conditionalSelfServeSignup,
     // BootAuditModule LAST — its OnModuleInit fires after Prisma +
     // Audit + Redis are wired so the boot audits commit cleanly.
     BootAuditModule,

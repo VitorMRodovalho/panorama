@@ -104,6 +104,12 @@ model Tenant {
   maintenanceDayInterval               Int       @default(180)
   maintenanceStaleWarningDays          Int       @default(60)
   maintenanceReopenWindowDays          Int       @default(14)
+  /// ADR-0020 §3 — true while the email-verification token minted at
+  /// self-serve signup is unconsumed. Self-host tenants and seeded
+  /// tenants stay false (the createTenantWithOwner call sites that
+  /// existed before signup continue to write the default). PR 2 adds
+  /// the route guard reading this column and the flip endpoint.
+  pendingVerification                  Boolean   @default(false)
   createdAt                            DateTime  @default(now())
   updatedAt                            DateTime  @updatedAt
   deletedAt                            DateTime?
