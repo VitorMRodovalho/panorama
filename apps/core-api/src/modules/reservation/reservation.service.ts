@@ -70,6 +70,37 @@ export interface ListReservationsParams {
   limit: number;
 }
 
+/**
+ * Enriched list-row shape (Round 4 PR3). Carries actor displayName
+ * fields populated from User joins + the previous-asset damage note
+ * surfaced when an asset has a prior reservation with damageFlag=true
+ * that the operator needs to see before checking it out again.
+ *
+ * Persona-fleet-ops C8 scar: a driver returned a vehicle with damage,
+ * maintenance recovered it, the next driver re-checked-out without
+ * knowing about the prior damage. The note + flag arrive at the
+ * checkout disclosure so the next operator sees the history.
+ *
+ * Note on actor names + soft-deleted users: the User join projects
+ * displayName regardless of whether the User has a deletedAt
+ * timestamp. The names are audit-trail attribution — a coordinator
+ * reviewing a row needs the name of the person who decided, even if
+ * that person has since left the tenant. Future "anonymize on
+ * delete" work (ADR-0020 §10 candidate) would update this.
+ */
+export type ReservationListRow = Reservation & {
+  approverName: string | null;
+  checkedOutByName: string | null;
+  checkedInByName: string | null;
+  /** damageNote from the MOST RECENT damaged return on the SAME
+      asset, regardless of when this row's startAt is — persona-fleet-
+      ops C8 flagged the same-day-swap path where the operator's
+      check-out happens AFTER a prior damaged return that came AFTER
+      this row's pre-booked startAt. Only meaningful when
+      canCheckout(r) is true on the frontend. */
+  previousAssetDamageNote: string | null;
+};
+
 export interface CancelReservationParams {
   actor: ReservationContext;
   reservationId: string;
@@ -474,7 +505,7 @@ export class ReservationService {
   // List
   // ---------------------------------------------------------------------
 
-  async list(params: ListReservationsParams): Promise<Reservation[]> {
+  async list(params: ListReservationsParams): Promise<ReservationListRow[]> {
     const { actor, scope, status, from, to, limit } = params;
     if (scope === 'tenant' && !isAdmin(actor.role)) {
       throw new ForbiddenException('admin_role_required_for_tenant_scope');
@@ -492,15 +523,87 @@ export class ReservationService {
     if (to) where.startAt = { lte: to };
     if (from) where.endAt = { gte: from };
 
-    return this.prisma.runInTenant(
-      actor.tenantId,
-      (tx) =>
-        tx.reservation.findMany({
-          where,
-          orderBy: [{ startAt: 'asc' }, { createdAt: 'asc' }],
-          take: limit,
-        }),
-    );
+    return this.prisma.runInTenant(actor.tenantId, async (tx) => {
+      const rows = await tx.reservation.findMany({
+        where,
+        orderBy: [{ startAt: 'asc' }, { createdAt: 'asc' }],
+        take: limit,
+        // RLS posture for the User joins: `users` deliberately has
+        // RLS OFF (one human can belong to many tenants). What gates
+        // the join from leaking cross-tenant displayNames is that
+        // the reservation FK has to be reachable first — and the
+        // reservation read is gated by `runInTenant`'s tenant GUC.
+        // So we only ever pull User rows that the current tenant
+        // could already discover via the FK chain. data-architect
+        // Q2 confirmed plan quality on the include-shape JOIN.
+        include: {
+          approver: { select: { displayName: true } },
+          checkedOutBy: { select: { displayName: true } },
+          checkedInBy: { select: { displayName: true } },
+        },
+      });
+
+      // Build a per-asset map of "most recent damaged-return
+      // reservation" for the assets in the current list. Persona-
+      // fleet-ops same-day-swap fix: the previous predicate
+      // `prev.checkedInAt < r.startAt` missed cases where R2 was
+      // pre-booked weeks ahead but R1 returned damaged AFTER R2's
+      // startAt and BEFORE the operator's check-out moment. The
+      // surface is informational ("look at the asset"), not state-
+      // gating, so the broader "any prior damaged-return on this
+      // asset" predicate is the correct anchor.
+      const assetIds = Array.from(
+        new Set(
+          rows
+            .filter((r) => r.assetId !== null && r.lifecycleStatus === 'BOOKED')
+            .map((r) => r.assetId as string),
+        ),
+      );
+
+      const prevDamageByAsset = new Map<string, { damageNote: string | null }>();
+      if (assetIds.length > 0) {
+        const damaged = await tx.reservation.findMany({
+          where: {
+            // Belt-and-suspenders alongside the runInTenant GUC —
+            // explicit tenantId narrows the planner's row-set and
+            // keeps the where-clause self-documenting for future
+            // readers who haven't internalised the ALS posture.
+            tenantId: actor.tenantId,
+            assetId: { in: assetIds },
+            damageFlag: true,
+            checkedInAt: { not: null },
+          },
+          select: { assetId: true, damageNote: true, checkedInAt: true, createdAt: true },
+          // tiebreaker on createdAt avoids non-determinism when two
+          // damaged returns share a checkedInAt timestamp (test
+          // fixtures or back-dated rows).
+          orderBy: [{ checkedInAt: 'desc' }, { createdAt: 'desc' }],
+          take: 500,
+        });
+        for (const d of damaged) {
+          if (!d.assetId) continue;
+          if (!prevDamageByAsset.has(d.assetId)) {
+            prevDamageByAsset.set(d.assetId, { damageNote: d.damageNote });
+          }
+        }
+      }
+
+      return rows.map((r): ReservationListRow => {
+        const { approver, checkedOutBy, checkedInBy, ...rest } = r;
+        let previousAssetDamageNote: string | null = null;
+        if (r.assetId && r.lifecycleStatus === 'BOOKED') {
+          const prev = prevDamageByAsset.get(r.assetId);
+          if (prev) previousAssetDamageNote = prev.damageNote;
+        }
+        return {
+          ...rest,
+          approverName: approver?.displayName ?? null,
+          checkedOutByName: checkedOutBy?.displayName ?? null,
+          checkedInByName: checkedInBy?.displayName ?? null,
+          previousAssetDamageNote,
+        };
+      });
+    });
   }
 
   // ---------------------------------------------------------------------

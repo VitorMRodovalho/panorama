@@ -513,4 +513,196 @@ describe('reservation check-out / check-in e2e', () => {
     });
     expect(ok.status).toBe(200);
   });
+
+  // -----------------------------------------------------------------
+  // Round 4 PR3 — actor names + previous-asset-damage disclosure
+  // on the list endpoint.
+  // -----------------------------------------------------------------
+
+  it('GET /reservations enriches rows with approver / checkedOutBy / checkedInBy displayNames', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    // Fresh asset so the row's actors are predictable + free of damageFlag
+    // bleed-through from earlier tests.
+    const asset = await adminDb.asset.create({
+      data: {
+        tenantId,
+        modelId: (
+          await adminDb.assetModel.findFirstOrThrow({ where: { tenantId } })
+        ).id,
+        tag: 'ACTOR-01',
+        name: 'Actor Test Truck',
+        bookable: true,
+        status: 'READY',
+      },
+    });
+    const id = await createApproved({
+      cookie: adminCookie,
+      assetId: asset.id,
+      startHours: 900,
+      endHours: 902,
+    });
+    await fetch(`${url}/reservations/${id}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 1000 }),
+    });
+    await fetch(`${url}/reservations/${id}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 1050 }),
+    });
+
+    const list = await fetch(`${url}/reservations?scope=tenant&status=all`, {
+      headers: { cookie: adminCookie },
+    });
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as {
+      items: Array<{
+        id: string;
+        approverName: string | null;
+        checkedOutByName: string | null;
+        checkedInByName: string | null;
+      }>;
+    };
+    const row = body.items.find((r) => r.id === id);
+    expect(row).toBeDefined();
+    // Same admin did all three actions in this test path.
+    expect(row?.approverName).toBe(admin.displayName);
+    expect(row?.checkedOutByName).toBe(admin.displayName);
+    expect(row?.checkedInByName).toBe(admin.displayName);
+  });
+
+  it('GET /reservations surfaces previousAssetDamageNote on a NEW BOOKED row when the same asset had a prior damaged return', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    const asset = await adminDb.asset.create({
+      data: {
+        tenantId,
+        modelId: (
+          await adminDb.assetModel.findFirstOrThrow({ where: { tenantId } })
+        ).id,
+        tag: 'DAMAGE-01',
+        name: 'Damage History Truck',
+        bookable: true,
+        status: 'READY',
+      },
+    });
+    // Reservation 1 — damaged return.
+    const r1 = await createApproved({
+      cookie: adminCookie,
+      assetId: asset.id,
+      startHours: 1000,
+      endHours: 1002,
+    });
+    await fetch(`${url}/reservations/${r1}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 5000 }),
+    });
+    await fetch(`${url}/reservations/${r1}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mileage: 5050,
+        damageFlag: true,
+        damageNote: 'cracked headlight, left side',
+      }),
+    });
+    // Asset auto-routed to MAINTENANCE; recover so a new reservation
+    // can be created against it.
+    await adminDb.asset.update({ where: { id: asset.id }, data: { status: 'READY' } });
+
+    // Reservation 2 — BOOKED state, AFTER r1's checkedInAt.
+    const r2 = await createApproved({
+      cookie: adminCookie,
+      assetId: asset.id,
+      startHours: 1100,
+      endHours: 1102,
+    });
+
+    const list = await fetch(`${url}/reservations?scope=tenant&status=open`, {
+      headers: { cookie: adminCookie },
+    });
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as {
+      items: Array<{ id: string; previousAssetDamageNote: string | null }>;
+    };
+    const row2 = body.items.find((r) => r.id === r2);
+    expect(row2).toBeDefined();
+    expect(row2?.previousAssetDamageNote).toBe('cracked headlight, left side');
+  });
+
+  it('GET /reservations same-day-swap: R2 pre-booked with startAt BEFORE R1 damaged return → previousAssetDamageNote still surfaces (persona-fleet-ops fix)', async () => {
+    const adminCookie = await loginCookie(admin.email, admin.password);
+    const asset = await adminDb.asset.create({
+      data: {
+        tenantId,
+        modelId: (
+          await adminDb.assetModel.findFirstOrThrow({ where: { tenantId } })
+        ).id,
+        tag: 'SWAP-01',
+        name: 'Same Day Swap Truck',
+        bookable: true,
+        status: 'READY',
+      },
+    });
+    // R2 first — startAt in the future for now (validation requires).
+    // We back-date r2.startAt via admin DB write below so the
+    // simulated state mirrors "pre-booked weeks ago for today".
+    const r2 = await createApproved({
+      cookie: adminCookie,
+      assetId: asset.id,
+      startHours: 1300,
+      endHours: 1302,
+    });
+    // R1 — close-future window, will get a damaged check-in shortly.
+    const r1 = await createApproved({
+      cookie: adminCookie,
+      assetId: asset.id,
+      startHours: 1200,
+      endHours: 1202,
+    });
+    await fetch(`${url}/reservations/${r1}/checkout`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ mileage: 7000 }),
+    });
+    await fetch(`${url}/reservations/${r1}/checkin`, {
+      method: 'POST',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mileage: 7050,
+        damageFlag: true,
+        damageNote: 'dent in tailgate, swap-day return',
+      }),
+    });
+    await adminDb.asset.update({ where: { id: asset.id }, data: { status: 'READY' } });
+
+    // Force the same-day-swap state: r2.startAt is now in the PAST
+    // (yesterday), but r1.checkedInAt = wall-clock NOW > r2.startAt.
+    // The previous predicate `prev.checkedInAt < r.startAt` would
+    // fail this; the persona-fleet-ops fix dropped that guard.
+    //
+    // We back-date via direct adminDb write because the create
+    // endpoint validates `startAt > now()` (no past bookings) — that
+    // validation stays in place; this bypass exists only to simulate
+    // the production state "pre-booked weeks ago for a window that
+    // has now started." It is NOT a hole in the create-path
+    // validation.
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await adminDb.reservation.update({
+      where: { id: r2 },
+      data: { startAt: yesterday, endAt: new Date(yesterday.getTime() + 2 * 60 * 60 * 1000) },
+    });
+
+    const list = await fetch(`${url}/reservations?scope=tenant&status=open`, {
+      headers: { cookie: adminCookie },
+    });
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as {
+      items: Array<{ id: string; previousAssetDamageNote: string | null }>;
+    };
+    const row2 = body.items.find((r) => r.id === r2);
+    expect(row2).toBeDefined();
+    expect(row2?.previousAssetDamageNote).toBe('dent in tailgate, swap-day return');
+  });
 });
