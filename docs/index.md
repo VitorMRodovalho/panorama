@@ -43,10 +43,9 @@ hero:
 
 ## Trust
 
-- [Public roadmap](/en/roadmap) — what's coming, what's deferred
-- [Architecture decisions](/adr/0000-index) — every load-bearing choice with reasoning
+- [What's next](/en/roadmap) — where we're going
 - [Security contact](mailto:security@vitormr.dev) — disclosure policy at [SECURITY.md](https://github.com/VitorMRodovalho/panorama/blob/main/SECURITY.md)
-- [Open issues](https://github.com/VitorMRodovalho/panorama/issues) — public bug tracker
+- [Open on GitHub](https://github.com/VitorMRodovalho/panorama) — AGPL-3.0 source
 
 ## Language
 

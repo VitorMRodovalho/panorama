@@ -1,132 +1,75 @@
 # Roadmap
 
-Target versions and tenant-visible milestones. Living document — last updated 2026-05-16.
+Where Panorama is going, at a glance. Strategic milestones only —
+the implementation detail (PRs, ADRs, audit waves) lives in the
+repo for anyone who wants to dig.
 
-## 0.1 — Scaffold (shipped 2026-04-17)
+## Available today (open source, self-host)
 
-- [x] Monorepo green: pnpm + Turborepo, CI on every PR
-- [x] Core-api: Prisma schema for Tenant, User, AuthIdentity, Category,
-      Manufacturer, AssetModel, Asset, Reservation, AuditEvent,
-      SystemSetting (schemas for Group / Supplier / Location /
-      StatusLabel / CustomField / CustomFieldset deferred to 0.3 where
-      they're actually consumed)
-- [x] Row-level tenancy end-to-end: Prisma middleware + Postgres RLS,
-      17 integration tests green
-- [x] Docker Compose dev stack (Postgres 16 + Redis + MinIO + MailHog)
-- [x] i18n coverage gate wired in CI (EN/PT-BR/ES must stay in sync)
+The core fleet and IT-asset story works end-to-end on a
+self-hosted Panorama:
 
-## 0.2 — Auth, import, web login (in progress; target Jun 2026)
+- Multi-tenant by construction — row-level isolation enforced at
+  the database layer, not just the app layer
+- Reservations with conflict checks, approvals, blackouts,
+  multi-asset baskets
+- Check-in / check-out with mileage tracking, damage flagging,
+  automatic routing to maintenance
+- Asset maintenance tickets — flag, assign, track repair
+- Photo inspections with configurable checklists and EXIF strip
+- OIDC login (Google + Microsoft), email/password fallback
+- CSV export from every list view, audit trail on every write
+- Trilingual UI (EN / PT-BR / ES) — every user-facing string
+  translated; CI blocks PRs that hardcode a language
+- Snipe-IT API compatibility shim for read-heavy migrations
 
-- [x] **Step 1** — migrator ↔ core-api fixture loop closed
-      (canonical fixtures, `ImportIdentityMap`, 6 round-trip tests)
-- [x] **Step 2** — AuthModule: password + Google OIDC + Microsoft OIDC,
-      iron-session cookies, home-realm discovery, multi-tenant
-      switching, 26 tests green
-- [x] **Step 3a** — ADRs for Tenant Owner ([0007](../adr/0007-tenant-owner-role.md))
-      and Invitation flow ([0008](../adr/0008-invitation-flow.md))
-- [x] **Step 3b** — web login + /assets list in `apps/web` (Next.js 14
-      App Router). No invitation UI yet; users seeded via super-admin.
-- [x] **Step 3c** — Invitation flow per ADR-0008: `Invitation` table,
-      email token + TTL + one-time-use + partial unique index, BullMQ
-      email worker + hourly maintenance cron, `/invitations/*`
-      endpoints, acceptance web page, trilingual templates (EN / PT-BR
-      / ES), Redis-backed rate limits that fail CLOSED, and full audit
-      trail (`panorama.invitation.*`).
-- [x] **Step 3d** — Tenant Owner enforcement per ADR-0007: Postgres
-      trigger `enforce_at_least_one_owner`, `TenantAdminService` with
-      create-with-owner + promote/demote/suspend/delete guards,
-      admin `PATCH/DELETE /tenants/:id/memberships/:mid`, single-Owner
-      warning banner on `/assets`, and the super-admin
-      `tenant-nominate-owner` break-glass CLI.
-- [x] **Step 4** — Reservation domain (ADR-0009 Accepted).
-      - Part A: migration 0006 extensions + blackout_slots table +
-        per-tenant `reservationRules` JSON; ReservationService with
-        conflict detection, blackout check, min-notice / max-duration
-        / max-concurrent rules, auto-approve by role; `/reservations/*`
-        + `/blackouts/*` endpoints; web list + form with admin
-        approve/reject.
-      - Part B: migration 0007 capture fields +
-        `POST /reservations/:id/checkout|checkin` (mileage monotonicity
-        + damageFlag → MAINTENANCE routing); web check-out / check-in
-        inline forms; `/reservations/calendar` 14-day timeline per
-        asset; migration 0008 `basketId` + `POST /reservations/basket`
-        (option B — shared basketId, per-row independent lifecycle).
-      - Follow-ups identified by the 2026-04-18 agent-team review:
-        - [ ] **Batch approve/reject/cancel on basket** — per-row
-          today is a 5× click count regression vs FleetManager for a
-          5-truck basket. `POST /reservations/basket/:basketId/{approve,
-          reject,cancel}` with per-sibling re-check at approval time.
-          Blocker for ops adoption; target before step 5 begins.
-        - [ ] **Exclusion constraint on (tenantId, assetId, tstzrange)**
-          via `btree_gist` + GENERATED column. Replaces the
-          Serializable + retry loop with a DB-level guarantee. Target
-          0.3 (ADR-0009 §"Conflict detection" notes this).
-- [ ] **Step 5** — Snipe-IT API compatibility shim read-only
+See the [self-hosting guide](./self-hosting.md), the
+[feature matrix](./feature-matrix.md), and the
+[Snipe-IT migration path](./migration-from-snipeit.md).
 
-## 0.3 — Inspections, maintenance, public-preview readiness (target Sept 2026)
+## Next: hosted preview opens
 
-- [~] Configurable checklists (per asset type), photo evidence, EXIF strip
-      — see [ADR-0012](../adr/0012-inspection-photo-pipeline.md). Backend
-      and web UI feature-complete (steps 2–11). Canary rollout (step 13)
-      remains — feature stays dark behind `FEATURE_INSPECTIONS=false`
-      until the public preview opens and a design partner validates. See
-      [`docs/en/inspections.md`](./inspections.md) for the operator brief.
-- [~] Asset maintenances, Snipe-IT-compatible maintenance flow
-      — see [ADR-0016](../adr/0016-asset-maintenance-flow.md).
-      Feature-complete for Community pending canary; backend + web UI
-      shipped across PRs #132 / #136 / #139 / #140. `FEATURE_MAINTENANCE`
-      ready to flip with first design partner. Enterprise email channel +
-      sister sweeps remain.
-- [~] **Wave 0 — public-preview readiness** (the gate on the hosted URL)
-      — see [`docs/audits/HANDOFF-2026-05-16-wave0-scan.md`](../audits/HANDOFF-2026-05-16-wave0-scan.md)
-      for the round-by-round plan + the 6-agent scan that produced it.
-      ADR-0014 (Public hosted instance), ADR-0018 (Observability), ADR-0019
-      (Worker boundary), ADR-0020 (Self-serve OIDC signup) all landed in
-      Round 0; backend hardening + endpoints + UX work follow.
-- [ ] Mileage + time-based alerts
-- [ ] CSV exports for every list view
-- [ ] Training-expiry gating
-- [ ] Email bounce webhook (SES/SendGrid) → invitation state update
-- [ ] Just-in-time tenant membership based on `allowedEmailDomains` match
-      at first OIDC login (gates the enterprise SCIM story)
+The maintainer's hosted Panorama instance — free, no SLA — opens
+publicly once the public-preview readiness checklist closes
+(observability + structured logs shipped; runbooks, privacy
+policy, and status page remain). Early-access details and the
+notify-me address at [/en/early-access](./early-access.md).
 
-## 0.4 — Public preview live + notifications + reports (target Oct 2026)
+Same codebase runs on the hosted preview as you'd self-host.
 
-- [ ] Hosted preview URL opens publicly (Wave 0 acceptance closed)
-- [ ] First design partners onboarded via the seeded smoke-tenant pattern
-      — they ARE the canary (per ADR-0014 §A reasoning)
-- [ ] Event bus (NATS JetStream), outbox pattern, delivery retries
-- [ ] Email, Teams, Slack, webhook channels
-- [ ] Saved reports, schedule to email, CSV/XLSX/PDF render
-- [ ] Day-60 metrics decision (per [ADR-0014 §3](../adr/0014-public-hosted-instance.md))
-      — go/no-go on paid SKU draft
-- [ ] `panorama-enterprise` private repo decision (gated on day-60 metrics signal)
+## After preview: notifications and saved reports
 
-## 1.0 GA (target: Q1 2027)
+- Saved-report builder with CSV / XLSX / PDF render, schedulable
+- Notification channels — email, Slack, Microsoft Teams, webhooks
+- Bounce-webhook integration so invitation state stays accurate
 
-- [ ] SAML / LDAP / SCIM 2.0 provisioning
-- [ ] WebAuthn passkeys
-- [ ] Barcode/label designer (SVG templates)
-- [ ] Plugin SDK public, first 2 plugins shipped (Fleetio + PagerDuty)
-- [ ] `panorama migrate-from-snipeit` — GA (full; compat shim can be turned off)
-- [ ] Trilingual UI complete (EN/PT-BR/ES) with framework for additional locales
-- [ ] Docs site live, threat model published, SOC-2 Type I in progress
+## 1.0 — comfortable for non-pioneering deployments
 
-## 1.1+ (2027+)
+1.0 is the point where Panorama is comfortable enough for a
+mid-sized fleet operator who isn't part of the pioneer cohort.
+The major identity and ergonomics gaps close:
 
-- Mobile app (Expo) GA
-- Search via OpenSearch
-- Offline-first inspections on mobile
-- Predictive maintenance (Enterprise only)
-- More IdP connectors (Enterprise)
+- SAML, LDAP, SCIM 2.0 provisioning
+- WebAuthn passkeys
+- Barcode / label designer (SVG templates)
+- Public plugin SDK with reference plugins shipped
+- Threat model published; SOC-2 Type I in progress
+
+## Beyond 1.0
+
+- Mobile app (offline-first inspections is the wedge)
+- Predictive maintenance (Enterprise)
+- Additional locales beyond EN / PT-BR / ES
 
 ## How we say no
 
-Not every feature in Snipe-IT or FleetManager will come across. A feature
-is dropped from the roadmap if it meets **any** of:
+Not every Snipe-IT or FleetManager feature is in the plan. A
+feature is dropped if it meets **any** of:
 
-- Used by fewer than 5% of tracked Snipe-IT installs (from public anonymised telemetry)
-- Has a better analogue in the modern stack (e.g., Spatie backups → native Postgres PITR + object-store lifecycle rules)
-- Creates an ops burden out of proportion to its value (e.g., legacy LDAP binding without StartTLS)
+- Used by fewer than 5% of tracked Snipe-IT installs
+- Has a cleaner analogue in the modern stack (e.g. Spatie
+  app-level backups → native Postgres point-in-time recovery +
+  object-store lifecycle rules)
+- Creates an ops burden out of proportion to its value
 
-Dropped features are tracked in [`docs/en/dropped-features.md`](./dropped-features.md).
+Dropped features are tracked in [`dropped-features.md`](./dropped-features.md).
