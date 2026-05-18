@@ -106,7 +106,7 @@ Consider running AI coding tools (Cursor, Claude Desktop) in a separate OS user 
    - All `.env` file values: `DATABASE_URL` password, `SESSION_SECRET`, `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`, `SMTP_PASSWORD`, Supabase service-role key, any cloud provider token.
    - Revoke GitHub PATs and SSH keys. Generate new ones.
    - If you've used `sudo` recently on the machine, rotate the root password too.
-2. **Notify** the maintainer at `security@vitormr.dev` (see `SECURITY.md`). Include:
+2. **Notify** the maintainer at `vitor@vitormr.dev` (see `SECURITY.md`). Include:
    - Which MCP server(s) you were running.
    - When you last ran each.
    - Which credentials were accessible at that time.

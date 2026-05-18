@@ -64,7 +64,7 @@ pnpm typecheck            # tsc --noEmit across the monorepo
 ## Reporting security issues
 
 Do **not** open a public issue for a security vulnerability. Email
-**security@vitormr.dev** with:
+**vitor@vitormr.dev** with:
 
 - Affected version
 - Reproduction steps

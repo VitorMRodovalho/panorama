@@ -9,7 +9,7 @@ Panorama is pre-alpha. Once we ship 1.0, the supported-versions matrix will live
 The preferred path is GitHub's **Private Vulnerability Reporting**:
 <https://github.com/VitorMRodovalho/panorama/security/advisories/new>.
 
-Alternatively, email **security@vitormr.dev**. Include:
+Alternatively, email **vitor@vitormr.dev**. Include:
 
 - Affected version / commit hash
 - Reproduction steps or proof of concept

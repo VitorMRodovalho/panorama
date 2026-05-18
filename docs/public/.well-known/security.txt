@@ -1,0 +1,15 @@
+# Panorama security.txt — RFC 9116
+# https://panorama.vitormr.dev/.well-known/security.txt
+#
+# Source of truth: docs/public/.well-known/security.txt in
+# https://github.com/VitorMRodovalho/panorama
+# Update before Expires; never let this file go stale on the live site.
+
+Contact: mailto:vitor@vitormr.dev
+Expires: 2026-11-17T00:00:00.000Z
+Preferred-Languages: en, pt-BR, es
+Canonical: https://panorama.vitormr.dev/.well-known/security.txt
+Policy: https://github.com/VitorMRodovalho/panorama/blob/main/SECURITY.md
+# No PGP key published. For encrypted reporting, use GitHub Private
+# Vulnerability Reporting at:
+#   https://github.com/VitorMRodovalho/panorama/security/advisories/new

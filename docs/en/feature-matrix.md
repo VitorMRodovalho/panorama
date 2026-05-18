@@ -20,11 +20,11 @@ compliance packs, branded support.
 | **Reports** | Built-ins + custom-SQL view builder, CSV export | Scheduled delivery, Looker/Metabase/Superset connector packs, XLSX & PDF |
 | **Barcodes/Labels**| QR, Code-128, 128-auto, PDF/SVG templates, per-tenant defaults | Designer UI, Zebra label-printer direct print (ZPL), PrintNode bridge |
 | **Importers** | CSV (idempotent, dry-run), Snipe-IT API migrator, FleetManager MySQL dump migrator | SAP Ariba, Oracle Fusion, Coupa, ServiceNow CMDB bi-directional sync |
-| **Audit log** | Per-action immutable append, hash chain, export CSV | SIEM streaming (Splunk, Datadog, Elastic), SOC-2 evidence pack |
+| **Audit log** | Per-action immutable append, hash chain, export CSV; incident-response procedure documented in [`docs/runbooks/incident.md`](../runbooks/incident.md) (severity taxonomy + LGPD ANPD timing + tenant-notification templates + post-mortem template + quarterly drill cadence) | SIEM streaming (Splunk, Datadog, Elastic), SOC-2 evidence pack |
 | **Observability**| Structured JSON logs (pino) with request-id + tenant + user correlation; Sentry opt-in via `SENTRY_DSN` (operator's own project); request-id surfaced in every response (`x-request-id` header + `ref` field on error bodies) ([ADR-0018](../adr/0018-observability-stack.md)) | Managed observability bundle: Prometheus metrics, OpenTelemetry traces, per-tenant log routing, dashboards + alerts |
 | **Backups** | Spatie-style app-level backups + DB dump + object-store copy | Point-in-time recovery via WAL shipping, cross-region DR, restore drills |
 | **White-label** | — (brand is "Panorama") | Per-tenant logo, colour, email templates, login page, custom domain |
-| **Support** | Community (GitHub Discussions, Matrix/Discord) | 24×7 pager, 4-hour response SLA, named CSM |
+| **Support** | Community (GitHub Discussions, Matrix/Discord); self-host operators run their own incident response per [`docs/runbooks/incident.md`](../runbooks/incident.md) | 24×7 pager, 4-hour response SLA, named CSM, managed incident response with orchestrated tenant notification across the hosted fleet |
 | **Price** | Free | Per-seat, bands published on panorama.vitormr.dev |
 
 ## What Community will never hold back
