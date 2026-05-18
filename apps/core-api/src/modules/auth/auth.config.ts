@@ -1,4 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { SessionOptions } from 'iron-session';
+
+// `Password` is declared but not exported by iron-session 8.0.4;
+// derive from the public SessionOptions surface so a future package
+// rename can't silently break the alias.
+type IronSessionPassword = SessionOptions['password'];
 
 /**
  * Auth-related configuration derived from env. Read once at boot so the
@@ -29,6 +35,22 @@ export interface OidcProviderConfig {
 
 export interface AuthConfig {
   sessionSecret: string;
+  /**
+   * Optional previous SESSION_SECRET retained during a rotation
+   * window per ADR-0018-adjacent / runbooks/secrets-rotation.md.
+   * When set, iron-session will decrypt cookies sealed under the
+   * previous key while issuing all new cookies under
+   * `sessionSecret`. Undefined outside a rotation.
+   */
+  sessionSecretPrevious?: string;
+  /**
+   * iron-session-ready password value. Either a single string
+   * (no rotation in flight) or `{ 1: previous, 2: primary }` (the
+   * highest numeric key wins for encrypt; all keys are tried for
+   * decrypt). Built once at config time so SessionService does not
+   * carry the rotation logic.
+   */
+  sessionPassword: IronSessionPassword;
   sessionCookieName: string;
   oauthStateCookieName: string;
   sessionMaxAgeSeconds: number;
@@ -62,17 +84,35 @@ export class AuthConfigService {
     const isProduction = nodeEnv === 'production';
 
     const sessionSecret = process.env.SESSION_SECRET ?? '';
-    if (sessionSecret.length < 32) {
-      // Throw in EVERY environment, not just production. The previous
-      // dev-only fallback (`'dev-only-insecure-session-secret-replace-me-32b'`)
-      // turned into deterministic session forgery on any non-production
-      // environment carrying real tenant data — staging, UAT, even CI
-      // when NODE_ENV happened to differ from "production". SEC-03 / #35.
-      throw new Error(
-        'SESSION_SECRET must be at least 32 characters. Generate with ' +
-          '`node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))"`',
-      );
+    validateSessionSecret('SESSION_SECRET', sessionSecret);
+
+    // SESSION_SECRET_PREVIOUS is optional. When set, iron-session
+    // decrypts both keys but encrypts only with SESSION_SECRET — the
+    // flip-then-drop rotation primitive documented in
+    // `docs/runbooks/secrets-rotation.md`. Three failure modes throw
+    // at boot (not on first request) so a misconfigured staging
+    // deploy fails the deploy loud, not the next traffic spike.
+    const sessionSecretPreviousRaw = process.env.SESSION_SECRET_PREVIOUS;
+    const sessionSecretPrevious =
+      sessionSecretPreviousRaw && sessionSecretPreviousRaw.length > 0
+        ? sessionSecretPreviousRaw
+        : undefined;
+    if (sessionSecretPrevious !== undefined) {
+      validateSessionSecret('SESSION_SECRET_PREVIOUS', sessionSecretPrevious);
+      if (sessionSecretPrevious === sessionSecret) {
+        throw new Error(
+          'SESSION_SECRET_PREVIOUS must be a different value from SESSION_SECRET. ' +
+            'A rotation requires a fresh primary; copying the same value into both vars ' +
+            'has no rotation effect and locks users out at the "drop previous" step.',
+        );
+      }
     }
+
+    const sessionPassword: IronSessionPassword =
+      sessionSecretPrevious === undefined
+        ? sessionSecret
+        : // Highest numeric key wins for encrypt — primary at id 2.
+          { 1: sessionSecretPrevious, 2: sessionSecret };
 
     const providers: AuthConfig['providers'] = {};
     if (process.env.OIDC_GOOGLE_CLIENT_ID) {
@@ -122,6 +162,8 @@ export class AuthConfigService {
 
     this.config = {
       sessionSecret,
+      ...(sessionSecretPrevious !== undefined ? { sessionSecretPrevious } : {}),
+      sessionPassword,
       sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'panorama_session',
       oauthStateCookieName: process.env.OAUTH_STATE_COOKIE_NAME ?? 'panorama_oauth',
       sessionMaxAgeSeconds: Number(process.env.SESSION_MAX_AGE_SECONDS ?? 60 * 60 * 24 * 7), // 7d
@@ -131,6 +173,13 @@ export class AuthConfigService {
       providers,
       csrf: { trustedOrigins: csrfOrigins },
     };
+
+    if (sessionSecretPrevious !== undefined) {
+      // INFO-level boot log so an ops console search for
+      // `session_secret_rotation_active=true` confirms the secondary
+      // actually loaded. Never logs the secret values themselves.
+      this.log.log({ session_secret_rotation_active: true }, 'auth_config_session_secret_rotation_active');
+    }
   }
 
   /**
@@ -138,6 +187,22 @@ export class AuthConfigService {
    */
   hasProvider(name: 'google' | 'microsoft'): boolean {
     return !!this.config.providers[name]?.clientId;
+  }
+}
+
+/**
+ * Boot-time validator shared between SESSION_SECRET and
+ * SESSION_SECRET_PREVIOUS. Throws (does NOT warn) so a misconfigured
+ * env fails the deploy loud instead of dying on first request. SEC-03
+ * / #35 set the precedent for the primary; the previous-key path
+ * mirrors it (security per-PR review 2026-05-17).
+ */
+function validateSessionSecret(name: string, value: string): void {
+  if (value.length < 32) {
+    throw new Error(
+      `${name} must be at least 32 characters. Generate with ` +
+        '`node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))"`',
+    );
   }
 }
 

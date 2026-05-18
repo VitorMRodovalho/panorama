@@ -41,29 +41,14 @@ duplicates in apps/web). Cross-reference to
 
 | Variable | Where | Sensitivity | Notes |
 |---|---|---|---|
-| `SESSION_SECRET` | `apps/core-api/.env*`, Fly secrets | **Secret** — 32+ byte random | Iron-session encryption key |
+| `SESSION_SECRET` | `apps/core-api/.env*`, Fly secrets | **Secret** — 32+ byte random | Iron-session encryption key (primary; used to encrypt new cookies) |
+| `SESSION_SECRET_PREVIOUS` | `apps/core-api/.env*`, Fly secrets | **Secret** — 32+ byte random | Optional; set only during a rotation window so iron-session can decrypt cookies sealed under the previous primary |
 
-**Rotation procedure (current state, Wave 0 Round 5 will improve):**
-
-Today, rotation invalidates all sessions because `auth.config.ts:64`
-accepts a single secret. Procedure:
-
-1. Generate new value: `node -e 'console.log(require("crypto").randomBytes(32).toString("base64url"))'`
-2. `fly secrets set --app panorama-staging SESSION_SECRET="$NEW"`
-3. Rolling deploy
-4. All users logged out — communicate the window ahead of time
-
-**Wave 0 Round 5 enhancement (per maintainer decision 2026-05-16):**
-Add secondary-key support via iron-session array config. Rotation
-becomes a two-phase procedure:
-
-1. Register new secret as **secondary** (kept as fallback for
-   in-flight session cookies)
-2. Deploy → existing sessions still decrypt via secondary; new
-   sessions encrypt with primary
-3. After `SESSION_MAX_AGE_SECONDS` elapses (default ~30 days), drop
-   the old secret entirely
-4. Net result: zero-downtime rotation
+**Rotation procedure:** see [`secrets-rotation.md`](./secrets-rotation.md).
+Two paths supported: emergency (invalidates all sessions; for
+suspected leaks) and routine zero-downtime (flip → wait
+`SESSION_MAX_AGE_SECONDS` → drop). `SESSION_MAX_AGE_SECONDS`
+defaults to 7 days (`apps/core-api/src/modules/auth/auth.config.ts:127`).
 
 ## OIDC client secrets
 
