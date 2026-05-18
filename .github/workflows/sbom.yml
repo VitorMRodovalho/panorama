@@ -1,0 +1,152 @@
+name: SBOM + sigstore signing
+
+# Wave 0 §9 acceptance — Software Bill of Materials + cosign
+# keyless signing.
+#
+# Generates a CycloneDX SBOM from `pnpm install --prod
+# --frozen-lockfile` on every push to main (uploaded as a CI
+# artifact, 90-day retention). On release-tag push (`v*`), the
+# SBOM is signed via cosign keyless (sigstore Fulcio + GitHub OIDC,
+# no key management) and attached to the GitHub release.
+#
+# Self-host operators verify the chain via `cosign verify-blob`
+# against the published certificate + signature. The verification
+# procedure is in `docs/runbooks/sbom-supply-chain.md`.
+#
+# This workflow is procurement-credible supply-chain evidence: any
+# enterprise asking "show me your SBOM" can fetch the artifact
+# directly without a sales call.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
+      - '.github/workflows/sbom.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    # Manual trigger for ad-hoc SBOM regeneration (e.g., after a
+    # security advisory drops and you want a fresh dependency
+    # snapshot to share).
+
+permissions:
+  contents: read
+  id-token: write   # required for cosign keyless via GH OIDC
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    name: Generate CycloneDX SBOM
+    runs-on: ubuntu-latest
+    outputs:
+      sbom_path: ${{ steps.generate.outputs.sbom_path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Install ONLY production dependencies — the SBOM should
+      # reflect what ships to a self-hoster or hosted instance, not
+      # the devDeps surface (vitest, prettier, etc.) that never
+      # touches a production runtime. `--prod` strips devDeps;
+      # `--frozen-lockfile` ensures reproducibility against
+      # pnpm-lock.yaml exactly.
+      - name: Install production dependencies
+        run: pnpm install --prod --frozen-lockfile
+
+      - name: Generate SBOM via CycloneDX
+        id: generate
+        run: |
+          set -euo pipefail
+          # @cyclonedx/cyclonedx-npm walks the installed node_modules
+          # tree and emits a CycloneDX v1.5 JSON SBOM. Pinned major
+          # version; bump deliberately.
+          pnpm dlx @cyclonedx/cyclonedx-npm@^3 \
+            --output-format JSON \
+            --output-file panorama-sbom.json \
+            --spec-version 1.5 \
+            --short-PURLs \
+            --omit dev \
+            --validate
+          # Emit metadata that the sigstore step + release attachment
+          # consumes.
+          echo "sbom_path=panorama-sbom.json" >> "$GITHUB_OUTPUT"
+          # Brief verification — confirm the file is valid JSON and
+          # has at least the metadata block + a components array.
+          jq -e '.metadata.timestamp and (.components | length > 0)' \
+            panorama-sbom.json > /dev/null
+          components=$(jq '.components | length' panorama-sbom.json)
+          echo "::notice title=SBOM generated::CycloneDX 1.5 JSON, ${components} components"
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: panorama-sbom-${{ github.sha }}
+          path: panorama-sbom.json
+          retention-days: 90
+
+  sign-and-release:
+    name: Cosign keyless sign + attach to release
+    needs: generate
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # attach assets to release
+      id-token: write   # OIDC for cosign keyless
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: panorama-sbom-${{ github.sha }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign SBOM (keyless via OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          set -euo pipefail
+          # `cosign sign-blob` with --yes (no interactive prompt) and
+          # OIDC keyless mode. Produces a .sig (detached signature)
+          # and a .crt (the ephemeral certificate issued by Fulcio,
+          # tied to the GH Actions identity that ran the job).
+          # Verifiable via `cosign verify-blob` per the runbook.
+          cosign sign-blob \
+            --yes \
+            --output-signature panorama-sbom.json.sig \
+            --output-certificate panorama-sbom.json.crt \
+            panorama-sbom.json
+
+          echo "::notice title=SBOM signed::keyless via GitHub OIDC, Fulcio cert + Rekor transparency log"
+
+      - name: Attach SBOM + signature + cert to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # gh release upload --clobber lets re-runs replace the
+          # asset (e.g., if we rerun the workflow on the same tag
+          # after fixing a transient flake).
+          gh release upload "$TAG" \
+            panorama-sbom.json \
+            panorama-sbom.json.sig \
+            panorama-sbom.json.crt \
+            --clobber
+
+          echo "::notice title=Release updated::attached SBOM + sig + cert to release $TAG"
