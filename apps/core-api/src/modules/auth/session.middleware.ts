@@ -1,6 +1,6 @@
 import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
-import { runInContext, type TenantContext } from '../tenant/tenant.context.js';
+import { currentContext, runInContext, type TenantContext } from '../tenant/tenant.context.js';
 import { SessionService } from './session.service.js';
 import type { PanoramaSession } from './session.types.js';
 
@@ -63,10 +63,17 @@ export class SessionMiddleware implements NestMiddleware {
 
     (req as Request & { panoramaSession?: PanoramaSession | null }).panoramaSession = session;
 
+    // RequestContextMiddleware sets requestId on the outer ALS frame
+    // (ADR-0018 §3); we MUST inherit it here because runInContext
+    // creates a nested scope that doesn't auto-copy. Without the
+    // inherit, every log line below SessionMiddleware would report
+    // requestId: null, defeating the correlation contract.
+    const outer = currentContext();
     const ctx: TenantContext = {
       tenantId: session?.currentTenantId ?? null,
       userId: session?.userId ?? null,
       actorEmail: session?.email ?? null,
+      requestId: outer.requestId,
     };
 
     await runInContext(ctx, () => {

@@ -21,7 +21,7 @@ compliance packs, branded support.
 | **Barcodes/Labels**| QR, Code-128, 128-auto, PDF/SVG templates, per-tenant defaults | Designer UI, Zebra label-printer direct print (ZPL), PrintNode bridge |
 | **Importers** | CSV (idempotent, dry-run), Snipe-IT API migrator, FleetManager MySQL dump migrator | SAP Ariba, Oracle Fusion, Coupa, ServiceNow CMDB bi-directional sync |
 | **Audit log** | Per-action immutable append, hash chain, export CSV | SIEM streaming (Splunk, Datadog, Elastic), SOC-2 evidence pack |
-| **Observability**| Prometheus metrics, OTLP traces, structured logs | Managed observability bundle with dashboards + alerts |
+| **Observability**| Structured JSON logs (pino) with request-id + tenant + user correlation; Sentry opt-in via `SENTRY_DSN` (operator's own project); request-id surfaced in every response (`x-request-id` header + `ref` field on error bodies) ([ADR-0018](../adr/0018-observability-stack.md)) | Managed observability bundle: Prometheus metrics, OpenTelemetry traces, per-tenant log routing, dashboards + alerts |
 | **Backups** | Spatie-style app-level backups + DB dump + object-store copy | Point-in-time recovery via WAL shipping, cross-region DR, restore drills |
 | **White-label** | — (brand is "Panorama") | Per-tenant logo, colour, email templates, login page, custom domain |
 | **Support** | Community (GitHub Discussions, Matrix/Discord) | 24×7 pager, 4-hour response SLA, named CSM |
@@ -75,3 +75,34 @@ guarantee (a process change that should also update the matrix
 above). The `community-smoke.e2e.test.ts` file is the canonical
 composition test that walks the flows as one user story — it catches
 regressions in the seams between flows that per-flow tests cannot.
+
+### How observability is proven
+
+The Observability row's "always-complete in Community" promise is the
+JSON structured-log surface plus an opt-in Sentry hook — *not* full
+OTel/Prom on day one (those are Enterprise per the row above, and
+[ADR-0018](../adr/0018-observability-stack.md) §"Alternatives A"
+rejects them for Wave 0 with a future-amendment escape hatch).
+
+What gets shipped here, and how Panorama proves the wiring holds:
+
+| Promise | Functional assertion |
+|---|---|
+| Every response carries `x-request-id` | [`observability-smoke.e2e.test.ts`](../../apps/core-api/test/observability-smoke.e2e.test.ts) cases 1 + 3 |
+| Inbound `x-request-id` is validated (log-injection guard) | [`request-context.middleware.test.ts`](../../apps/core-api/test/request-context.middleware.test.ts) + `observability-smoke.e2e.test.ts` case 2 |
+| `RequestContextMiddleware` runs BEFORE `SessionMiddleware` (ALS continuity) | `observability-smoke.e2e.test.ts` case 4 — the `ref` field in a 400 body matches the response header, which is only true if the ALS frame survives the full middleware pipeline |
+| Boot/cron/worker code paths outside any HTTP request do NOT throw on the pino mixin | `request-context.middleware.test.ts` "ALS empty-frame default" |
+| Sentry stays off unless the operator opts in via their own `SENTRY_DSN` | code review of `sentry.bootstrap.ts`; `SENTRY_DSN` unset → `initSentryIfConfigured` returns false; no events leave the host |
+
+Operators reading this row at a procurement table should expect:
+
+- JSON to stdout on every log line, with `requestId`, `tenantId`,
+  `userId` fields populated from the request ALS — pipe the stream
+  to whatever aggregator you use (Logtail, Datadog, Loki, plain
+  files); Panorama does not run a transport.
+- Errors include a `ref:` field in the JSON body that end-users
+  can paste to support — one filter on the log aggregator
+  reconstructs the request.
+- `SENTRY_DSN` is opt-in, your own project, your own data. The
+  maintainer never receives it. AGPL right per
+  [ADR-0002](../adr/0002-oss-commercial-split.md).
