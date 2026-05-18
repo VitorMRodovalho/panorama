@@ -581,5 +581,12 @@
   "inspection.template.error.category_not_found": "Category not found in this tenant.",
   "inspection.template.error.name_required": "Name is required.",
   "inspection.template.error.pick_scope": "Pick a scope.",
-  "inspection.template.error.generic": "Something went wrong. Please try again."
+  "inspection.template.error.generic": "Something went wrong. Please try again.",
+  "legal.privacy.title": "Privacy Policy",
+  "legal.privacy.metaDescription": "How Panorama collects, uses, and protects your data. LGPD-aligned plain-language draft.",
+  "legal.terms.title": "Terms of Service",
+  "legal.terms.metaDescription": "Terms governing your use of the hosted Panorama instance. AGPL self-hosted use is governed by LICENSE.md.",
+  "legal.lastUpdated": "Last updated: {{date}}",
+  "legal.preCounselDraftBanner": "Pre-counsel-review plain-language draft. Final wording may change after counsel review per ADR-0014 §C6 trigger. Status notice at end of document.",
+  "legal.backToHome": "Back to home"
 }

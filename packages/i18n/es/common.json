@@ -581,5 +581,12 @@
   "inspection.template.error.category_not_found": "Categoría no encontrada en este tenant.",
   "inspection.template.error.name_required": "Nombre es obligatorio.",
   "inspection.template.error.pick_scope": "Elija un alcance.",
-  "inspection.template.error.generic": "Algo salió mal. Inténtelo de nuevo."
+  "inspection.template.error.generic": "Algo salió mal. Inténtelo de nuevo.",
+  "legal.privacy.title": "Política de Privacidad",
+  "legal.privacy.metaDescription": "Cómo Panorama recopila, usa y protege sus datos. Borrador en lenguaje claro alineado con LGPD.",
+  "legal.terms.title": "Términos de Servicio",
+  "legal.terms.metaDescription": "Términos que rigen el uso de la instancia hospedada de Panorama. El uso auto-hospedado bajo AGPL se rige por LICENSE.md.",
+  "legal.lastUpdated": "Actualizado: {{date}}",
+  "legal.preCounselDraftBanner": "Borrador en lenguaje claro, pre-revisión jurídica. El texto puede cambiar tras la revisión legal por el disparador ADR-0014 §C6. Aviso de estado al final del documento.",
+  "legal.backToHome": "Volver al inicio"
 }
