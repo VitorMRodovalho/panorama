@@ -78,18 +78,37 @@ the Sentry "create a free project" docs.
 
 ### 3. Request-id middleware before SessionMiddleware
 
-Inbound `x-request-id` header is honored if present; otherwise a
-nanoid is generated. The middleware is registered FIRST in the
-middleware order (before `SessionMiddleware`), so the request-id is
-available when `SessionMiddleware`'s `runInContext` call extends the
-ALS with `tenantId/userId`.
+Inbound `x-request-id` header is honored if present **and matches the
+charset `/^[A-Za-z0-9_-]{1,128}$/`**; otherwise a nanoid is generated
+(same alphabet). Invalid values (CRLF, path traversal, oversize) are
+silently replaced rather than rejected — keeps the downstream
+behaviour stable while denying a log-injection / Sentry-tag spoofing
+surface. The middleware is registered FIRST in the middleware order
+(before `CsrfOriginMiddleware` and `SessionMiddleware`), so the
+request-id is available when those middlewares run and when
+`SessionMiddleware`'s nested `runInContext` call inherits the
+request-id via spread of the outer context.
 
 Concretely: a new `RequestContextMiddleware` lives in
 `apps/core-api/src/shared/observability/request-context.middleware.ts`
-and is wired in `apps/core-api/src/modules/auth/auth.module.ts`
-`configure()` BEFORE the existing `SessionMiddleware`. The request-id
-is attached to the response as `x-request-id` so callers (web,
-external integrations) can correlate.
+and is wired in `apps/core-api/src/app.module.ts` `configure()` (NOT
+`auth.module.ts`). Wiring at the root keeps cross-cutting concerns
+out of `AuthModule`'s responsibility — a future contributor
+reorganizing auth cannot silently break the ordering invariant.
+The request-id is attached to the response as `x-request-id`, and
+the global `AllExceptionsFilter` adds it as `ref` to every JSON
+error body so end users with no log-aggregator access can paste the
+value to support.
+
+> Amendment 2026-05-17 (Round 5 PR2 implementation): an earlier
+> draft of this ADR said the middleware was wired in
+> `auth.module.ts`. Pre-implementation review (tech-lead) blocked on
+> the cross-cutting-concern argument; the wiring moved to
+> `app.module.ts`. The pre-Csrf placement (vs between Csrf and
+> Session) was decided in the same review — every response
+> including CSRF rejections must carry `x-request-id` so support
+> can correlate. The inbound-header validation regex was added per
+> security-reviewer pre-implementation scan.
 
 ### 4. Extend TenantContext ALS — do NOT fork
 

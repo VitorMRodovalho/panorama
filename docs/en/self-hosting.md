@@ -214,6 +214,52 @@ docker compose -f infra/docker/compose.prod.yml exec -T postgres \
   | gzip > "/var/backups/panorama-$(date +%F).sql.gz"
 ```
 
+### Triage a user-reported issue
+
+The API logs JSON to stdout. Every line carries `requestId`,
+`tenantId`, `userId`, and a `context` (the calling module). When an
+end user reports a 500, they see `ref: <id>` in the error page; ask
+them to copy that value and filter on it:
+
+```bash
+docker compose logs --no-color core-api \
+  | grep '"requestId":"<pasted-ref>"'
+```
+
+That single filter shows every log line emitted for that one
+request — middleware, controller, service, and the captured stack
+trace. The 5:30 AM triage path collapses from "grep by minute
+window across all tenants" to one filter.
+
+The `requestId` covers the synchronous HTTP request. Background
+work (BullMQ job processors — tenant-export, photo pipeline,
+maintenance auto-suggest) does NOT currently propagate the
+originating request-id; for those, filter by `tenantId` + the time
+window of the original request. Linking async work to its
+originating request is on the Round 6 runbooks roadmap (will
+land alongside an `AuditEvent.requestId` column).
+
+If you operate multiple replicas, the recipe above fetches only
+the local container's stream. Aggregate across replicas via your
+preferred log forwarder before grepping.
+
+> Upgrading from 0.2 / pre-PR-#TBD: every log line now emits
+> structured JSON (one object per line) rather than Nest's
+> line-formatted `[Nest] 4321  - LOG [Foo] ...` strings. Pipelines
+> that parse the old format need to switch to JSON parsing. Set
+> `LOG_FORMAT=pretty` for dev only — production stays JSON.
+
+If you've opted in to Sentry (`SENTRY_DSN` set in your `.env`),
+unhandled 5xx errors also surface there with the same `requestId`,
+`tenantId`, and `userId` tags — but never headers, cookies, or
+request bodies (per [ADR-0018](../adr/0018-observability-stack.md)).
+Sentry is your project, your data; Panorama maintainers never see
+it.
+
+For pretty logs in development, set `LOG_FORMAT=pretty` in
+`apps/core-api/.env` (uses `pino-pretty`, a devDependency only —
+not bundled in the production image).
+
 ### Read the audit log
 
 ```bash
@@ -236,8 +282,10 @@ you're crossing into Enterprise / managed-service territory:
 - **Multi-region replication.**
 - **Hot standby** for Postgres.
 - **TLS termination** (you bring your own — see above).
-- **Centralised logging / SIEM** (the API logs to stdout; pipe it
-  somewhere yourself).
+- **Centralised logging / SIEM forwarding** (the API logs JSON to
+  stdout — see "Triage a user-reported issue" above; pipe to your
+  aggregator of choice or, for managed bundles with dashboards +
+  alerts, see Enterprise on the [feature matrix](./feature-matrix.md)).
 - **Per-tenant resource quotas** at the OS level.
 - **WAF / DDoS protection** (front with Cloudflare, AWS WAF, etc.).
 

@@ -1,4 +1,10 @@
-import { Module, type DynamicModule } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+  type DynamicModule,
+  type NestModule,
+} from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -26,6 +32,7 @@ import { SignupModule } from './modules/signup/signup.module.js';
 import { EmailVerificationModule } from './modules/email-verification/email-verification.module.js';
 import { TenantDeletionModule } from './modules/tenant-deletion/tenant-deletion.module.js';
 import { TenantExportModule } from './modules/tenant-export/tenant-export.module.js';
+import { RequestContextMiddleware } from './shared/observability/request-context.middleware.js';
 
 /**
  * `FEATURE_SNIPEIT_COMPAT_SHIM` (ADR-0010 rollback plan) toggles
@@ -172,6 +179,29 @@ const conditionalSelfServeSignup: DynamicModule[] = selfServeSignupEnabled()
     // config above, not at provider registration. Wave 0 Round 2: see
     // test/login-flood.e2e.test.ts.
     { provide: APP_GUARD, useClass: PerTenantThrottlerGuard },
+    RequestContextMiddleware,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Middleware ordering for the request pipeline:
+   *
+   *   RequestContextMiddleware (this module)  ← ADR-0018 §3, must be FIRST
+   *   ↓
+   *   CsrfOriginMiddleware (auth.module.ts)
+   *   ↓
+   *   SessionMiddleware    (auth.module.ts)
+   *
+   * RequestContextMiddleware lives at the root because request-id
+   * propagation is a cross-cutting observability concern, not auth's
+   * responsibility (per tech-lead pre-impl scan 2026-05-17). Keeping it
+   * here means a future contributor reorganizing AuthModule cannot
+   * silently break the ordering invariant. CSRF-rejected requests
+   * still carry x-request-id so support can correlate them.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RequestContextMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}
