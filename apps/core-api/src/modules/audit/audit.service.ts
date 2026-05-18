@@ -167,6 +167,13 @@ export class AuditService {
       select: { selfHash: true },
     });
     const occurredAt = new Date();
+    // `payload` and `data` below are TWO separate literals BY
+    // DESIGN. `payload` is the digest pre-image (frozen at the
+    // post-0021 shape); `data` is the Prisma create input. DO NOT
+    // merge them, DRY them up, or refactor into a shared object —
+    // doing so folds observational columns (ipAddress, userAgent,
+    // requestId, future siblings) into the chain digest and breaks
+    // verification of every pre-0026 row.
     const payload = {
       action: event.action,
       resourceType: event.resourceType,
@@ -189,6 +196,8 @@ export class AuditService {
     // §"What it does NOT cover"). null fallback covers code paths
     // outside an HTTP request (BootAuditModule, BullMQ workers,
     // scripts) per tenant.context.ts's currentRequestId contract.
+    // The audit-chain-integrity.e2e test asserts pre-image lacks
+    // `requestId`; that test is the canary for this invariant.
     const data: Prisma.AuditEventCreateInput = {
       action: event.action,
       resourceType: event.resourceType,

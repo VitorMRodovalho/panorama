@@ -25,19 +25,90 @@ the same shape:
 The runbook covers the **Community / single-operator** rotation
 contract. The fleet-wide managed-service variant (one rotation
 across many hosted customer instances at once, with audit emission
-per tenant and a per-customer rotation report) ships in the
+per tenant and a per-customer rotation report) **will ship** in the
 **Enterprise edition** — see the [§Multi-tenant rotation
 orchestration](#multi-tenant-rotation-orchestration) section at the
-end.
+end. Today, Panorama is pre-revenue and Community-only; the
+Enterprise positioning here is forward-looking, not a feature
+present in main.
+
+## Quick navigation
+
+Jump directly to the secret you need to rotate:
+
+- [SESSION_SECRET](#session_secret--iron-session-cookie-encryption-key)
+- [DATABASE pooler password](#database_url--database_direct_url--database_privileged_url--supabase-pooler--direct-connections)
+- [DATABASE_APP_PASSWORD](#database_app_password--panorama_app-role-password)
+- [OIDC client secrets](#oidc_google_client_secret--oidc_microsoft_client_secret--idp-credentials)
+- [S3 / R2 credentials](#s3_access_key--s3_secret_key--object-storage-credentials)
+- [SMTP credentials](#smtp_user--smtp_password--outbound-email-credentials)
+- [REDIS_URL](#redis_url--upstash-connection-url)
+- [SENTRY_DSN](#sentry_dsn--error-reporting-endpoint)
+- [TURNSTILE_SECRET](#turnstile_secret--cloudflare-turnstile-self-serve-signup-captcha)
+
+Cross-cutting topics:
+
+- [Multi-replica rolling-deploy hazards](#multi-replica-rolling-deploy-hazards)
+- [Rotation cadence baseline](#rotation-hygiene-cadence)
+- [What this runbook does NOT cover](#what-this-runbook-does-not-cover)
 
 ## Decision tree — which path?
 
 | Trigger | Path |
 |---|---|
-| Suspected leak (committed `.env` file, departing administrator with shell access, accidental log dump) | **Emergency path** for the leaked secret — invalidates sessions and revokes the leaked credential at the issuer. Skip the wait step. |
+| Suspected leak (committed `.env` file, departing administrator with shell access, accidental log dump, **leaked backup** containing the secret) | **Emergency path** for the leaked secret. Every per-secret section below has a "When to rotate" subtable that calls out the emergency-path variant — typically "revoke OLD at the provider FIRST, then push NEW to Panorama". Accept in-flight failure cost in exchange for closing the leak window. |
 | Scheduled rotation (quarterly hygiene per org policy) | **Routine path** for each secret — zero-downtime where the secret supports it (SESSION_SECRET via `_PREVIOUS`), short-window for the rest. |
-| Active incident already in [Phase 3 Contain](./incident.md#phase-3--contain) | Follow that phase's decision tree. It dispatches into this runbook per-secret; the entry points there are the section anchors below. |
+| Active incident already in [Phase 3 Contain](./incident.md#phase-3--contain) | Follow that phase's decision tree. It dispatches into this runbook per-secret; the entry points there are the section anchors above (§Quick navigation). |
 | New self-host bringing up first deployment | No rotation needed — generate fresh values from scratch per [`secrets-inventory.md`](./secrets-inventory.md). |
+
+## Before you start any rotation — capture the OLD value
+
+Every section below assumes you have the OLD secret captured in a
+shell variable before you overwrite it. The procedure blocks
+default to `OLD_<SECRET>` as the variable name. Capture it FIRST so
+you have a rollback target if the new value doesn't work:
+
+```bash
+# Pattern — adapt per secret.
+OLD_SESSION_SECRET=$(grep '^SESSION_SECRET=' .env | cut -d= -f2-)
+[[ -n "$OLD_SESSION_SECRET" ]] || { echo "OLD empty; abort" >&2; exit 1; }
+```
+
+For credentials that live on Fly secrets (not `.env`), the OLD
+value is NOT recoverable from `fly secrets list` (Fly never
+re-exposes a set secret). You MUST capture from your secret-manager
+of record (1Password, Vault, Doppler) before issuing the new value.
+If you cannot capture the OLD value, treat the rotation as a
+**one-shot** — failure means re-issuing fresh credentials at the
+provider, not rolling back.
+
+## Shell-history hygiene
+
+Several commands below interpolate secret values into argv (`psql
+-c "ALTER ROLE … WITH PASSWORD '$NEW'"`, `DATABASE_URL=...$NEW...
+fly secrets set`). Bash history (`$HISTFILE`), shell process
+listing (`ps`, `/proc/<pid>/cmdline`), and any eBPF or audit
+daemon collect these. Two ways to mitigate:
+
+```bash
+# 1. Prefix every secret-bearing command with a leading space and
+#    set HISTCONTROL=ignorespace at the top of your shell session:
+HISTCONTROL=ignorespace
+ psql "$URL_WITH_PASSWORD" -c "ALTER ROLE panorama_app WITH PASSWORD '$NEW'"
+# The leading space + HISTCONTROL keeps it out of $HISTFILE.
+
+# 2. Preferred for ALTER ROLE: use the `\password` meta-command in
+#    an interactive psql session — never echoed to argv or history:
+psql "$DATABASE_PRIVILEGED_URL"
+# At the psql prompt:
+panorama=# \password panorama_app
+# Postgres prompts (hidden input) for the new password.
+```
+
+The procedures below show the argv form for copy-paste density; the
+`\password` alternative is preferred for production. Per-section
+notes flag where the argv form has unavoidable exposure (e.g., the
+`DATABASE_URL` string embeds the password and there is no `\` shortcut).
 
 ## SESSION_SECRET — iron-session cookie encryption key
 
@@ -98,6 +169,7 @@ fresh primary.
 
 ```bash
 OLD=$(grep '^SESSION_SECRET=' .env | cut -d= -f2-)
+[[ -n "$OLD" ]] || { echo "OLD SESSION_SECRET empty; aborting rotation" >&2; exit 1; }
 NEW=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
 sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$NEW|" .env
 sed -i "s|^SESSION_SECRET_PREVIOUS=.*|SESSION_SECRET_PREVIOUS=$OLD|" .env
@@ -193,23 +265,55 @@ rotate one without the others. The `panorama_app` role password
 | Quarterly hygiene | **Path B — routine** below |
 | Supabase support rotated it for you (regional incident, account compromise) | The change is already done provider-side; only the Panorama-side `fly secrets set` is left |
 
+### Pre-flight — capture OLD
+
+The Supabase pooler password is **NOT recoverable** post-reset
+(Supabase replaces it; it never re-exposes the previous value).
+Capture the current state into your secret-manager-of-record BEFORE
+clicking "Reset" in the Supabase dashboard:
+
+```bash
+# Fetch current Fly secrets digest (Fly returns the SHA, never the value):
+fly secrets list --app panorama-staging | grep DATABASE_
+
+# The values themselves must come from your secret manager; if not
+# stored anywhere, the rotation is one-shot (no rollback). Document
+# the rotation in your runbook log so future ops know the previous
+# state is gone.
+
+# Capture the local .env.staging if you have one:
+OLD_POOLER_URL=$(grep '^DATABASE_URL=' apps/core-api/.env.staging | cut -d= -f2-)
+OLD_DIRECT_URL=$(grep '^DATABASE_DIRECT_URL=' apps/core-api/.env.staging | cut -d= -f2-)
+: "${OLD_POOLER_URL:?capture OLD before proceeding — no rollback otherwise}"
+```
+
 ### Path A — Emergency rotation
 
 Rotation on Supabase managed Postgres is **not zero-downtime**:
 every connection in the pool must reconnect under the new password.
 For a single-replica Community deployment this is a 5-10s blip; for
-a Fly multi-replica it's a rolling-deploy window.
+a Fly multi-replica it's a rolling-deploy window (single-minutes per
+replica × replica count).
 
 ```bash
 # 1. Supabase dashboard → Project Settings → Database → "Reset
 #    database password". Capture the new pooler URL (a single string
 #    that contains the password and the hostname); the form gives
 #    you the pooler URL (port 6543) and the direct URL (port 5432).
-#
-# 2. Locally regenerate the .env.staging from the new pooler URL:
-./scripts/setup-staging-env.sh
 
-# 3. Push to Fly:
+# 2. Verify NEW_POOLER_URL + NEW_DIRECT_URL are set in your shell
+#    before pushing — `fly secrets set` with an unset variable
+#    blanks the secret silently.
+: "${NEW_POOLER_URL:?set this from Supabase Reset dialog}"
+: "${NEW_DIRECT_URL:?set this from Supabase Reset dialog}"
+
+# 3. Locally regenerate the .env.staging from the new pooler URL:
+./scripts/setup-staging-env.sh
+# `setup-staging-env.sh` reads NEW_POOLER_URL + NEW_DIRECT_URL from
+# your shell and writes apps/core-api/.env.staging. See
+# scripts/setup-staging-env.sh for the exact shape.
+
+# 4. Push to Fly:
 fly secrets set --app panorama-staging \
     DATABASE_URL="$NEW_POOLER_URL" \
     DATABASE_DIRECT_URL="$NEW_DIRECT_URL" \
@@ -217,7 +321,12 @@ fly secrets set --app panorama-staging \
 # `fly secrets set` triggers an automatic redeploy; for rolling
 # behavior add `--stage` then `fly deploy --strategy rolling`.
 
-# 4. Watch the rolling deploy until every instance reports healthy.
+# 5. Watch the rolling deploy until every instance reports healthy.
+#    "Healthy" = `State` column reads `started` AND `Health Check`
+#    column reads `[1/1 passing]` (or higher passing/total ratio
+#    for multi-check apps). The `fly status` output shape varies
+#    by CLI version; if uncertain, follow with `fly checks list
+#    --app panorama-staging` for the explicit per-check view.
 fly status --app panorama-staging
 ```
 
@@ -283,18 +392,40 @@ Supabase-provided role, then Panorama's runtime authenticates as
 `panorama_app` via the connection string in `DATABASE_URL` after
 the pooler hands off.
 
+### Pre-flight — capture OLD
+
+```bash
+OLD_APP_PASSWORD=$(grep '^DATABASE_APP_PASSWORD=' apps/core-api/.env.staging | cut -d= -f2-)
+: "${OLD_APP_PASSWORD:?capture OLD before proceeding — no rollback otherwise}"
+```
+
 ### Procedure
+
+> **Shell-history hygiene.** The `psql -c "ALTER ROLE … '$NEW'"`
+> form below interpolates the new password into argv. Either
+> (a) prefix every line with a leading space + set
+> `HISTCONTROL=ignorespace` at session start, OR (b) issue the
+> ALTER inside an interactive `psql` session via `\password
+> panorama_app` (preferred — no echo, no argv exposure). See the
+> §Shell-history hygiene section at the top of this runbook.
 
 ```bash
 # 1. Generate new app-role password.
 NEW=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
+: "${NEW:?random generation failed — abort}"
 
-# 2. Connect to the DB as the privileged role (Supabase dashboard
-#    SQL editor, or psql on $DATABASE_PRIVILEGED_URL):
-psql "$DATABASE_PRIVILEGED_URL" \
-    -c "ALTER ROLE panorama_app WITH PASSWORD '$NEW'"
+# 2. Connect to the DB as the privileged role and rotate.
+#    Preferred: interactive \password (no argv echo).
+#    Fallback: -c form, requires HISTCONTROL=ignorespace + leading space.
+ psql "$DATABASE_PRIVILEGED_URL" -c "ALTER ROLE panorama_app WITH PASSWORD '$NEW'"
 
-# 3. Update the env on Fly:
+# 3. Update the env on Fly.
+#    : "${POOLER_HOST:?set to your Supabase pooler hostname}" — the host
+#    portion comes from the Supabase dashboard's Connection Pooler
+#    section. Treat this command as the bottleneck: both lines must
+#    succeed atomically or the next deploy boots with a stale
+#    DATABASE_URL embedding the OLD password.
+: "${POOLER_HOST:?set POOLER_HOST first}"
 fly secrets set --app panorama-staging \
     DATABASE_APP_PASSWORD="$NEW" \
     DATABASE_URL="postgres://panorama_app:$NEW@$POOLER_HOST:6543/postgres?schema=public"
@@ -310,14 +441,20 @@ fly deploy --strategy rolling --app panorama-staging
 
 ### Blast radius
 
-- **No connection-pool blip** if you set the secret + redeploy in
-  one `fly secrets set` call (the new password takes effect on the
-  next pool connect, and the rolling deploy issues fresh
-  connections).
-- **Pool of in-flight requests** authenticated under the old
-  password continue to work until their connection is recycled.
-  Prisma's idle-connection recycler closes them within
-  `connection_limit` cycles; no manual intervention needed.
+- **Single-replica Community deploy:** "No connection-pool blip" if
+  you set the secret + redeploy in one `fly secrets set` call. The
+  new password takes effect on the next pool connect; the rolling
+  deploy issues fresh connections.
+- **Multi-replica Fly deploys:** `ALTER ROLE` is immediate at the
+  DB. Replicas not yet redeployed during the rolling deploy will
+  exhaust their pool with auth failures within `connection_limit`
+  cycles (default 10 connections; Prisma recycles on auth-failure).
+  Use `fly deploy --strategy rolling` and accept the same per-replica
+  blip as the §DATABASE pooler section above (single-minutes per
+  replica × replica count).
+- **In-flight requests** authenticated under the old password
+  continue to work until their connection is recycled. No manual
+  intervention needed.
 - **`bootstrap.sql` and `apply-migrations.sh`** do not use the app
   role, so migration tooling is unaffected.
 
@@ -333,16 +470,28 @@ fly ssh console --app panorama-staging \
 fly ssh console --app panorama-staging \
     --command "psql \$DATABASE_URL -c 'SHOW row_security'"
 # Expected output: row_security = on
+
+# 3. Confirm the rotation landed in the audit trail.
+psql "$DATABASE_PRIVILEGED_URL" -c \
+  "SELECT id, action, \"occurredAt\" FROM audit_events
+   WHERE action LIKE 'panorama.role.%'
+   AND \"occurredAt\" >= NOW() - INTERVAL '15 minutes'
+   ORDER BY id DESC LIMIT 10"
+# Note: there is no audit-action emitted for ALTER ROLE today —
+# rotation events at the DB role layer are not yet wired into the
+# audit chain. The query above will return zero rows; the empty
+# result IS the current expected output. Track the gap in
+# panorama-issues #235 follow-up.
 ```
 
 ### Rollback
 
 ```bash
-psql "$DATABASE_PRIVILEGED_URL" \
-    -c "ALTER ROLE panorama_app WITH PASSWORD '$OLD'"
+: "${OLD_APP_PASSWORD:?cannot rollback — OLD was not captured pre-flight}"
+ psql "$DATABASE_PRIVILEGED_URL" -c "ALTER ROLE panorama_app WITH PASSWORD '$OLD_APP_PASSWORD'"
 fly secrets set --app panorama-staging \
-    DATABASE_APP_PASSWORD="$OLD" \
-    DATABASE_URL="postgres://panorama_app:$OLD@$POOLER_HOST:6543/postgres?schema=public"
+    DATABASE_APP_PASSWORD="$OLD_APP_PASSWORD" \
+    DATABASE_URL="postgres://panorama_app:$OLD_APP_PASSWORD@$POOLER_HOST:6543/postgres?schema=public"
 ```
 
 ## OIDC_GOOGLE_CLIENT_SECRET / OIDC_MICROSOFT_CLIENT_SECRET — IdP credentials
@@ -357,13 +506,13 @@ client identity.
 
 ### When to rotate
 
-| Trigger | Path |
+| Trigger | Path A or B |
 |---|---|
-| Suspected leak | Emergency path; the procedure is the same as routine but the IdP-side revoke step must precede the Panorama-side set step |
-| IdP-driven rotation (Google or Microsoft expiring the secret on schedule, common for Microsoft Entra) | Routine path; the IdP gives you a window with both secrets active |
-| Quarterly hygiene | Routine path |
+| Suspected leak | **Path A — emergency**: revoke the OLD secret at the IdP FIRST (accept the in-flight-failure cost), THEN set NEW + deploy. The leak window closes immediately at revoke. |
+| IdP-driven rotation (Google or Microsoft expiring the secret on schedule, common for Microsoft Entra) | **Path B — routine**: create NEW at IdP first (both secrets active per provider), set NEW on Fly + deploy, then revoke OLD at the IdP. |
+| Quarterly hygiene | **Path B — routine** |
 
-### Procedure
+### Procedure (Path B — routine, both-secrets-active window)
 
 ```bash
 # 1. At the IdP — Google Cloud Console (Google) or Azure portal
@@ -376,26 +525,46 @@ client identity.
 #    immediately into your secret manager before navigating away.
 #    Google shows it indefinitely under the OAuth client.
 
-# 2. Push the new secret to Fly:
+# 2. Verify NEW_*_SECRET is set in your shell before pushing.
+:  "${NEW_GOOGLE_SECRET:?capture from Google Cloud Console first}"
+# (or NEW_MICROSOFT_SECRET for the Microsoft side)
+
+# 3. Push the new secret to Fly:
 fly secrets set --app panorama-staging \
     OIDC_GOOGLE_CLIENT_SECRET="$NEW_GOOGLE_SECRET"
-# (or OIDC_MICROSOFT_CLIENT_SECRET for the Microsoft side)
 
-# 3. Wait for the rolling deploy to complete:
+# 4. Wait for the rolling deploy to complete:
 fly status --app panorama-staging
+# Wait for `State = started` + `Health Check = [N/N passing]` on
+# every instance before continuing.
 
-# 4. At the IdP — revoke the OLD secret. From this point forward,
+# 5. At the IdP — revoke the OLD secret. From this point forward,
 #    only the new secret is accepted by the IdP for token exchange.
 #    Order matters: revoking before Panorama has the new secret in
 #    effect breaks every in-flight OIDC dance.
 ```
 
+### Procedure (Path A — emergency, leak-closing variant)
+
+```bash
+# 1. At the IdP — revoke the OLD client secret IMMEDIATELY. From
+#    this moment, in-flight OIDC dances (users mid-login) fail at
+#    the token-exchange step.
+# 2. Generate a new secret at the same IdP.
+# 3. Push to Fly (steps 2-4 of Path B above).
+```
+
 ### Blast radius
 
-- **In-flight OIDC dances** (a user mid-login) running against the
-  old secret fail at the token-exchange step. They retry the login
-  and succeed under the new secret. UX: one extra "log in" click,
-  no data loss.
+- **Path B in-flight OIDC dances** (a user mid-login) running
+  against the old secret fail at the token-exchange step ONLY in
+  the gap between the IdP revoking OLD and the rolling deploy
+  reaching the user's replica. Typical window: seconds. The user
+  retries the login and succeeds under the new secret. UX: one
+  extra "log in" click, no data loss.
+- **Path A** widens that window to the rolling-deploy window
+  (single-minutes per replica). Every in-flight login during the
+  window fails; the user retries once the new secret is live.
 - **Active sessions** are unaffected. OIDC client secrets are used
   only at the initial auth code → token exchange; session cookies
   are minted by Panorama from that token, not by the IdP. Existing
@@ -412,9 +581,13 @@ fly status --app panorama-staging
 #    Open https://panorama.example/login → click Google → consent →
 #    callback should succeed. Confirm a session cookie is issued.
 #
-# 2. Check that the audit log emitted the login event:
+# 2. Check that the audit log emitted the login event.
+#    NOTE: do NOT expand the SELECT with `*` or `metadata` — the
+#    audit `metadata` JSONB on session-started rows holds IP and
+#    user-agent (per AuditEventInput); pulling it into operator
+#    scrollback exposes PII unnecessarily.
 psql "$DATABASE_PRIVILEGED_URL" \
-    -c "SELECT id, action, occurredAt FROM audit_events
+    -c "SELECT id, action, \"occurredAt\" FROM audit_events
         WHERE action = 'panorama.auth.session_started'
         ORDER BY id DESC LIMIT 5"
 ```
@@ -422,7 +595,7 @@ psql "$DATABASE_PRIVILEGED_URL" \
 ### Rollback
 
 Re-set the old secret in Fly + at the IdP (don't revoke the OLD
-secret in step 4 above if you're not confident the new one works
+secret in step 5 above if you're not confident the new one works
 end-to-end). Restore the previous active client on Google/Microsoft.
 
 ## S3_ACCESS_KEY / S3_SECRET_KEY — object storage credentials
@@ -436,13 +609,13 @@ forgery or DB access.
 
 ### When to rotate
 
-| Trigger | Path |
+| Trigger | Path A or B |
 |---|---|
-| Suspected leak | Emergency path; provider-side revoke before Panorama-side set |
-| Quarterly hygiene | Routine path; both keys active during the rolling deploy |
-| Bucket migration (changing buckets / providers) | Routine path for the new credentials; the OLD credentials may be retired immediately after migration is verified |
+| Suspected leak | **Path A — emergency**: revoke OLD at the provider FIRST. The provider invalidates every signature bound to the OLD credential immediately on revoke — in-flight photo downloads/uploads on driver phones fail. Accept this; the OLD credential is in attacker hands. |
+| Quarterly hygiene | **Path B — routine**: create NEW, push to Fly, deploy, then revoke OLD. Both credentials active during the rolling deploy. |
+| Bucket migration (changing buckets / providers) | Path B for the new credentials; the OLD credentials may be retired immediately after migration is verified |
 
-### Procedure
+### Procedure (Path B — routine)
 
 ```bash
 # 1. At Cloudflare R2 → API Tokens → "Create R2 API token". Scope
@@ -454,27 +627,54 @@ forgery or DB access.
 #    "Create access key". For other providers: their equivalent
 #    flow.)
 
-# 2. Push the new credentials to Fly:
+# 2. Verify NEW vars are set in your shell.
+: "${NEW_ACCESS_KEY:?capture from R2 dashboard first}"
+: "${NEW_SECRET_KEY:?capture from R2 dashboard first}"
+
+# 3. Push the new credentials to Fly:
 fly secrets set --app panorama-staging \
     S3_ACCESS_KEY="$NEW_ACCESS_KEY" \
     S3_SECRET_KEY="$NEW_SECRET_KEY"
 
-# 3. Wait for the rolling deploy:
+# 4. Wait for the rolling deploy:
 fly status --app panorama-staging
 
-# 4. At Cloudflare R2 (or your provider) — revoke the OLD token.
+# 5. At Cloudflare R2 (or your provider) — revoke the OLD token.
+#    From this moment, every signature bound to OLD is rejected
+#    (see Blast radius below).
+```
+
+### Procedure (Path A — emergency)
+
+```bash
+# 1. At Cloudflare R2 — revoke the OLD token IMMEDIATELY.
+#    Every signed URL minted under OLD is now invalid; in-flight
+#    photo upload + download requests fail with SignatureDoesNotMatch.
+# 2. Create a NEW token (steps 1-4 of Path B above).
+# 3. Push to Fly + deploy.
 ```
 
 ### Blast radius
 
-- **Existing pre-signed URLs minted under the OLD credential
-  continue to work until their TTL expires** — the URL embeds the
-  signature, which is bound to the credential that minted it. Photo
-  download URLs default to `signedUrlTtlSeconds` (typically 60s) per
-  `apps/core-api/src/modules/object-storage/object-storage.service.ts:237-249`;
-  tenant-export download URLs run up to 24h per ADR-0020 §8.
-  Driver phones with a cached presigned URL keep working until that
-  TTL ticks down.
+- **Existing pre-signed URLs are invalidated immediately when the
+  OLD credential is revoked at the provider.** R2 / S3 reject any
+  SigV4 signature bound to a revoked access-key regardless of the
+  URL's `X-Amz-Expires` TTL. During Path B's "both-credentials-active"
+  window (step 3 deploy → step 5 revoke), URLs minted under OLD
+  continue to work. After step 5 revoke, they are dead. This
+  differs from the SESSION_SECRET model, where the cookie payload
+  carries its own state and the SECRET only matters at decode time.
+- **Pre-signed URL TTLs in Panorama today:**
+  - Photo download URLs default to `signedUrlTtlSeconds` (typically
+    60s) per `apps/core-api/src/modules/object-storage/object-storage.service.ts:237-249`
+    (thumbnails 60s; full-size per config).
+  - Tenant-export download URLs are **60s** per
+    `apps/core-api/src/modules/tenant-export/tenant-export.config.ts:35`
+    (`downloadUrlTtlSeconds`). The 24h figure in ADR-0020 §8 is the
+    **job download window** (the period during which the Owner can
+    request a fresh 60s URL via `/exports/:jobId/download`),
+    NOT the URL TTL. The runbook previously conflated the two; do
+    not rely on a 24h-presigned-URL claim.
 - **NEW pre-signed URLs minted post-rotation** require the new
   credentials to be live; the rolling deploy is the boundary. A
   driver's photo upload in-flight at the moment of rotation fails
@@ -490,17 +690,17 @@ fly status --app panorama-staging
 #    detail → camera capture → upload) and confirm it lands in R2.
 #
 # 2. Fetch a download URL and confirm it serves the bytes:
+#    : "${DOWNLOAD_URL:?obtain from staging app photo viewer first}"
 fly ssh console --app panorama-staging \
     --command "curl -fsSL '$DOWNLOAD_URL' | head -c 16 | xxd"
 # Expected: JPEG magic bytes ffd8ffe0
 #
-# 3. Check the audit chain for any S3-related operational errors
-#    emitted during the rotation window:
-psql "$DATABASE_PRIVILEGED_URL" \
-    -c "SELECT id, action, metadata FROM audit_events
-        WHERE action LIKE 'panorama.object_storage.%'
-        AND occurredAt >= NOW() - INTERVAL '1 hour'
-        ORDER BY id DESC"
+# 3. Confirm no S3-presigned-failure errors emitted during rotation.
+#    There is no `panorama.object_storage.*` audit-action namespace
+#    in the codebase as of 2026-05-17; the verification surface is
+#    Sentry-side (per ADR-0018) — confirm via the Sentry dashboard
+#    that no `object_storage_presign_failed` events arrived during
+#    the rotation window.
 ```
 
 ### Rollback
@@ -527,13 +727,13 @@ not a data exfiltration risk.
 
 ### When to rotate
 
-| Trigger | Path |
+| Trigger | Path A or B |
 |---|---|
-| Suspected leak | Emergency path; provider-side revoke before Panorama-side set |
-| Quarterly hygiene | Routine path |
-| Provider-driven (SendGrid API key expiry, Postmark token reissue) | Routine path; pair both old + new for the cutover window |
+| Suspected leak (provider credential confirmed compromised) | **Path A — emergency**: revoke OLD at the provider FIRST. In-flight email sends fail until the rolling deploy completes; BullMQ holds the failed jobs in Redis and retries them under the new credentials. |
+| Quarterly hygiene | **Path B — routine**: create NEW at provider, push to Fly + deploy, then revoke OLD. Both credentials active during the rolling deploy. |
+| Provider-driven (SendGrid API key expiry, Postmark token reissue) | Path B — routine; pair both old + new for the cutover window |
 
-### Procedure
+### Procedure (Path B — routine)
 
 ```bash
 # 1. At the SMTP provider (Mailgun / SendGrid / SES / Postmark /
@@ -545,15 +745,30 @@ not a data exfiltration risk.
 #    - Resend: API Keys → "Sending access"
 #    Capture the new SMTP_USER + SMTP_PASSWORD values.
 
-# 2. Push to Fly:
+# 2. Verify NEW vars are set in your shell.
+: "${NEW_SMTP_USER:?capture from provider first}"
+: "${NEW_SMTP_PASSWORD:?capture from provider first}"
+
+# 3. Push to Fly:
 fly secrets set --app panorama-staging \
     SMTP_USER="$NEW_SMTP_USER" \
     SMTP_PASSWORD="$NEW_SMTP_PASSWORD"
 
-# 3. Wait for rolling deploy:
+# 4. Wait for rolling deploy:
 fly status --app panorama-staging
 
-# 4. Revoke the OLD credentials at the provider.
+# 5. Revoke the OLD credentials at the provider.
+```
+
+### Procedure (Path A — emergency)
+
+```bash
+# 1. At the provider — revoke the OLD credentials IMMEDIATELY.
+#    In-flight email sends fail; BullMQ queues the failures.
+# 2. Create NEW credentials at the same provider.
+# 3. Push to Fly + deploy (steps 2-4 of Path B above).
+#    Once the deploy completes, BullMQ retries the queued failures
+#    under the new credentials.
 ```
 
 ### Blast radius
@@ -578,11 +793,14 @@ fly ssh console --app panorama-staging \
 # (Or trigger a real invitation via the app to a known-good
 # recipient.)
 
-# 2. Confirm the notification queue drained any backed-up events:
+# 2. Confirm the notification queue drained any backed-up events.
+#    The notification_events table uses createdAt (not occurredAt);
+#    aggregate by status only — grouping by id would count one per
+#    row.
 psql "$DATABASE_PRIVILEGED_URL" \
-    -c "SELECT id, status, COUNT(*) FROM notification_events
-        WHERE occurredAt >= NOW() - INTERVAL '1 hour'
-        GROUP BY id, status"
+    -c "SELECT status, COUNT(*) FROM notification_events
+        WHERE \"createdAt\" >= NOW() - INTERVAL '1 hour'
+        GROUP BY status"
 # Expected: a row for status = DISPATCHED matching the post-rotation
 # count; status = DEAD only if a permanent failure (not a transient
 # auth error).
@@ -612,35 +830,61 @@ job tampering** — both have downstream blast radius (signup-flood
 defenses dropped, queued tenant exports inspectable) but neither is
 DB-level confidentiality.
 
+### When to rotate
+
+| Trigger | Notes |
+|---|---|
+| Suspected leak | Treat as emergency — Upstash gives no choice; resetting the token invalidates OLD immediately (see Blast radius below). |
+| Annual hygiene | Same procedure; schedule during a low-traffic window with pre-announce on the status page. |
+
+> **Upstash has no two-secret window.** Unlike SESSION_SECRET, OIDC,
+> S3, or SMTP, you cannot have both OLD and NEW credentials
+> simultaneously active. Reset = immediate invalidation. Read the
+> Blast radius before scheduling.
+
 ### Procedure
 
 ```bash
 # 1. At Upstash dashboard → REST → reset token. The dashboard
 #    issues a new URL; the OLD URL is invalidated server-side at
-#    the moment the new one is created (Upstash does NOT support
-#    a transition window).
+#    the moment the new one is created. Capture the new URL into
+#    your shell immediately — Upstash shows it once.
 
-# 2. Push to Fly:
+# 2. Verify the new URL is set.
+: "${NEW_REDIS_URL:?capture from Upstash dashboard first}"
+
+# 3. Push to Fly:
 fly secrets set --app panorama-staging \
     REDIS_URL="$NEW_REDIS_URL"
+# fly deploy --strategy rolling --app panorama-staging is implicit
+# in fly secrets set; check `fly status` afterward.
 ```
 
 ### Blast radius
 
-- **Brief auth errors** during the rolling deploy as BullMQ workers
-  reconnect and rate-limiter clients re-handshake. Per
-  [`secrets-inventory.md`](./secrets-inventory.md) §Redis: "BullMQ
-  workers will see auth errors briefly. This is expected; the
-  rolling deploy resolves it within the deploy window."
-- **Rate-limiter fail-closed:** sliding-window rate-limiters
-  configured to fail-closed on Redis outage (per ADR-0020 §4) will
-  reject signup attempts during the rotation window. Acceptable
-  for a 5-10s blip; not acceptable if the deploy stalls. Watch the
-  status surface during rotation.
-- **In-flight BullMQ jobs:** held in Redis until a worker acks;
-  the new Redis token sees the same Redis instance (Upstash only
-  rotates the *token*, not the underlying instance), so the jobs
-  are visible to the post-rotation worker.
+- **Rate-limiter fail-closed window** = the whole rolling-deploy
+  window, **not** "5-10s". Per ADR-0020 §4 contract:
+  sliding-window rate-limiters fail-closed on Redis outage. From
+  the moment Upstash issues the new token (which invalidates OLD)
+  until the LAST Fly replica has redeployed with the new URL, any
+  replica still on the OLD URL fails its Redis handshake →
+  rate-limiter trips → signup attempts + rate-limited paths
+  (`/auth/signup`, photo upload throttle, invitation send) reject
+  with the standard rate-limit response.
+- **Window duration on Fly:** single-minutes per replica × replica
+  count. For a 1-replica community deploy: ~30-60s. For a
+  3-replica Fly deploy: 2-3 minutes. **Do NOT rotate during a
+  marketing push, known traffic spike, or any business-critical
+  window.** Pre-announce on the status page (once the page exists
+  per Round 7 §9) and target the lowest-traffic window per your
+  analytics.
+- **In-flight BullMQ jobs:** held in Redis server-side until a
+  worker acks. The new Redis token sees the same Redis instance
+  (Upstash only rotates the *token*, not the underlying instance),
+  so queued jobs are visible to the post-rotation worker once it
+  comes up. No job loss.
+- **Brief auth errors** during the deploy — expected, per the
+  contract above.
 
 ### Verification
 
@@ -653,9 +897,20 @@ curl -fsSL https://api.panorama.example/health | jq .redis
 #    invitation send, observe NotificationEvent status flip from
 #    PENDING to DISPATCHED within a minute):
 psql "$DATABASE_PRIVILEGED_URL" \
-    -c "SELECT id, status, occurredAt FROM notification_events
-        WHERE occurredAt >= NOW() - INTERVAL '5 minutes'
+    -c "SELECT id, status, \"createdAt\" FROM notification_events
+        WHERE \"createdAt\" >= NOW() - INTERVAL '5 minutes'
         ORDER BY id DESC LIMIT 10"
+# Note: notification_events uses createdAt (the row write time),
+# not occurredAt — there is no occurredAt column on this table.
+
+# 3. Verify the rate-limiter is back to allow-state:
+curl -fsSL -X POST https://api.panorama.example/auth/signup \
+     -H "Content-Type: application/json" \
+     -d '{"email":"smoke@example.invalid"}' \
+     -w "%{http_code}\n" -o /dev/null
+# Expected: 400 (invalid email — the request hit the handler, not
+# the rate-limiter); a 503 means the rate-limiter is still
+# fail-closed.
 ```
 
 ### Rollback
@@ -665,9 +920,12 @@ fly secrets set --app panorama-staging \
     REDIS_URL="$OLD_REDIS_URL"
 ```
 
-The OLD URL is invalid post-rotation; you must issue a third token
-at Upstash to recover if the new URL doesn't work. Document the
-dead OLD credentials.
+The OLD URL is invalid post-rotation (Upstash invalidated it at
+the moment the new one was created); this rollback only works as
+a "set the same URL again" if you discover NEW was wrong. If the
+NEW URL is genuinely broken (Upstash misconfiguration, network
+unreachable), you must issue a third token at Upstash and use that.
+Document the dead OLD credentials.
 
 ## SENTRY_DSN — error reporting endpoint
 
@@ -684,13 +942,16 @@ breach).
 # 1. At sentry.io → Project Settings → Client Keys (DSN) → Create
 #    New Key. The new DSN is shown on creation; capture it.
 
-# 2. Push to Fly:
+# 2. Verify NEW DSN is set.
+: "${NEW_SENTRY_DSN:?capture from Sentry dashboard first}"
+
+# 3. Push to Fly:
 fly secrets set --app panorama-staging \
     SENTRY_DSN="$NEW_SENTRY_DSN"
 
-# 3. Wait for rolling deploy.
+# 4. Wait for rolling deploy.
 
-# 4. At sentry.io — revoke (delete) the OLD client key.
+# 5. At sentry.io — revoke (delete) the OLD client key.
 ```
 
 ### Blast radius
@@ -754,13 +1015,16 @@ human-facing CAPTCHA widget).
 #    rotate secret key. Cloudflare keeps the prior secret valid
 #    briefly during rotation; the dashboard shows the exact window.
 
-# 2. Push to Fly:
+# 2. Verify NEW secret is set.
+: "${NEW_TURNSTILE_SECRET:?capture from Cloudflare dashboard first}"
+
+# 3. Push to Fly:
 fly secrets set --app panorama-hosted \
     TURNSTILE_SECRET="$NEW_TURNSTILE_SECRET"
 
-# 3. Wait for rolling deploy.
+# 4. Wait for rolling deploy.
 
-# 4. At Cloudflare — revoke the OLD secret after the rolling deploy
+# 5. At Cloudflare — revoke the OLD secret after the rolling deploy
 #    completes.
 ```
 
@@ -791,9 +1055,9 @@ fly secrets set --app panorama-hosted \
 
 # 2. Check the audit log for the signup attempt:
 psql "$DATABASE_PRIVILEGED_URL" \
-    -c "SELECT id, action, occurredAt FROM audit_events
+    -c "SELECT id, action, \"occurredAt\" FROM audit_events
         WHERE action LIKE 'panorama.signup.%'
-        AND occurredAt >= NOW() - INTERVAL '10 minutes'
+        AND \"occurredAt\" >= NOW() - INTERVAL '10 minutes'
         ORDER BY id DESC"
 ```
 
@@ -861,21 +1125,34 @@ Best practice: every rotation runs through the rolling deploy +
 Until a managed scheduler exists, rotation cadence depends on the
 operator's calendar. Recommended baseline:
 
-| Secret class | Cadence |
-|---|---|
-| SESSION_SECRET (Path B) | Quarterly |
-| DATABASE_APP_PASSWORD | Quarterly |
-| Pooler password (DATABASE_URL/DIRECT/PRIVILEGED) | Annually |
-| OIDC client secrets | When the IdP forces it (Microsoft Entra: 24 months) |
-| S3 access/secret key | Annually |
-| SMTP credentials | When the provider forces it |
-| REDIS_URL token | Annually |
-| SENTRY_DSN | Annually (or after a confirmed leak) |
-| TURNSTILE_SECRET | Annually |
+| Secret class | Cadence | Why |
+|---|---|---|
+| SESSION_SECRET (Path B) | Quarterly | Cheapest secret to rotate (zero-downtime via PREVIOUS); high-value target if leaked (every session forge-able); quarterly hygiene is the default for any session-encryption key. |
+| DATABASE_APP_PASSWORD | Quarterly | Single-statement DB-side change + rolling deploy; medium-cost rotation. Role-level password compromise blast radius is high (whole runtime auth path); quarterly tracks the SESSION_SECRET cadence by analogy. |
+| Pooler password (DATABASE_URL/DIRECT/PRIVILEGED) | Annually | Full connection-pool reset → 5-10s blip on single-replica, single-minutes per replica on Fly. Highest-cost rotation in this runbook. Annual is the right trade-off given the cost: Supabase manages the pooler endpoint; the password is the second factor on top of the pooler ACL. |
+| OIDC client secrets | When the IdP forces it (Microsoft Entra: 24 months) | IdP-driven schedule; the IdP itself is the source of truth for expiry. Rotating early gains nothing — the OIDC consent + audit trail is at the IdP. |
+| S3 access/secret key | Annually | Bucket-scope blast radius; provider-side revoke is the leak-closing primitive. Annual is conservative; tighten to quarterly if a self-host operator's environment includes other reasons to rotate (PCI/SOC-2 expectations, customer-mandated cadence). |
+| SMTP credentials | When the provider forces it | Provider-driven; rotation is operationally expensive (in-flight email-send failures) for low marginal security gain. |
+| REDIS_URL token | Annually | Full rate-limiter fail-closed window per rotation (see Blast radius §REDIS); annual is the cost-vs-risk balance. |
+| SENTRY_DSN | Annually (or after a confirmed leak) | Quasi-secret; leak threat is event-injection quota spam, not confidentiality. Annual is conservative. |
+| TURNSTILE_SECRET | Annually | Same model as Sentry — leak threat is signup-protection bypass, not data exfiltration. Annual is the baseline; tighten on confirmed leak. |
 
-A GitHub Actions cron-driven `secrets-rotation-due` issue opener is
-a Round 7 follow-up to enforce the cadence. Until it lands, the
-operator's `.calendar` is the only schedule.
+**Why the SESSION_SECRET vs Pooler password asymmetry.** Both
+are high-value if leaked, but SESSION_SECRET rotation is
+zero-downtime (Path B via `_PREVIOUS`) while Pooler password
+rotation is single-minutes of measurable user-visible impact. The
+cadence reflects rotation *cost*, not blast radius. If you'd
+genuinely rotate Pooler quarterly without measurable cost, do so;
+the recommendation is conservative.
+
+**Tracking gap.** A GitHub Actions cron-driven
+`secrets-rotation-due` issue opener is a Round 7 follow-up to
+enforce the cadence ([panorama-issues#250 — proposed, not yet
+filed at session of writing]). Until it lands, the operator's
+`.calendar` is the only schedule, and "we forgot to rotate" is a
+foreseeable failure mode. Pre-rotation tracking belongs in your
+secret manager (1Password / Vault items have rotation-reminder
+fields).
 
 ## Multi-tenant rotation orchestration
 
