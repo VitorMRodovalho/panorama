@@ -44,7 +44,7 @@ hero:
 ## Trust
 
 - [What's next](/en/roadmap) — where we're going
-- [Security contact](mailto:security@vitormr.dev) — disclosure policy at [SECURITY.md](https://github.com/VitorMRodovalho/panorama/blob/main/SECURITY.md)
+- [Security contact](mailto:vitor@vitormr.dev) — disclosure policy at [SECURITY.md](https://github.com/VitorMRodovalho/panorama/blob/main/SECURITY.md)
 - [Open on GitHub](https://github.com/VitorMRodovalho/panorama) — AGPL-3.0 source
 
 ## Language
