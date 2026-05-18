@@ -20,9 +20,12 @@ export class SessionService {
   constructor(private readonly cfg: AuthConfigService) {}
 
   private sessionOptions(): SessionOptions {
-    const { sessionSecret, sessionCookieName, sessionMaxAgeSeconds, isProduction } = this.cfg.config;
+    const { sessionPassword, sessionCookieName, sessionMaxAgeSeconds, isProduction } = this.cfg.config;
     return {
-      password: sessionSecret,
+      // sessionPassword is either the raw string (no rotation) or
+      // `{ 1: previous, 2: primary }` (highest numeric key encrypts;
+      // all keys are tried for decrypt). See AuthConfigService.
+      password: sessionPassword,
       cookieName: sessionCookieName,
       ttl: sessionMaxAgeSeconds,
       cookieOptions: {
@@ -36,10 +39,14 @@ export class SessionService {
   }
 
   private oauthStateOptions(): SessionOptions {
-    const { sessionSecret, oauthStateCookieName, oauthStateMaxAgeSeconds, isProduction } =
+    const { sessionPassword, oauthStateCookieName, oauthStateMaxAgeSeconds, isProduction } =
       this.cfg.config;
     return {
-      password: sessionSecret,
+      // Same Password value as the session cookie: an in-flight OIDC
+      // dance mid-rotation must decrypt the callback's state cookie
+      // even when it was sealed under the previous key. Splitting the
+      // key would 500 every callback during a rotation window.
+      password: sessionPassword,
       cookieName: oauthStateCookieName,
       ttl: oauthStateMaxAgeSeconds,
       cookieOptions: {

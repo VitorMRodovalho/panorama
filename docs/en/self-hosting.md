@@ -181,12 +181,45 @@ deployment hardening is on you. Minimum checklist:
 
 ### Rotate `SESSION_SECRET`
 
+Two paths. Pick the one that matches the situation.
+
+**Emergency rotation** — when you suspect a key leak (`.env` committed
+to a public repo, backup leaked, departing-employee revoke). Every
+active session is invalidated; users must re-login. That's the point.
+
 ```bash
 NEW_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
 sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$NEW_SECRET|" .env
+# Make sure SESSION_SECRET_PREVIOUS is unset — leaving the leaked
+# value as PREVIOUS keeps it valid for SESSION_MAX_AGE_SECONDS!
+sed -i "s|^SESSION_SECRET_PREVIOUS=.*|SESSION_SECRET_PREVIOUS=|" .env
 docker compose -f infra/docker/compose.prod.yml up -d core-api
-# Every active session is invalidated — users must re-login. Expected.
 ```
+
+**Routine zero-downtime rotation** — quarterly policy, scheduled
+hygiene, no compromise suspected. Existing sessions survive the
+change.
+
+```bash
+# Step 1 — flip. New SESSION_SECRET; old value moves to PREVIOUS.
+OLD_SECRET=$(grep '^SESSION_SECRET=' .env | cut -d= -f2-)
+NEW_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
+sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$NEW_SECRET|" .env
+sed -i "s|^SESSION_SECRET_PREVIOUS=.*|SESSION_SECRET_PREVIOUS=$OLD_SECRET|" .env
+docker compose -f infra/docker/compose.prod.yml up -d core-api
+# Confirm in the boot logs: { session_secret_rotation_active: true }
+
+# Step 2 — wait. SESSION_MAX_AGE_SECONDS (default 7 days). Any cookie
+# issued before the flip will either re-issue under the new key on
+# its next request or expire naturally.
+
+# Step 3 — drop. Clear PREVIOUS and redeploy.
+sed -i "s|^SESSION_SECRET_PREVIOUS=.*|SESSION_SECRET_PREVIOUS=|" .env
+docker compose -f infra/docker/compose.prod.yml up -d core-api
+```
+
+Full procedure (including verification) at
+[`docs/runbooks/secrets-rotation.md`](../runbooks/secrets-rotation.md).
 
 ### Apply a new migration after pulling
 
