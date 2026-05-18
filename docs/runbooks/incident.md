@@ -15,6 +15,9 @@ companion to:
 
 - [`verify-audit-chain.md`](./verify-audit-chain.md) — the post-
   incident integrity check for the audit log.
+- [`restore.md`](./restore.md) — the restore drill exercised in
+  the *Recover* phase when restoration from backup is the chosen
+  path. Companion to [`scripts/restore-drill.sh`](../../scripts/restore-drill.sh).
 - [`secrets-rotation.md`](./secrets-rotation.md) — the rotation
   primitives invoked during the *Contain* phase.
 - [`secrets-inventory.md`](./secrets-inventory.md) — what's in scope
@@ -257,11 +260,20 @@ The notification matrix is severity-driven.
 1. Verify the contain step took: re-run the relevant smoke (login
    flow, audit-chain verifier, cross-tenant isolation tests in
    `community-smoke.e2e.test.ts`).
-2. **Write the post-mortem within 7 days** of the incident close.
+2. **If restoration from backup is the chosen recovery path** —
+   for any incident class involving data corruption, confirmed
+   tamper of audit_events, or destructive operator error — follow
+   [`restore.md`](./restore.md). The restore drill is the
+   pre-rehearsed path: dump → restore-into-new-target → verify →
+   point the runtime at the new target. The drill artefacts under
+   `docs/audits/restore-drill-<date>/` are the operator's
+   precedent for "we know this works"; cite them in the
+   post-mortem.
+3. **Write the post-mortem within 7 days** of the incident close.
    Use the template at the bottom of this page.
-3. File concrete follow-up issues for every preventative measure
+4. File concrete follow-up issues for every preventative measure
    identified. Tag them `incident-followup` so they're tracked.
-4. Decide on the public-disclosure language. Default: publish the
+5. Decide on the public-disclosure language. Default: publish the
    post-mortem after the patch lands across all known
    deployments + 30-day grace period for self-hosters who pull on
    a slower cadence.
@@ -429,11 +441,12 @@ Once the hosted URL flips (Round 7 §10), drill against this runbook
 incident at each of P0/P1/P2 walks through Phases 1-5 without
 touching production. Record the drill in the audit log with action
 `panorama.maintainer.incident_drill_completed` (action name
-reserved; the registry entry + emitter land in Round 6 PR2
-alongside the executed restore drill).
+reserved; the registry entry + emitter is a Round 7 follow-up).
+Quarterly drill date pairs with the [restore drill cadence](./restore.md#when-to-drill) —
+run both in one operator-hour slot.
 
-Until the URL flips, drill cadence is **once at Wave 0 Round 6
-PR2** alongside the actual restore drill that closes Wave 0 §8.
+Until the URL flips, drill cadence is **once at Wave 0 §8 close**
+alongside the first executed restore drill (PR2b).
 
 **Enforcement mechanism.** A GitHub Actions cron job opens a
 `incident-drill-due` labeled issue 7 days before each scheduled
