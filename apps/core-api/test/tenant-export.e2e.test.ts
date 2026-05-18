@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
@@ -330,6 +330,49 @@ describe('tenant export (ADR-0020 §8, PR 4)', () => {
       headers: { cookie },
     });
     expect(resp.status).toBe(403);
+  });
+
+  it('issue #228: email-side failure does NOT overwrite completed → failed', async () => {
+    // Regression test for the dispatchEmail bug carried across the
+    // PR1 / PR2 / PR3 handoffs as risk item #6 (PR1) → persona N1
+    // (PR2) → follow-up #4 (PR3). Before the fix, a throw anywhere
+    // inside dispatchEmail beyond its own inner try/catch
+    // (lookupJobIdByObjectKey, renderExportReadyEmail) propagated
+    // to the outer catch in runJob and called markFailed —
+    // overwriting a completed row whose export file was already in
+    // S3, leaving the tenant with "failed" in the UI but the bytes
+    // sitting in the bucket.
+    const cookie = await login(url, ownerEmail, password);
+    const resp = await fetch(`${url}/tenants/${tenantId}/export`, {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(resp.status).toBe(202);
+    const body = (await resp.json()) as { jobId: string };
+
+    const dispatchSpy = vi
+      .spyOn(
+        exports as unknown as { dispatchEmail: (...args: unknown[]) => Promise<void> },
+        'dispatchEmail',
+      )
+      .mockRejectedValueOnce(new Error('synthetic post-completion failure'));
+
+    await exports.runJob(body.jobId);
+
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+
+    const row = await admin.tenantExport.findUnique({ where: { id: body.jobId } });
+    // The export file was already uploaded to S3 by markCompleted's
+    // moment; the row MUST stay completed so the tenant can download.
+    expect(
+      row?.status,
+      'email failure must not reverse the completed terminal state',
+    ).toBe('completed');
+    expect(row?.objectKey).toMatch(/\.json\.gz$/);
+    // S3 upload happened (markCompleted ran before dispatchEmail).
+    expect(puts).toHaveLength(1);
+
+    dispatchSpy.mockRestore();
   });
 });
 
