@@ -715,6 +715,15 @@ model AuditEvent {
   /// Verifier asserts sha256(COALESCE(prevHash, '') || digestPreImage) == selfHash.
   /// NULL for pre-0021 rows (legacy, unverifiable from columns alone).
   digestPreImage Bytes?
+  /// Per-request correlation id from ADR-0018 §3 RequestContextMiddleware ALS.
+  /// Migration 0026+. NULL for pre-0026 rows, trigger-emitted rows, and writes
+  /// outside an HTTP request frame (BootAuditModule, BullMQ workers, scripts).
+  /// Observational metadata — NOT part of the digest pre-image (see migration
+  /// 0026 header for the rationale tying back to ipAddress/userAgent precedent).
+  /// Folding this into the digest would change the canonical pre-image format
+  /// and make every pre-0026 row un-verifiable by chain-verify CLI. The
+  /// audit-chain-integrity.e2e.test.ts requestId assertion is the canary.
+  requestId      String?
 
   @@index([tenantId, occurredAt(sort: Desc)])
   @@map("audit_events")
