@@ -16,7 +16,7 @@ hero:
       link: https://github.com/VitorMRodovalho/panorama
 ---
 
-> **Early access** — real product, rough edges, weekly contact with the team. Bring real fleet data, expect rough edges, talk to us weekly.
+> **Public preview — honest framing.** Panorama is in public-preview phase. **No SLA. No paid support.** Feature surface is roughly 10% of mature platforms like FleetManager v2.1 or Snipe-IT — the bones (audit chain, multi-tenant isolation, reservation engine, photo evidence, OIDC) are solid; daily-driver UX is still building out per the wave roadmap. The maintainer reserves the right to **discontinue with 30 days notice** ([ADR-0014](/adr/0014-public-hosted-instance)) — bring real fleet data only if you can also accept a 30-day data-export-and-migrate cycle. Tenant export is one click in Settings; the same code that runs the hosted preview is what you'd self-host.
 
 ## What works today
 

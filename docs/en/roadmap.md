@@ -37,8 +37,16 @@ notify-me address at [/en/early-access](./early-access.md).
 
 Same codebase runs on the hosted preview as you'd self-host.
 
-## After preview: notifications and saved reports
+## After preview: foundations + native mobile
 
+- **Wave A** — teams + asset-to-user/team assignment (per ADR-0027 schema work)
+- **Wave B** — native driver mobile app (React Native / Expo;
+  offline-first inspections is the wedge) per ADR-0022
+- **Wave C** — dispatcher power tools (calendar drag, bulk approve,
+  affected-reservations view from maintenance ticket)
+- **Wave D** — fleet-manager dashboard + 5 canned reports
+  (utilisation, mileage, maintenance cost, missed reservations,
+  damage incidents)
 - Saved-report builder with CSV / XLSX / PDF render, schedulable
 - Notification channels — email, Slack, Microsoft Teams, webhooks
 - Bounce-webhook integration so invitation state stays accurate
@@ -57,9 +65,9 @@ The major identity and ergonomics gaps close:
 
 ## Beyond 1.0
 
-- Mobile app (offline-first inspections is the wedge)
 - Predictive maintenance (Enterprise)
 - Additional locales beyond EN / PT-BR / ES
+- Multi-region read-replica architecture (Enterprise)
 
 ## How we say no
 

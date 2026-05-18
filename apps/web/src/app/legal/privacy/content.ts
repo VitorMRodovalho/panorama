@@ -524,15 +524,18 @@ dias acima se aplica a qualquer revisão pós-revisão jurídica.
 
   es: `
 **Versión en español pendiente.** El texto canónico de la Política
-de Privacidade de Panorama está disponible en inglés y portugués
-brasileño en esta misma página, por favor seleccione su idioma en
-el selector de idiomas o use el contenido en inglés / portugués
-como referencia.
+de Privacidad de Panorama está disponible en inglés y portugués
+brasileño. La traducción al español será publicada después de la
+revisión jurídica de Round 7 (Wave 0 — antes del lanzamiento
+público de la URL hospedada).
 
-La traducción al español será publicada después de la revisión
-jurídica de Round 7 (Wave 0 — antes del lanzamiento público de la
-URL hospedada). Hasta entonces, la versión en inglés (canónica) o
-portugués (mercado brasileño / LGPD) son los textos vigentes.
+Para leer la versión vigente:
+
+- **Inglés (canónico)**: configure su navegador con \`Accept-Language: en\` o limpie la cookie \`panorama_locale\` y vuelva a cargar la página.
+- **Portugués brasileño** (mercado brasileño / LGPD): configure su navegador con \`Accept-Language: pt-BR\` o establezca la cookie \`panorama_locale=pt-br\`.
+
+Hasta entonces, la versión en inglés (canónica) y la portuguesa
+brasileña son los textos vigentes.
 
 Para cualquier pregunta sobre privacidad, contacte:
 vitor@vitormr.dev.

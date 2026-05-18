@@ -1,6 +1,6 @@
 # ADR-0021: Web frontend architecture
 
-- Status: Proposed (2026-05-18). Drafted as a Wave 0+ prereq per
+- Status: Accepted (2026-05-18 via v2 6-agent scan, per `HANDOFF-2026-05-18-v2-6agent-scan.md` §1 tech-lead condition). Drafted as a Wave 0+ prereq per
   `docs/audits/roadmap-to-feature-complete-2026-05-18.md` §"Wave 0+
   — Web foundation" and tech-lead's per-PR scan finding on PR #241
   ("apps/web/ architecturally not ready — no features/ folder, 5
