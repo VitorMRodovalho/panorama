@@ -119,7 +119,10 @@ scripts/restore-drill.sh \
 Append `--force-truncate-dst` if the target has existing tables
 you want the drill to drop. (`DROP SCHEMA public CASCADE; CREATE
 SCHEMA public;` — destructive on the TARGET only, never the
-source.) Append `--skip-chain-verify` only if you're smoke-testing
+source.) The drill requires the target DB name to contain `drill`
+or `test` as an extra safety check; override with
+`PANORAMA_DRILL_ALLOW_ANY_TARGET=1` if you've audited the target
+manually. Append `--skip-chain-verify` only if you're smoke-testing
 the dump/restore mechanics and don't have a populated audit chain
 yet.
 
@@ -171,9 +174,10 @@ The drill exit code:
 
 | Exit | Meaning |
 |---|---|
-| 0 | Drill passed: counts match AND chain-verify is OK or INCONCLUSIVE or skipped |
+| 0 | Drill passed: counts match AND chain-verify is OK (or skipped) |
 | 1 | Drill failed: count mismatch OR chain-verify reports tamper |
 | 2 | Operational error: missing tooling, refuse-prod triggered, pg_dump or pg_restore failed |
+| 3 | Drill INCONCLUSIVE: counts match but chain-verify reported empty source — drill mechanic worked, but a freshly-reset dev DB has nothing to verify. **Not the same as PASS.** Re-run against a populated source for a real result. |
 
 ## What "successful" looks like
 
@@ -202,6 +206,54 @@ shaped like:
 two-element verification contract. If either is missing, the
 drill is not yet acceptable for the Wave 0 §8 close.
 
+## When the drill fails partway
+
+`pg_dump` or `pg_restore` can fail halfway — disk full, network drop,
+target schema collision. The script's `set -euo pipefail` exits
+non-zero on the first failure, but leaves the partial artefacts
+behind. Safe-retry pattern:
+
+```bash
+# 1. Inspect the failure mode:
+ls -la docs/audits/restore-drill-<ts>/
+cat docs/audits/restore-drill-<ts>/dump.log     # if pg_dump failed
+cat docs/audits/restore-drill-<ts>/restore.log  # if pg_restore failed
+
+# 2. Drop the target DB to discard any half-restored state:
+docker exec docker_postgres_1 \
+    psql -U panorama -d postgres \
+    -c "DROP DATABASE panorama_drill_target"
+docker exec docker_postgres_1 \
+    psql -U panorama -d postgres \
+    -c "CREATE DATABASE panorama_drill_target"
+
+# 3. Discard the partial drill artefacts (the dump file may be
+#    truncated; the report.json may be missing):
+rm -rf docs/audits/restore-drill-<ts>/
+
+# 4. Re-run the drill — it'll write to a fresh timestamped
+#    out-dir (or pass --out-dir to a specific path).
+scripts/restore-drill.sh ...
+```
+
+If `pg_restore` succeeded but the bootstrap + rls.sql re-apply step
+failed (see `reapply-migrations.log`), the target DB has tables +
+data but no grants. Symptoms: `panorama_app` cannot SELECT post-
+restore. Fix:
+
+```bash
+# Manually re-run the bootstrap + rls.sql loop:
+psql "$DST_URL" -v ON_ERROR_STOP=1 \
+    -f apps/core-api/prisma/supabase-bootstrap.sql
+for rls in apps/core-api/prisma/migrations/*/rls.sql; do
+    psql "$DST_URL" -v ON_ERROR_STOP=1 -f "$rls"
+done
+```
+
+Then re-run the drill with `--out-dir` pointing at a fresh path —
+the count/chain-verify portion will succeed against the now-grant'd
+target.
+
 ## RTO / RPO observation
 
 ### RTO
@@ -223,24 +275,28 @@ The drill measures three components:
 The drill RTO is **NOT the published RTO**. A real incident adds
 operator-side overhead the drill cannot capture:
 
-- Provisioning a fresh Supabase project to restore into (~10
-  minutes on the free tier)
-- Restoring the Supabase backup snapshot into that project (~5-15
-  minutes per Supabase docs)
-- Updating Fly secrets (`fly secrets set` + rolling deploy: ~3-5
-  minutes; see [`secrets-rotation.md`](./secrets-rotation.md)
-  §DATABASE_URL section)
-- DNS cutover if the new project has a different connection
-  hostname
-- Smoke-test the restored app surface (login, sample query, photo
-  fetch) before declaring restore complete
+| Phase | Realistic duration | Notes |
+|---|---|---|
+| Provisioning a fresh Supabase project | ~10 minutes | Free tier; manual via dashboard |
+| Restoring the Supabase backup snapshot | ~5-15 minutes | Per Supabase docs; scales with DB size |
+| Drill script RTO (`rto_seconds_total`) | ~`dump+restore+verify` | Captured by the script |
+| Updating Fly secrets + rolling deploy | ~3-5 minutes | Per [`secrets-rotation.md`](./secrets-rotation.md) §DATABASE_URL |
+| DNS cutover (if applicable) | ~5 minutes + TTL | Only if new project has different hostname |
+| Smoke-test the restored app surface | ~5 minutes | Login, sample query, photo fetch |
 
-**The published RTO for the Community-edition hosted instance is
-the drill RTO + the operator overhead above**. PR2b captures both
-numbers — the script's `rto_seconds_total` and the maintainer's
-observed wall-clock from "decision to restore" → "users back on
-the restored DB". The gap between the two is the operator's
-real-world cost.
+**Worked example.** For a ~10 MB staging dump, drill RTO is ~30
+seconds (~3s dump + ~5s restore + ~22s verify with a populated
+chain). Add the operator overhead: 10 min provisioning + 10 min
+Supabase backup restore + 0.5 min drill + 5 min secrets + 5 min
+smoke-test = **~30 minutes published RTO**.
+
+For a public-preview Community deployment, **30 minutes is the
+working RTO claim**. PR2b records both the script number and the
+operator-observed wall-clock so the gap between them is visible.
+At first real-customer scale the published RTO becomes
+business-driven (do paying tenants accept 30 min?); the gap from
+script-RTO to wall-clock RTO is where the Enterprise managed
+runbook earns its keep.
 
 ### RPO
 
@@ -278,16 +334,25 @@ directory. The directory contains:
 - `source-baselines.json` / `target-baselines.json` — pre/post
   counts; reproducible by re-running the captured queries.
 - `drift.json` — per-key match against source.
-- `chain-verify.json` + `chain-verify.txt` — chain-verify CLI
-  output captured byte-for-byte.
-- `dump.log` / `restore.log` — pg_dump + pg_restore stderr.
-- `source.dump` — the dump file ITSELF. **Do NOT commit** —
-  contains a full DB export including audit metadata, tenant
-  data, and any rotation events at rest. Add to `.gitignore` if
-  you generate it under the audit dir; the drill script does
+- `chain-verify.json` — chain-verify CLI JSON output. **On
+  chain-verify OK** this is a 1-line summary (verified count,
+  legacy count, mismatches=0); safe to commit. **On chain-verify
+  FAIL** the JSON contains `firstMismatch` with row id + tenantId
+  + action — treat this case as confidential and redact
+  `tenantId` / `action` before sharing in a public follow-up
+  issue.
+- `chain-verify.txt` — human-readable chain-verify output. Same
+  PII trade-off as `chain-verify.json`.
+- `dump.log` / `restore.log` / `reapply-migrations.log` — pg_dump
+  + pg_restore + bootstrap stderr. May contain row values on
+  error. **Excluded from git via `.gitignore`** (see repo root
+  `.gitignore` for the `docs/audits/restore-drill-*/` block).
+- `source.dump` — the dump file ITSELF. Full DB export including
+  audit metadata, tenant data, rotation events at rest.
+  **Excluded from git via `.gitignore`**; the drill script does
   NOT delete the dump on success because you may want to
-  spot-check it before committing the report. Delete or move to
-  encrypted storage manually.
+  spot-check it. Delete or move to encrypted storage manually
+  once the drill report is committed.
 
 Add a one-page `README.md` to the drill directory documenting:
 
@@ -362,8 +427,20 @@ edit creates an audit trail in `git log`.
   tool — preserve the source first, then restore from a
   pre-tamper backup. See [`incident.md`](./incident.md) Phase 5
   §"Recover" for the decision tree.
-- **Object-storage restore.** See §"Restoring object storage"
-  above for the boundary.
+- **Object-storage restore.** Photos and tenant-export tarballs
+  in S3 / R2 are NOT part of the drill — see §"Restoring object
+  storage" above for the boundary. A real DR scenario where the
+  DB is restored but photos are gone leaves the runtime in a
+  half-state (asset rows reference 404'd S3 objects). Document
+  this in the post-mortem if it bites in production.
+- **Self-host customisation of refuse-prod heuristic.** The
+  default regex matches the maintainer's hosted-instance naming
+  (`panorama-prod`, `prod.supabase.co`, etc.). Self-hosters
+  running production at a different hostname **must** export
+  `PANORAMA_DRILL_REFUSE_REGEX` with their own prod-host
+  pattern, OR rely on operational discipline of separate `.env`
+  files. The unmodified script has zero refuse-prod gate on
+  self-host naming conventions.
 
 ## Drill cadence enforcement
 
@@ -380,8 +457,25 @@ ships, can pick up where the calendar left off.
 
 Drilling a restore across a fleet of hosted-tenant instances with
 per-tenant evidence capture is a managed-service concern and
-ships in the **Enterprise edition** (forward-looking — Panorama
-is pre-revenue and Community-only today). See the
-[feature matrix](../en/feature-matrix.md) row 24 for the
+**will ship** in the **Enterprise edition** (forward-looking —
+Panorama is pre-revenue and Community-only today). See the
+[feature matrix](../en/feature-matrix.md) Backups row for the
 Community-vs-Enterprise positioning. The single-DB drill
-procedure above is the Community surface.
+procedure above is the Community surface and the self-hoster
+contract.
+
+---
+
+## If you got here from `incident.md`
+
+You're in Phase 5 (Recover). After the drill produces a clean
+report:
+
+1. Point the runtime at the restored target — see
+   [`secrets-rotation.md`](./secrets-rotation.md) §"DATABASE_URL"
+   for the Fly secrets + rolling-deploy sequence.
+2. Notify affected tenants per [`incident.md`](./incident.md#phase-4--notify)
+   if you escalated from Phase 4 — restore from backup is a
+   confirmation-trigger event under most P0 conditions.
+3. Continue Phase 5 step 3 (post-mortem within 7 days) in
+   [`incident.md`](./incident.md#phase-5--recover--post-mortem).

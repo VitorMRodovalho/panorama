@@ -54,3 +54,13 @@ packages/plugin-sdk/types.generated.d.ts
 
 # Enterprise (never commit here)
 panorama-enterprise/
+
+# Restore-drill artefacts — keep report.json + drift.json +
+# chain-verify JSON summary (small + non-PII), but NEVER commit the
+# raw source.dump (full tenant DB export) or the verbose pg_*.log
+# files (may include PII row values on error). See
+# docs/runbooks/restore.md §"Recording the drill artefact".
+docs/audits/restore-drill-*/source.dump
+docs/audits/restore-drill-*/dump.log
+docs/audits/restore-drill-*/restore.log
+docs/audits/restore-drill-*/reapply-migrations.log
