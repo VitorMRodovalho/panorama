@@ -1,6 +1,6 @@
 # ADR-0022: Driver native mobile architecture (Expo / React Native)
 
-- Status: Proposed (2026-05-18). Drafted as a Wave B prereq per
+- Status: Accepted (2026-05-18 v2 6-agent scan, per `HANDOFF-2026-05-18-v2-6agent-scan.md` §3 security-reviewer §3-3 condition addressed via Universal Links primary). Drafted as a Wave B prereq per
   `docs/audits/roadmap-to-feature-complete-2026-05-18.md` §"Wave B —
   Driver Native Mobile App" and maintainer decision #3 of the
   2026-05-18 planning round (native Expo over PWA).
@@ -191,11 +191,18 @@ the current state).
 - **React Navigation v6+** with the `native-stack` navigator for
   the primary screen graph. Bottom tabs only if usage patterns
   demand them (likely not — drivers do one task at a time).
-- **Deep linking** via `panorama://r/:reservationId` (custom URL
-  scheme) + Universal Links / App Links (`panorama.example.com/r/:id`
-  on the hosted-app domain redirects to the app, falls back to web
-  `/me`). The QR codes printed on cab dashboards encode the
-  Universal Link form.
+- **Deep linking — Universal Links / App Links are PRIMARY.** Cab
+  QR codes encode `https://panorama.example.com/r/:reservationId`
+  on the hosted-app domain. The OS routes verified Universal
+  Links / App Links to the registered app; if the app is not
+  installed, the URL falls back to the web `/me` minimal
+  fallback. The custom URL scheme `panorama://r/:reservationId`
+  is a **fallback only** for the offline + first-launch case
+  before Universal-Link verification completes. Per
+  security-reviewer v2 scan §3-3 (2026-05-18) the URL-scheme
+  fallback is documented but the QR codes + every operator-
+  shareable link MUST use the Universal Link form to prevent
+  malicious-app interception of the custom scheme.
 - **NO Expo Router file-based routing in this app.** React
   Navigation's imperative + typed API is more legible for the
   small screen graph (∼6 screens: enroll, my-reservations, next-

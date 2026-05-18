@@ -221,6 +221,8 @@ quickly identify what's safe to log.
   `SESSION_MAX_AGE_SECONDS`
 - `INVITE_RATE_ADMIN_HOUR`, `INVITE_RATE_TENANT_DAY`
 - `TRUST_PROXY_HOPS` — see dedicated subsection below
+- `THROTTLER_ENABLED` — **REQUIRED in production**; see dedicated
+  subsection below
 
 ### `TRUST_PROXY_HOPS` — load-bearing for signup rate-limit (ADR-0020 §4)
 
@@ -256,6 +258,42 @@ self-host that opens self-serve signup), this variable becomes
 SECURITY-CRITICAL — the §4 anti-spoof flood test in
 `apps/core-api/test/abuse/signup-flood.e2e.test.ts` asserts the
 bucket behavior assuming a correctly-configured value.
+
+### `THROTTLER_ENABLED` — REQUIRED in production (security-reviewer v2 §3-2)
+
+Not a secret, but **fail-OPEN unless explicitly enabled**. Default
+behaviour of `app.module.ts:143-145` is to register
+`PerTenantThrottlerGuard` as `APP_GUARD` only when the throttler
+module is wired into the configure() chain; the module itself
+checks `THROTTLER_ENABLED` for the test-skip path. A production
+deployment that NEVER sets `THROTTLER_ENABLED=1` runs with the
+guard registered but the per-tenant tracker effectively no-op'd
+under specific test-only env conditions.
+
+**Operator action in production:**
+
+```bash
+fly secrets set --app panorama-hosted THROTTLER_ENABLED=1
+```
+
+A production boot WITHOUT `THROTTLER_ENABLED=1` should be treated
+as a **misconfiguration**. The boot-audit module (per ADR-0019)
+logs the value at startup; check the boot log for
+`throttler_enabled` = true after any deploy.
+
+Future hardening: the boot-audit module should emit a structured
+warning (and on the hosted instance, refuse to start) if
+`THROTTLER_ENABLED` is unset/false AND `NODE_ENV=production`.
+Filed as a Wave-0+ follow-up; until it lands, the operator
+discipline above is the contract.
+
+| Topology | THROTTLER_ENABLED |
+|---|---|
+| Local dev (vitest, no abuse-test) | unset (defaults to off) |
+| Local dev (signup-flood.e2e.test.ts) | `1` (the test sets it) |
+| Hosted preview / staging | **`1` (REQUIRED)** |
+| Self-host with `FEATURE_SELF_SERVE_SIGNUP=true` | **`1` (REQUIRED)** |
+| Self-host with FEATURE_SELF_SERVE_SIGNUP off | `1` recommended (cheap defense-in-depth on login + invitation paths) |
 
 ## Total count
 

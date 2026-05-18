@@ -278,10 +278,18 @@ export class SignupController {
         expectedNonce: record.nonce,
       });
     } catch (err) {
-      // OidcService logs the underlying reason; we surface the
-      // generic 400 envelope. State has already been GETDEL'd so a
-      // retry needs a fresh initiate.
-      this.log.warn({ err: String(err) }, 'signup_oidc_callback_failed');
+      // OidcService logs the underlying reason with full structure;
+      // we emit a SANITIZED summary here to avoid attacker-influenced
+      // OIDC error_description text landing in pino unbounded.
+      // Per security-reviewer v2 scan §3-1 (2026-05-18). The
+      // err.name/code surface is fixed-vocabulary at the SDK level
+      // (openid-client v6) so it's safe; the IdP's
+      // error_description (RFC 6749 §4.1.2.1) does NOT.
+      const errSummary =
+        err instanceof Error
+          ? { name: err.name, code: (err as { code?: unknown }).code === undefined ? undefined : String((err as { code?: unknown }).code).slice(0, 64).replace(/[^a-z_-]/gi, '') }
+          : { name: 'unknown' };
+      this.log.warn({ err: errSummary }, 'signup_oidc_callback_failed');
       return respondTimingPadded(res, startedAt, this.cfg.config.failureLatencyFloorMs);
     }
 
