@@ -200,7 +200,7 @@ The notification matrix is severity-driven.
    tenant-notification template below. Include: what happened,
    what data was involved, what the tenant should do, what
    Panorama did to contain, when they'll get a follow-up. A
-   one-line "we're investigating, you'll hear more by <time>"
+   one-line "we're investigating, you'll hear more by `<time>`"
    heads-up email MAY go out in parallel with Phase 3 — speed
    matters for an active leak on driver shift-start; the full
    notification follows once Contain is verified.
