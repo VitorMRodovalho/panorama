@@ -1,5 +1,6 @@
 import type { Metadata, ResolvingMetadata } from 'next';
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { loadMessages, resolveRequestLocale } from '@/lib/i18n';
 import { TERMS_CONTENT, LAST_UPDATED_ISO } from './content';
 
@@ -46,9 +47,9 @@ export default async function TermsPage(): Promise<ReactNode> {
       </header>
       <PolicyContent body={content} />
       <footer className="panorama-legal-footer">
-        <a href="/legal/privacy">{messages.t('legal.privacy.title')}</a>
+        <Link href="/legal/privacy">{messages.t('legal.privacy.title')}</Link>
         <span> · </span>
-        <a href="/">{messages.t('legal.backToHome')}</a>
+        <Link href="/">{messages.t('legal.backToHome')}</Link>
       </footer>
     </article>
   );
