@@ -109,7 +109,7 @@ export class TenantExportService {
    * dependency.
    */
   async runJob(jobId: string): Promise<void> {
-    let job = await this.prisma.runAsSuperAdmin(
+    const job = await this.prisma.runAsSuperAdmin(
       (tx) => tx.tenantExport.findUnique({ where: { id: jobId } }),
       { reason: `tenant-export:run:${jobId}:fetch` },
     );
@@ -138,20 +138,43 @@ export class TenantExportService {
       { reason: `tenant-export:run:${jobId}:processing` },
     );
 
+    let result;
     try {
-      const result = await this.executeExport(job.tenantId, jobId);
+      result = await this.executeExport(job.tenantId, jobId);
       await this.markCompleted(jobId, result);
-      job = await this.prisma.runAsSuperAdmin(
-        (tx) => tx.tenantExport.findUnique({ where: { id: jobId } }),
-        { reason: `tenant-export:run:${jobId}:refetch` },
-      );
-      if (job) {
-        await this.dispatchEmail(job, result);
-      }
     } catch (err) {
       const errKind = err instanceof Error ? err.name : 'Unknown';
       this.log.error({ err: String(err), jobId }, 'tenant_export_run_failed');
       await this.markFailed(jobId, errKind);
+      return;
+    }
+
+    // Email dispatch lives outside the export-failure catch (issue
+    // #228). Before this fix, a throw from `lookupJobIdByObjectKey`
+    // or any other path inside `dispatchEmail` that bypassed its own
+    // inner try/catch would propagate up to the outer catch and call
+    // `markFailed` — overwriting a `completed` row even though the
+    // export file was already uploaded to S3. The tenant would see
+    // "failed" in the UI while the file sat in the bucket with no
+    // surface to retrieve it.
+    //
+    // After this fix, an email-side error logs a warn and emits the
+    // already-existing `tenant_export_email_dispatch_failed` audit
+    // row (per `dispatchEmail`'s inner catch). The row stays
+    // `completed`; the tenant can still download the export.
+    try {
+      const refetched = await this.prisma.runAsSuperAdmin(
+        (tx) => tx.tenantExport.findUnique({ where: { id: jobId } }),
+        { reason: `tenant-export:run:${jobId}:refetch` },
+      );
+      if (refetched) {
+        await this.dispatchEmail(refetched, result);
+      }
+    } catch (err) {
+      this.log.warn(
+        { err: String(err), jobId },
+        'tenant_export_email_failed_but_completed',
+      );
     }
   }
 
