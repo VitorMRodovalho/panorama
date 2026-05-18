@@ -8,6 +8,11 @@ documented escape if the managed staging stack
 ([ADR-0013](../adr/0013-staging-deploy-architecture.md)) doesn't
 fit your needs.
 
+> Just want to see Panorama running on your laptop? Use the
+> [Quickstart](./quickstart.md) instead — it's a different (much
+> shorter) path with seeded tenants and a dev-only password
+> identity. This page is the production deploy guide.
+
 > **Status note**: 0.3 ships the API + admin templates + inspection
 > backend feature-complete. The driver-facing web UI is in flight
 > (step 11 of ADR-0012); until it lands, self-hosting gives you an
