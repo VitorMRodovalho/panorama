@@ -84,7 +84,7 @@ The LGPD `tomada de conhecimento` framing supports this; document
 the gap between occurrence and detection in the post-mortem
 timeline so the regulatory clock and the forensic timeline don't
 get conflated. Open a private GitHub Security Advisory draft at
-<https://github.com/VitorMRodovalho/panorama/security/advisories/new>
+[github.com/VitorMRodovalho/panorama/security/advisories/new](https://github.com/VitorMRodovalho/panorama/security/advisories/new)
 even before you know the scope — the draft is invisible to the
 public until you publish, and it makes the audit trail traceable.
 
@@ -220,7 +220,7 @@ The notification matrix is severity-driven.
    not-notifying-because rationale in the GitHub Security
    Advisory draft so the audit trail survives.
 
-   Channel: <https://www.gov.br/anpd/pt-br>. The form's current
+   Channel: [gov.br/anpd/pt-br](https://www.gov.br/anpd/pt-br). The form's current
    field schema (incident category, data classes, count of
    affected data subjects, geographic scope, containment status,
    remediation plan, subject-notification status, contact for
@@ -322,7 +322,7 @@ The Panorama maintainer
 ### ANPD notification (P0 draft)
 
 ANPD does not accept ad-hoc emails — use the official form at
-<https://www.gov.br/anpd>. The fields the form requires include:
+[gov.br/anpd](https://www.gov.br/anpd). The fields the form requires include:
 incident category, data classes, number of affected data subjects,
 geographic scope, containment status, planned remediation,
 notification status of affected subjects, contact for follow-up.
@@ -389,12 +389,12 @@ mortem is considered closed. Checkboxes without issue links rot.
 
 | Role | Contact |
 |---|---|
-| Maintainer (primary) | <vitor@vitormr.dev> |
+| Maintainer (primary) | [vitor@vitormr.dev](mailto:vitor@vitormr.dev) |
 | Hosted instance ops | Same as maintainer (single-operator deploy) |
 | Legal counsel | TBD — must be in place before the hosted URL flips |
-| ANPD official form | <https://www.gov.br/anpd> |
+| ANPD official form | [gov.br/anpd](https://www.gov.br/anpd) |
 | Sentry project | The operator's own (per [ADR-0018](../adr/0018-observability-stack.md)) — Panorama maintainer does not have access |
-| GitHub security advisories | <https://github.com/VitorMRodovalho/panorama/security/advisories> |
+| GitHub security advisories | [github.com/VitorMRodovalho/panorama/security/advisories](https://github.com/VitorMRodovalho/panorama/security/advisories) |
 
 ## What this runbook does NOT cover
 
