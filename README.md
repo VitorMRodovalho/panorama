@@ -131,29 +131,49 @@ and [`docs/audits/HANDOFF-2026-04-23.md`](./docs/audits/HANDOFF-2026-04-23.md) f
 
 ## Getting started (dev)
 
+Full 5-minute walkthrough — clone, seed, log in as a tenant Owner,
+test cross-tenant isolation — at
+[`docs/en/quickstart.md`](./docs/en/quickstart.md).
+
+The TL;DR:
+
 ```bash
 # Pre-req: Node 22+, pnpm 9+, Docker, Docker Compose v2
 corepack enable
 pnpm install
 cp apps/core-api/.env.example apps/core-api/.env
+cp apps/web/.env.example apps/web/.env.local
 docker compose -f infra/docker/compose.dev.yml up -d
-pnpm --filter @panorama/core-api prisma migrate dev
-pnpm dev
+pnpm --filter @panorama/core-api prisma:deploy
+pnpm --filter @panorama/core-api prisma:seed   # creates Owners + dev passwords
+pnpm dev                                       # core-api + web concurrently
 ```
 
-Then:
+Then log in at <http://localhost:3000/login> with:
 
-- Web app:  http://localhost:3000
-- Core API: http://localhost:4000
-- API docs: http://localhost:4000/api/docs (OpenAPI UI)
-- MailHog (dev SMTP):  http://localhost:8025
-- MinIO console (dev): http://localhost:9001 (credentials in `.env.example`)
+- `admin@alpha.example` / `panorama-dev-2026`
+- `admin@bravo.example` / `panorama-dev-2026`
+
+(Dev-only passwords — the seed refuses to run against a prod-looking
+`DATABASE_URL`.)
+
+| URL | What it is |
+|---|---|
+| <http://localhost:3000> | Web app |
+| <http://localhost:4000/health> | Core API liveness + DB ping |
+| <http://localhost:4000/api/docs> | OpenAPI Swagger UI |
+| <http://localhost:8025> | MailHog (captured outgoing emails) |
+| <http://localhost:9001> | MinIO console (`minioadmin/minioadmin`) |
 
 **Contributor security note:** if you use Cursor / Claude Desktop /
 any AI tool with MCP servers configured against this repo, read
 [`docs/runbooks/dev-environment-ai-tooling.md`](./docs/runbooks/dev-environment-ai-tooling.md)
 before running anything. The runbook lists the verified MCP server
 allowlist and the incident-response path.
+
+For **production deployment** (TLS, backups, hardening), see
+[`docs/en/self-hosting.md`](./docs/en/self-hosting.md) — different
+audience.
 
 ## Importing data from another system
 

@@ -2,6 +2,8 @@
 
 Start here:
 
+- [Quickstart](./quickstart) — run Panorama on your laptop in 5 min
+- [Self-hosting](./self-hosting) — production deploy reference
 - [Architecture](./architecture) — how the system is laid out
 - [Feature matrix](./feature-matrix) — Community vs Enterprise
 - [Roadmap](./roadmap) — what ships when

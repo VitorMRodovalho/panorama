@@ -9,6 +9,9 @@ hero:
       text: Get a hosted account
       link: /en/early-access
     - theme: alt
+      text: Try it locally (5 min)
+      link: /en/quickstart
+    - theme: alt
       text: Self-host on GitHub
       link: https://github.com/VitorMRodovalho/panorama
 ---
@@ -39,7 +42,7 @@ hero:
 
 **Hosted preview** — the maintainer runs a Panorama instance you can try for free. No SLA. Data may be wiped with 30 days notice (per [ADR-0014](/adr/0014-public-hosted-instance)). Great for evaluating, not for storing irreplaceable data yet.
 
-**Self-host** — AGPL-3.0 fork-friendly. See the [self-hosting guide](/en/self-hosting), the [feature matrix](/en/feature-matrix), and the [migration-from-Snipe-IT path](/en/migration-from-snipeit). The codebase deployed on the hosted preview is identical to what you'd self-host.
+**Self-host** — AGPL-3.0 fork-friendly. See the [quickstart](/en/quickstart) (laptop in 5 min with seeded tenants), the [self-hosting guide](/en/self-hosting) (production deploy reference), the [feature matrix](/en/feature-matrix), and the [migration-from-Snipe-IT path](/en/migration-from-snipeit). The codebase deployed on the hosted preview is identical to what you'd self-host.
 
 ## Trust
 
