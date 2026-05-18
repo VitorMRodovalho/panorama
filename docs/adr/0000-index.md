@@ -25,6 +25,7 @@ Keep them short. Date them. When superseding, link back and mark the old one dep
 | 0018 | [Observability stack (pino + Sentry + request-id ALS)](./0018-observability-stack.md) | Accepted | 2026-05-16 |
 | 0019 | [Worker process boundary (photo pipeline defer-with-trigger)](./0019-worker-process-boundary.md) | Accepted | 2026-05-16 |
 | 0020 | [Self-serve OIDC signup (Wave 0.5)](./0020-self-serve-oidc-signup.md) | Proposed | 2026-05-16 |
+| 0021 | [Web frontend architecture (features/ + RSC + role-aware /)](./0021-web-frontend-architecture.md) | Proposed | 2026-05-18 |
 
 ## Template
 
