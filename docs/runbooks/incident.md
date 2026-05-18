@@ -22,6 +22,9 @@ companion to:
   primitives invoked during the *Contain* phase.
 - [`secrets-inventory.md`](./secrets-inventory.md) — what's in scope
   for rotation.
+- [`status-page.md`](./status-page.md) — uptime monitoring +
+  `incident-detected` auto-issue path; the canary signal that
+  feeds Phase 1 (Detect).
 - [`dev-environment-ai-tooling.md`](./dev-environment-ai-tooling.md)
   §"Incident response" — the contributor-side reporting flow for
   developer-workstation incidents (the 2026-04-20 MCP CVE family

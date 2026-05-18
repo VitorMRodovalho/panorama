@@ -1,0 +1,151 @@
+name: Status page
+
+# Wave 0 §9 acceptance — uptime monitoring infrastructure.
+#
+# Cron-driven HTTP probe of every monitored Panorama endpoint.
+# Probes ONLY the `/health` endpoint (no body matching, no
+# tenant-named probes per HANDOFF-2026-05-16-wave0-scan.md §security
+# C1). Failure escalation: workflow run shows red in the Actions tab;
+# 3+ consecutive failures auto-open an incident-detected issue.
+#
+# Current monitored set (as of 2026-05-18):
+#   - panorama.vitormr.dev/  → docs site (GitHub Pages)
+# Future (gated on Wave 0 §10 URL flip):
+#   - panorama-staging.fly.dev/health   → hosted-staging health
+#   - panorama.app/health (or whatever the final URL is) → hosted-prod health
+#
+# Operator-side follow-up after Wave 0 closes:
+#   - Add a visual status page (Upptime fork or a static-site build)
+#     under a sibling repo or subdomain; this workflow keeps producing
+#     the raw signal regardless.
+#
+# Cost: free on a public AGPL repo (Actions minutes unmetered).
+
+on:
+  schedule:
+    # Every 15 minutes — a balance between freshness and Actions noise.
+    # 15-min cadence is enough to surface a sustained outage in the
+    # incident.md Phase 1 detect window without burning CI quota.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    # Manual trigger for ad-hoc checks during incident response.
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: status-page
+  cancel-in-progress: false  # let overlapping cron runs finish for record-keeping
+
+jobs:
+  probe:
+    name: Probe monitored endpoints
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Add monitored endpoints here. Each entry runs as a separate
+      # matrix job so a failure on one site doesn't mask the others.
+      # `expect_status` defaults to 200; override for sites that
+      # intentionally return a different code (e.g., a redirect).
+      matrix:
+        target:
+          - name: docs-site
+            url: https://panorama.vitormr.dev/
+            expect_status: '200'
+            description: VitePress documentation site (GitHub Pages)
+    steps:
+      - name: Probe ${{ matrix.target.name }}
+        id: probe
+        env:
+          URL: ${{ matrix.target.url }}
+          EXPECTED: ${{ matrix.target.expect_status }}
+        run: |
+          set -euo pipefail
+          echo ">> probing $URL (expecting HTTP $EXPECTED)"
+          start=$(date +%s%N)
+          # -fsSL: fail on HTTP error + silent + show errors + follow redirects
+          # -o /dev/null: discard body (security C1: no body matching)
+          # -w "%{http_code}": just emit the response code
+          # --max-time 30: hard timeout
+          # --retry 1 --retry-delay 2: one retry to absorb transient blips
+          status=$(curl -fsSL "$URL" -o /dev/null -w "%{http_code}" \
+              --max-time 30 --retry 1 --retry-delay 2 || echo "000")
+          end=$(date +%s%N)
+          latency_ms=$(( (end - start) / 1000000 ))
+          echo "   status=$status, latency=${latency_ms}ms"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "latency_ms=$latency_ms" >> "$GITHUB_OUTPUT"
+
+          if [ "$status" != "$EXPECTED" ]; then
+            echo "::error title=Probe failed::${URL} returned HTTP ${status} (expected ${EXPECTED})"
+            exit 1
+          fi
+          echo "::notice title=Probe ok::${URL} returned HTTP ${status} in ${latency_ms}ms"
+
+      - name: Open incident-detected issue on sustained failure
+        # Only run on failure AND only on scheduled (cron) runs — manual
+        # workflow_dispatch failures are the operator already debugging,
+        # not a fresh signal. The de-dup via title-uniqueness keeps the
+        # workflow from spamming on every 15-min cron tick during a
+        # multi-hour outage.
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_NAME: ${{ matrix.target.name }}
+          TARGET_URL: ${{ matrix.target.url }}
+          OBSERVED_STATUS: ${{ steps.probe.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # Ensure the incident-detected label exists. Idempotent —
+          # `gh label create` errors if the label already exists, so
+          # we suppress + continue. First cron run on a fresh repo
+          # creates it; subsequent runs are no-ops.
+          gh label create incident-detected \
+            --description "Cron probe surfaced an outage; see status-page.yml runs" \
+            --color B60205 \
+            2>/dev/null || true
+
+          today=$(date -u +%Y-%m-%d)
+          title="incident-detected: ${TARGET_NAME} returned HTTP ${OBSERVED_STATUS} on ${today}"
+
+          # De-dup: if an open incident-detected issue with the same
+          # name+date title already exists, comment on it instead of
+          # opening a duplicate.
+          existing=$(gh issue list --state open --label incident-detected \
+              --search "in:title \"${TARGET_NAME}\"" \
+              --json number,title \
+              --jq ".[] | select(.title | contains(\"${today}\")) | .number" \
+              | head -1)
+
+          if [ -n "$existing" ]; then
+            echo ">> commenting on existing issue #$existing"
+            gh issue comment "$existing" --body \
+              "Another probe run failed at $(date -u +%H:%M:%SZ). Run: ${RUN_URL}"
+          else
+            echo ">> opening new issue: $title"
+            # Write the body to a tmp file to avoid YAML block-scalar
+            # indentation conflict with a multi-line heredoc.
+            body_file=$(mktemp)
+            {
+              echo "Automated probe failed."
+              echo ""
+              echo "- Target: \`${TARGET_NAME}\`"
+              echo "- URL: ${TARGET_URL}"
+              echo "- Observed status: HTTP ${OBSERVED_STATUS}"
+              echo "- First-detection run: ${RUN_URL}"
+              echo ""
+              echo "This issue auto-opens when the cron probe trips. The 15-minute cadence"
+              echo "means an outage detected here has been ongoing for at least one full"
+              echo "probe cycle. Follow [\`docs/runbooks/incident.md\`](../blob/main/docs/runbooks/incident.md)"
+              echo "Phase 1 (Detect) starting from this issue's creation timestamp."
+              echo ""
+              echo "Subsequent probe failures on the same day comment here rather than"
+              echo "opening duplicates. Close this issue when the cron starts passing"
+              echo "again or when you've manually triaged the root cause."
+            } > "$body_file"
+            gh issue create --title "$title" --body-file "$body_file" --label incident-detected
+            rm -f "$body_file"
+          fi
