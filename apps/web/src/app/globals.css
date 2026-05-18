@@ -672,3 +672,88 @@ select.panorama-select {
   color: var(--pan-muted);
   margin-left: 6px;
 }
+
+/* Legal pages — public, server-rendered, long-form reading.
+   Optimised for readability over visual flourish. Per ux-critic per-PR
+   scan: ≥48px tap targets, AA contrast, status-by-text-not-colour. */
+.panorama-legal {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.panorama-legal-article header {
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--pan-border);
+  padding-bottom: 16px;
+}
+
+.panorama-legal-article h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.panorama-legal-updated {
+  color: var(--pan-muted);
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.panorama-legal-status {
+  background: rgba(255, 196, 87, 0.12);
+  border-left: 3px solid #ffc457;
+  padding: 12px 16px;
+  font-size: 14px;
+  margin-top: 12px;
+  border-radius: 4px;
+}
+
+.panorama-legal-body h2 {
+  font-size: 20px;
+  margin: 32px 0 12px;
+  padding-top: 8px;
+}
+
+.panorama-legal-body p,
+.panorama-legal-body li {
+  margin: 8px 0;
+}
+
+.panorama-legal-body ul,
+.panorama-legal-body ol {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+
+.panorama-legal-body code {
+  background: var(--pan-border);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+
+.panorama-legal-body hr {
+  border: 0;
+  border-top: 1px solid var(--pan-border);
+  margin: 32px 0;
+}
+
+.panorama-legal-footer {
+  margin-top: 48px;
+  padding-top: 16px;
+  border-top: 1px solid var(--pan-border);
+  font-size: 14px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.panorama-legal-footer a {
+  color: var(--pan-accent, #3fb69a);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
