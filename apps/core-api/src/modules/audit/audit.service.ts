@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { currentRequestId } from '../tenant/tenant.context.js';
 
 /**
  * Hash-chained audit log writer. Every row links to the previous row's
@@ -181,6 +182,13 @@ export class AuditService {
     hash.update(digestPreImage);
     const selfHash = hash.digest();
 
+    // requestId is observational metadata (ADR-0018 §3) — written
+    // to the column but NOT included in `payload` above, so the
+    // digest pre-image is unchanged from the pre-0026 format. Same
+    // precedent as ipAddress / userAgent (see migration 0021 header
+    // §"What it does NOT cover"). null fallback covers code paths
+    // outside an HTTP request (BootAuditModule, BullMQ workers,
+    // scripts) per tenant.context.ts's currentRequestId contract.
     const data: Prisma.AuditEventCreateInput = {
       action: event.action,
       resourceType: event.resourceType,
@@ -193,6 +201,7 @@ export class AuditService {
       prevHash: prev?.selfHash ?? null,
       selfHash,
       digestPreImage,
+      requestId: currentRequestId(),
     };
     if (event.metadata !== undefined) {
       data.metadata = event.metadata as Prisma.InputJsonValue;

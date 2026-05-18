@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
 import { AuditService } from '../src/modules/audit/audit.service.js';
 import { PrismaService } from '../src/modules/prisma/prisma.service.js';
+import { runInContext } from '../src/modules/tenant/tenant.context.js';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
 
@@ -306,5 +307,76 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
     for (let i = 1; i < rows.length; i++) {
       expect(Buffer.compare(rows[i]!.prevHash!, rows[i - 1]!.selfHash)).toBe(0);
     }
+  }, 30_000);
+
+  it('writes requestId from the current request context (#229 / migration 0026)', async () => {
+    // Locks the ADR-0018 §3 → audit-row correlation contract:
+    // RequestContextMiddleware sets `requestId` on the ALS frame,
+    // recordWithin reads it via currentRequestId() and persists it
+    // on the new column. Rows written outside a request frame stay
+    // NULL (the BootAuditModule, BullMQ workers, this test's other
+    // batches above).
+    const PROBE_REQUEST_ID = 'req_audit_chain_test_correlation';
+    const batchTenantId = '00000000-0000-4000-8000-000000000046';
+
+    await runInContext(
+      { tenantId: null, userId: null, actorEmail: null, requestId: PROBE_REQUEST_ID },
+      async () => {
+        await prisma.runAsSuperAdmin(
+          async (tx) => {
+            await audit.recordWithin(tx, {
+              action: 'panorama.audit_chain_test.with_request_id',
+              resourceType: 'audit_chain_test',
+              resourceId: 'request-id-row',
+              tenantId: batchTenantId,
+              actorUserId: null,
+              metadata: { probe: 'requestId' },
+            });
+          },
+          { reason: 'audit_chain_test:request_id' },
+        );
+      },
+    );
+
+    const probed = await adminDb.auditEvent.findFirst({
+      where: { tenantId: batchTenantId, action: 'panorama.audit_chain_test.with_request_id' },
+      select: { requestId: true, selfHash: true, digestPreImage: true },
+    });
+    expect(probed).not.toBeNull();
+    expect(probed!.requestId).toBe(PROBE_REQUEST_ID);
+
+    // The chain digest must NOT depend on requestId — pre-image is
+    // payload-only (action/resourceType/resourceId/tenantId/actorUserId/
+    // metadata/occurredAt). If a future change folds requestId into
+    // the digest, pre-0026 rows and trigger-emitted rows fail to
+    // verify. Recompute the digest from columns, asserting the
+    // existing pre-image shape still matches selfHash even with a
+    // non-null requestId on the same row.
+    const preImage = JSON.parse(Buffer.from(probed!.digestPreImage!).toString('utf8'));
+    expect(preImage).not.toHaveProperty('requestId');
+
+    // And a write outside any runInContext frame writes NULL,
+    // documenting the BootAuditModule / BullMQ / script behaviour.
+    const outsideTenantId = '00000000-0000-4000-8000-000000000047';
+    await prisma.runAsSuperAdmin(
+      async (tx) => {
+        await audit.recordWithin(tx, {
+          action: 'panorama.audit_chain_test.no_request_id',
+          resourceType: 'audit_chain_test',
+          resourceId: 'no-request-id-row',
+          tenantId: outsideTenantId,
+          actorUserId: null,
+          metadata: { probe: 'noRequestId' },
+        });
+      },
+      { reason: 'audit_chain_test:no_request_id' },
+    );
+
+    const outside = await adminDb.auditEvent.findFirst({
+      where: { tenantId: outsideTenantId, action: 'panorama.audit_chain_test.no_request_id' },
+      select: { requestId: true },
+    });
+    expect(outside).not.toBeNull();
+    expect(outside!.requestId).toBeNull();
   }, 30_000);
 });
