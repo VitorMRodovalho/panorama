@@ -32,6 +32,18 @@ export class SnipeItApiError extends Error {
   }
 }
 
+/**
+ * Strip trailing slashes without a backtracking regex. `/\/+$/` is a
+ * polynomial-ReDoS shape (CodeQL js/polynomial-redos): on an input of N
+ * trailing slashes the engine retries the `\/+$` match from each position,
+ * giving O(n²). A linear character scan avoids that entirely.
+ */
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return s.slice(0, end);
+}
+
 export class SnipeItClient {
   private readonly baseUrl: string;
   private readonly headers: Record<string, string>;
@@ -40,7 +52,7 @@ export class SnipeItClient {
   private readonly maxRetries: number;
 
   constructor(opts: SnipeItClientOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
+    this.baseUrl = stripTrailingSlashes(opts.baseUrl);
     this.headers = {
       Accept: 'application/json',
       Authorization: `Bearer ${opts.token}`,
