@@ -14,14 +14,14 @@ jobs:
     name: Scan for committed secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Full history so we catch secrets added in older commits too
           fetch-depth: 0
       # Pinned per Wave 2d.H / #72 — improves OSSF Scorecard
       # pinned-dependencies score. Bump this tag deliberately; the
       # floating `@v2` would let upstream changes land without review.
-      - uses: gitleaks/gitleaks-action@v2.3.9
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"

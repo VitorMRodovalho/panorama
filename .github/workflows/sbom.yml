@@ -33,9 +33,11 @@ on:
     # security advisory drops and you want a fresh dependency
     # snapshot to share).
 
+# Read-only default. `id-token: write` (cosign keyless OIDC) is needed only
+# by sign-and-release, which requests it job-locally — keeping the OIDC
+# token off the generate job (OSSF Scorecard TokenPermissions).
 permissions:
   contents: read
-  id-token: write   # required for cosign keyless via GH OIDC
 
 concurrency:
   group: sbom-${{ github.ref }}
@@ -45,14 +47,16 @@ jobs:
   generate:
     name: Generate CycloneDX SBOM
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       sbom_path: ${{ steps.generate.outputs.sbom_path }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -91,7 +95,7 @@ jobs:
           echo "::notice title=SBOM generated::CycloneDX 1.5 JSON, ${components} components"
 
       - name: Upload SBOM as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: panorama-sbom-${{ github.sha }}
           path: panorama-sbom.json
@@ -106,15 +110,15 @@ jobs:
       contents: write   # attach assets to release
       id-token: write   # OIDC for cosign keyless
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Download SBOM artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: panorama-sbom-${{ github.sha }}
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Sign SBOM (keyless via OIDC)
         env:
