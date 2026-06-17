@@ -205,6 +205,33 @@ users routed to the other.
 Also verify a fresh login succeeds AND an existing browser session
 (opened before the flip) continues to work without re-login.
 
+**Audit-chain alternative (recommended for non-operators).** The stdout
+grep above requires log access; tenant admins reviewing the in-app
+audit feed can confirm the same state from the audit chain — the
+`panorama.auth.session_secret_rotated` row (#234) is emitted at every
+boot when `SESSION_SECRET_PREVIOUS` is set:
+
+```sql
+SELECT id, occurred_at, metadata
+FROM audit_events
+WHERE action = 'panorama.auth.session_secret_rotated'
+  AND occurred_at >= now() - interval '1 hour'
+ORDER BY occurred_at DESC;
+```
+
+Expected: at least one row per replica in the window since the
+post-flip restart, each with `metadata = {"rotationActive": true}`.
+The row carries `tenantId = NULL` (cluster-wide event) and no secret
+values or lengths — only the boolean signal.
+
+Dedup: a restart-heavy day will emit one row per replica per boot, so
+the same logical "rotation window active" fact produces N rows in the
+operator's window. Filter to the most recent boot fingerprint (or
+collapse rows within the deploy's restart-spread window) when
+quoting the count to stakeholders. The boot INFO log above is the
+operationally cheaper signal when log access exists; this audit row
+is for the in-app review path.
+
 #### Step 3 — wait
 
 Wait at least `SESSION_MAX_AGE_SECONDS` (default 7 days,
