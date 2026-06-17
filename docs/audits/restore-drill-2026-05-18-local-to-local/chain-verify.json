@@ -1,0 +1,13 @@
+
+> @panorama/core-api@0.0.0 chain-verify /home/vitormrodovalho/projects/fleet-analysis/panorama/apps/core-api
+> tsx src/scripts/verify-audit-chain.ts "--json"
+
+{
+  "generatedAt": "2026-05-19T03:31:37.701Z",
+  "totalRows": 2,
+  "verified": 2,
+  "legacy": 0,
+  "digestMismatches": 0,
+  "firstMismatch": null,
+  "ok": true
+}
