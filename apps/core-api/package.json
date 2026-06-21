@@ -48,7 +48,7 @@
     "iron-session": "^8.0.4",
     "nanoid": "^5",
     "nestjs-i18n": "^10.8.4",
-    "nodemailer": "^8.0.7",
+    "nodemailer": "^9.0.1",
     "openid-client": "^6.8.4",
     "pino": "^9",
     "prisma": "^6.19.3",
