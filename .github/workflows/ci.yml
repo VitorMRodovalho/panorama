@@ -288,10 +288,14 @@ jobs:
     #    keeps the SARIF current even if pass 2 errors.
     # 2. Blocking pass (exit-code: 1, --severity HIGH,CRITICAL,
     #    --ignore-unfixed): fails the build on real risk. Suppression
-    #    of unreachable advisories goes through .trivyignore at the
-    #    repo root (Wave 3b / #83) — every entry has a justification
-    #    header per the template; PRs adding bare CVE ids without
-    #    headers must be rejected.
+    #    of unreachable advisories goes through .trivyignore.yaml at the
+    #    repo root (Wave 3b / #83; converted from plain text 2026-09-15).
+    #    Every entry carries `statement` (classification + justification)
+    #    AND `expired_at`, which Trivy ENFORCES — the plain-text format
+    #    silently ignored the `# Expiry:` headers it carried, so one
+    #    exemption outlived its stated date by ~2 months unnoticed.
+    #    There is no permanent exemption; PRs adding an entry without
+    #    both fields must be rejected.
     #
     # Pinned action version (was @master) per OSSF Scorecard
     # pinned-deps. Bumps go through deliberate review.
@@ -318,4 +322,4 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
-          trivyignores: .trivyignore
+          trivyignores: .trivyignore.yaml

@@ -1,0 +1,86 @@
+# .trivyignore.yaml — Panorama supply-chain advisory triage
+#
+# CONVERTED from plain-text `.trivyignore` on 2026-09-15.
+#
+# WHY THE CONVERSION: the plain-text format has no expiry support, so the
+# `# Expiry: YYYY-MM-DD` headers the old file carried were PROSE — documentation
+# of a re-triage obligation that nothing enforced. CVE-2026-4800 stated
+# `Expiry: 2026-07-23`, that date passed, and the suppression stayed active and
+# silent for ~2 months. In this format `expired_at` is DATA: Trivy stops
+# applying the entry on that date and the advisory reappears in the gate.
+#
+# An exemption whose expiry is prose outlives its justification without anyone
+# noticing. That is the failure this file now makes impossible.
+#
+# Policy: every entry carries `statement` (classification + justification +
+# blast radius) and `expired_at`. There is no permanent exemption: an entry that
+# still applies after its date must be RE-ARGUED, not renewed by reflex.
+#
+# Classifications: TRANSITIVE_UNREACHABLE | DIRECT_UNREACHABLE
+# PRs adding entries without both fields must be rejected.
+#
+# Un-dated entries inherited from the 2026-04-23 file are given
+# `expired_at: 2026-10-31`, aligned with the #279 freeze-revisit milestone, so
+# the quarterly re-triage the old policy only described now actually comes due.
+
+vulnerabilities:
+  # ── lodash (transitive via @nestjs/config, @nestjs/swagger) ──────────
+  - id: CVE-2025-13465
+    expired_at: 2026-10-31
+    statement: >-
+      TRANSITIVE_UNREACHABLE — prototype pollution in _.unset/_.omit.
+      Panorama has zero direct lodash imports. NestJS internals use
+      _.get/_.set on developer-controlled config objects; _.unset/_.omit
+      with attacker-controlled paths is not called.
+
+  - id: CVE-2026-2950
+    expired_at: 2026-10-31
+    statement: >-
+      TRANSITIVE_UNREACHABLE — prototype pollution bypass in _.unset/_.omit
+      (array path). Same reachability argument as CVE-2025-13465: no
+      attacker-reachable path.
+
+  # ⚠️ EXPIRED 2026-07-23 and deliberately NOT renewed. It is listed so the
+  # expiry is explicit and auditable rather than deleted. Trivy will report
+  # this advisory again; that is the intended behaviour. Re-triage required:
+  # when @nestjs/config ships lodash >=4.18.0, drop this entry and verify the
+  # transitive is resolved. Until then it must be re-argued on its merits.
+  - id: CVE-2026-4800
+    expired_at: 2026-07-23
+    statement: >-
+      TRANSITIVE_UNREACHABLE (TEMPORARY — HIGH generic severity) — lodash
+      _.template code injection via imports keys. NestJS internals do not pass
+      untrusted input to _.template options.imports; no direct lodash usage in
+      Panorama. EXPIRED 2026-07-23 — no longer suppressed.
+
+  # ── js-yaml (transitive via @nestjs/swagger) ─────────────────────────
+  - id: CVE-2025-64718
+    expired_at: 2026-10-31
+    statement: >-
+      TRANSITIVE_UNREACHABLE — prototype pollution in yaml merge (<<).
+      @nestjs/swagger parses developer-authored OpenAPI spec at build/boot
+      time. No untrusted YAML reaches the parser.
+
+  # ── @nestjs/core ─────────────────────────────────────────────────────
+  - id: CVE-2026-35515
+    expired_at: 2026-10-31
+    statement: >-
+      DIRECT_UNREACHABLE — SSE stream injection via unsanitised type/id
+      fields. Panorama has zero @Sse decorators and no SseStream usage.
+      Must be re-triaged if SSE is ever added.
+
+  # ── fast-xml-parser (transitive via @aws-sdk/client-s3) ──────────────
+  - id: CVE-2026-41650
+    expired_at: 2026-10-31
+    statement: >-
+      TRANSITIVE_UNREACHABLE — XML comment/CDATA injection in XMLBuilder.
+      The AWS SDK uses fast-xml-parser only to PARSE S3 XML responses, never
+      to build XML; XMLBuilder.buildTextValNode is not called.
+
+  # ── uuid (transitive via bullmq) ─────────────────────────────────────
+  - id: GHSA-w5hq-g745-h8pq
+    expired_at: 2026-10-31
+    statement: >-
+      TRANSITIVE_UNREACHABLE — missing bounds check in v3/v5/v6 when a buf
+      argument is supplied. BullMQ uses uuid.v4() for job IDs; v3/v5/v6 with
+      a custom buffer are not called.
