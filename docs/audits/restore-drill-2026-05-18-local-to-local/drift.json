@@ -1,0 +1,37 @@
+{
+  "migrations": {
+    "src": 28,
+    "dst": 28,
+    "match": true
+  },
+  "audit_events_count": {
+    "src": 2,
+    "dst": 2,
+    "match": true
+  },
+  "audit_events_tail": {
+    "src": "47b177fbb65bbd460504a33d061728734b88d3088c59fa6b8a2604df2a3a3d25",
+    "dst": "47b177fbb65bbd460504a33d061728734b88d3088c59fa6b8a2604df2a3a3d25",
+    "match": true
+  },
+  "tenants": {
+    "src": 2,
+    "dst": 2,
+    "match": true
+  },
+  "users": {
+    "src": 2,
+    "dst": 2,
+    "match": true
+  },
+  "tenant_memberships": {
+    "src": 2,
+    "dst": 2,
+    "match": true
+  },
+  "rls_policies": {
+    "src": 39,
+    "dst": 39,
+    "match": true
+  }
+}
