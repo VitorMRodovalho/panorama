@@ -107,6 +107,32 @@ export const PanoramaAuditAction = {
    * `idpErrorCode` (sanitized; only set when `reason === 'idp_error'`).
    */
   AuthSignupOidcStateMismatch: 'panorama.auth.signup_oidc_state_mismatch',
+  /**
+   * SESSION_SECRET rotation window is active (#234). Cluster-wide event
+   * (`tenantId=null`) emitted by BootAuditService on every boot when
+   * `SESSION_SECRET_PREVIOUS` is set — the configuration state the
+   * `auth_config_session_secret_rotation_active` boot INFO log already
+   * captures in stdout (#232). The boot log is sufficient for self-host
+   * triage; this row gives security-conscious tenant admins the same
+   * signal inside the tamper-detected audit chain so a config change
+   * with security implications doesn't live only in operator stdout.
+   *
+   * Implementation per the issue's option (a): emit every boot with
+   * the secondary set, accept that a restart-heavy day produces N rows
+   * for the same logical "rotation window active" fact. Operators
+   * dedupe by `occurredAt` window (e.g., collapse rows within the same
+   * deploy fingerprint or rolling restart cycle) — see
+   * `docs/runbooks/secrets-rotation.md` Step 2 for the recommended
+   * filter. Trade-off accepted because alternatives (b) a persisted
+   * state table or (c) RELOAD-only emission both reach into Round 6
+   * schema work or a future SIGHUP feature, neither of which is
+   * justified by the dedup cost.
+   *
+   * Metadata: `rotationActive: true` (always — the absence of the row
+   * is the "no rotation" signal). Never includes the secret values or
+   * lengths — same hard-rule as the existing boot INFO log.
+   */
+  AuthSessionSecretRotated: 'panorama.auth.session_secret_rotated',
 
   // -------- panorama.tenant.* --------
   /**
