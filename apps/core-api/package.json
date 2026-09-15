@@ -46,15 +46,15 @@
     "helmet": "^8.0.0",
     "ioredis": "^5.4.1",
     "iron-session": "^8.0.4",
-    "nanoid": "^5",
+    "nanoid": "^5.1.16",
     "nestjs-i18n": "^10.8.4",
-    "nodemailer": "^8.0.7",
+    "nodemailer": "^9.1.1",
     "openid-client": "^6.8.4",
     "pino": "^9",
     "prisma": "^6.19.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sharp": "^0.34.0",
+    "sharp": "^0.35.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -252,6 +252,15 @@ const KNOWN_PIXEL_PROPERTIES = new Set<string>([
   // this, every plain JPEG round-trip wrongly reports exifStripped=true.
   // (#120 closes the 0.33 → 0.34 bump.)
   'autoOrient',
+  // sharp 0.35 surfaces `mediaType` (e.g. "image/jpeg"), the MIME string
+  // derived from `format`. It is a container descriptor, not a strippable
+  // metadata block: it carries no user data and survives any sanitise
+  // step, so the inversion-safe catch-all would otherwise report
+  // exifStripped=true for every plain JPEG round-trip. Same shape as the
+  // 0.33 → 0.34 `autoOrient` addition (#120); this one closes 0.34 → 0.35.
+  // (`formatMagick` disappeared in the same release; it is kept above so
+  // the set stays valid if an older sharp is ever resolved.)
+  'mediaType',
 ]);
 
 function collectMetadataFieldNames(md: sharp.Metadata): string[] {
