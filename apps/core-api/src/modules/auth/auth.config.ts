@@ -34,13 +34,17 @@ export interface OidcProviderConfig {
 }
 
 export interface AuthConfig {
-  sessionSecret: string;
   /**
    * Optional previous SESSION_SECRET retained during a rotation
    * window per ADR-0018-adjacent / runbooks/secrets-rotation.md.
-   * When set, iron-session will decrypt cookies sealed under the
-   * previous key while issuing all new cookies under
-   * `sessionSecret`. Undefined outside a rotation.
+   * When set, iron-session decrypts cookies sealed under the
+   * previous key while `sessionPassword` issues all new cookies
+   * under the new primary. Undefined outside a rotation.
+   *
+   * Diagnostics-only — DO NOT pass to iron-session directly. The
+   * iron-session contract is `sessionPassword` below; reading this
+   * field during a rotation window gives the OLD value, not the
+   * encrypt key for new cookies. See #235.
    */
   sessionSecretPrevious?: string;
   /**
@@ -49,6 +53,14 @@ export interface AuthConfig {
    * highest numeric key wins for encrypt; all keys are tried for
    * decrypt). Built once at config time so SessionService does not
    * carry the rotation logic.
+   *
+   * **THIS is the contract — never reach for the raw primary.**
+   * `sessionSecret` (the raw primary) was previously exposed on
+   * this interface but dropped in #235: a future caller reaching
+   * for the primary directly during a rotation window would get
+   * the NEW primary, NOT the encrypt key for cookies sealed under
+   * the previous secret. Use `sessionPassword`; iron-session
+   * handles encrypt-with-newest, decrypt-with-any internally.
    */
   sessionPassword: IronSessionPassword;
   sessionCookieName: string;
@@ -161,7 +173,6 @@ export class AuthConfigService {
     }
 
     this.config = {
-      sessionSecret,
       ...(sessionSecretPrevious !== undefined ? { sessionSecretPrevious } : {}),
       sessionPassword,
       sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'panorama_session',
