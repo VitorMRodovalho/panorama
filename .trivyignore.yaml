@@ -84,3 +84,25 @@ vulnerabilities:
       TRANSITIVE_UNREACHABLE — missing bounds check in v3/v5/v6 when a buf
       argument is supplied. BullMQ uses uuid.v4() for job IDs; v3/v5/v6 with
       a custom buffer are not called.
+
+  # ════════════════════════════════════════════════════════════════════
+  # MUTATION TEST — SCRATCH BRANCH ONLY, NEVER MERGE.
+  # Two arms, both using advisories CONFIRMED present in the current gate
+  # output (run 35000515970, Total: 26). Absence-from-findings cannot
+  # distinguish "suppressed" from "not in the tree", so the arms are built
+  # on advisories known to be detected.
+  #   ARM A — future expiry  -> MUST DISAPPEAR (suppression works)
+  #   ARM B — past expiry    -> MUST REMAIN    (expiry actually fires)
+  # Expected outcome is MIXED. A uniform result indicts the instrument.
+  # ════════════════════════════════════════════════════════════════════
+  - id: CVE-2026-13149
+    expired_at: 2027-06-01
+    statement: >-
+      MUTATION TEST ARM A (in force). brace-expansion DoS. If suppression
+      works this advisory disappears from the gate table.
+
+  - id: CVE-2026-33327
+    expired_at: 2020-01-01
+    statement: >-
+      MUTATION TEST ARM B (long expired). sharp/libvips. If expired_at is
+      enforced this advisory REMAINS in the gate table despite being listed.
