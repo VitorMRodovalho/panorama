@@ -99,7 +99,7 @@ function prodClosure(lock: Lockfile): string[] {
 
 /** The virtual-store dir is `name+scope@version` plus an optional `_peers` suffix. */
 function findInstalled(name: string, version: string, storeDirs: string[]): string | null {
-  const prefix = `${name.replace('/', '+')}@${version}`;
+  const prefix = `${name.replaceAll('/', '+')}@${version}`;
   for (const dir of storeDirs) {
     if (dir !== prefix && !dir.startsWith(`${prefix}_`)) continue;
     const pkgDir = join(STORE, dir, 'node_modules', name);
@@ -133,7 +133,7 @@ function sourceOf(manifest: Record<string, unknown>, name: string): string {
 }
 
 async function registryManifest(name: string, version: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2F')}/${version}`);
+  const res = await fetch(`https://registry.npmjs.org/${name.replaceAll('/', '%2F')}/${version}`);
   if (!res.ok) throw new Error(`registry ${res.status} for ${name}@${version}`);
   return (await res.json()) as Record<string, unknown>;
 }
@@ -167,7 +167,7 @@ function fence(text: string): string {
 }
 
 function cell(s: string): string {
-  return s.replace(/\|/g, '\\|');
+  return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
 async function main(): Promise<void> {
