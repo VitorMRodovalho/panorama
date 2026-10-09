@@ -24,6 +24,8 @@ import {
 } from './object-storage.config.js';
 import { validateObjectKeyShape } from './object-storage.keys.js';
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
 /**
  * ObjectStorageService (ADR-0012 §3).
  *
@@ -181,6 +183,12 @@ export class ObjectStorageService implements OnModuleInit {
     opts: { contentType: string; sha256: string; tenantId: string },
   ): Promise<void> {
     this.assertKeyForTenant(key, opts.tenantId);
+    // `sha256` must be the hex digest. Anything else used to decode to a
+    // truncated or empty buffer below, so the upload went out with a
+    // wrong checksum (rejected) or none at all (unverified).
+    if (!SHA256_HEX.test(opts.sha256)) {
+      throw new Error('object_storage_sha256_invalid_shape');
+    }
     try {
       await this.client.send(
         new PutObjectCommand({
