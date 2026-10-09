@@ -10,6 +10,7 @@ import { PasswordService } from '../src/modules/auth/password.service.js';
 import { InspectionMaintenanceService } from '../src/modules/inspection/inspection-maintenance.service.js';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
+import { assertObjectStorageReady } from './_s3-ready.js';
 
 /**
  * InspectionMaintenanceService e2e (ADR-0012 §9 + §10).
@@ -47,12 +48,7 @@ describe('inspection maintenance e2e', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = APP_URL;
 
-    const minioCheck = await fetch('http://localhost:9000/minio/health/live').catch(() => null);
-    if (!minioCheck || minioCheck.status !== 200) {
-      throw new Error(
-        'MinIO not reachable at http://localhost:9000 — start the dev stack: docker-compose -f infra/docker/compose.dev.yml up -d minio',
-      );
-    }
+    await assertObjectStorageReady();
 
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);

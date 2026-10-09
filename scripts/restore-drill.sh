@@ -120,20 +120,101 @@ if [ -z "$OUT_DIR" ]; then
   OUT_DIR="$REPO_ROOT/docs/audits/restore-drill-$TS"
 fi
 
+# Convert OUT_DIR to absolute path. Later steps cd to apps/core-api
+# for pnpm chain-verify; relative paths break after that.
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+
 # Echo OUT_DIR up front so a stderr tail in any later failure points at
 # the artefact dir (per tech-lead per-PR scan concern).
 echo ">> artefact dir: $OUT_DIR" >&2
 
 # ---------------------------------------------------------------------------
-# Prereq check
+# Prereq check + pg-client version-match policy
 # ---------------------------------------------------------------------------
+#
+# pg_dump refuses to dump a server whose major version is newer than the
+# client's major (it accepts SAME or OLDER server). Real-world drift:
+# Supabase upgraded staging to PG17 while the local dev-stack runs PG16.
+# Solution: if local pg_dump major < server major, fall back to running
+# pg_dump/pg_restore inside a `postgres:<server-major>` Docker container.
+# psql + jq are local-only (no version coupling on the client side for
+# the simple metadata queries we run).
 
-for cmd in pg_dump pg_restore psql jq; do
+for cmd in psql jq; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "ERROR: '$cmd' not found in PATH. Install postgresql-client-16 + jq." >&2
+    echo "ERROR: '$cmd' not found in PATH. Install postgresql-client + jq." >&2
     exit 2
   fi
 done
+
+# Detect server major version via psql (any client version connects).
+# `server_version_num` is integer like 170006 (= 17.6); divide by 10000
+# for the major (= 17). Cached so we only probe once per drill.
+detect_server_major() {
+  local url="$1"
+  # `server_version_num` is a GUC, not a column — access via
+  # current_setting('server_version_num'). For PG 17.6 this returns
+  # '170006'; divided by 10000 gives 17.
+  PGPASSWORD="$(echo "$url" | sed -nE 's|^[a-z]+://[^:]+:([^@]+)@.*|\1|p')" \
+    psql "$(echo "$url" | sed -E 's|//([^:/@]+):[^@]+@|//\1@|')" \
+    -tA -c "SELECT current_setting('server_version_num')::int / 10000" 2>/dev/null \
+    | tr -d '[:space:]' \
+    | head -c 4
+}
+
+# Decide whether to use local pg_dump or Docker fallback.
+# Source + target may run different majors; we run the dump under
+# max(src_major, dst_major) since that's the version compatible with both
+# server-side reads + the restore-target's expectations.
+DRILL_PG_DUMP="pg_dump"
+DRILL_PG_RESTORE="pg_restore"
+USE_DOCKER_PG=0
+TARGET_PG_MAJOR=""
+
+# Defer the version-decision logic until SRC_URL + DST_URL are known
+# (after refuse-prod). The function below is invoked after pre-flight.
+choose_pg_client() {
+  local src_major dst_major needed_major local_dump_major
+  src_major=$(detect_server_major "$SRC_URL")
+  dst_major=$(detect_server_major "$DST_URL")
+  if [ -z "$src_major" ] || [ -z "$dst_major" ]; then
+    echo "ERROR: failed to detect server PG major version on one of the URLs." >&2
+    exit 2
+  fi
+  # Use the max of the two — the client must support both server-side
+  # protocol versions; the higher major is backward-compatible with the
+  # lower major on both dump + restore for our use case.
+  if [ "$src_major" -ge "$dst_major" ]; then
+    needed_major="$src_major"
+  else
+    needed_major="$dst_major"
+  fi
+  TARGET_PG_MAJOR="$needed_major"
+  echo "   server PG majors: src=$src_major, dst=$dst_major; pg-client target=$needed_major" >&2
+
+  if command -v pg_dump >/dev/null 2>&1; then
+    local_dump_major=$(pg_dump --version | awk '{print $3}' | cut -d. -f1)
+    if [ "$local_dump_major" -ge "$needed_major" ]; then
+      echo "   using LOCAL pg_dump $local_dump_major (>= $needed_major)" >&2
+      DRILL_PG_DUMP="pg_dump"
+      DRILL_PG_RESTORE="pg_restore"
+      return
+    fi
+    echo "   LOCAL pg_dump $local_dump_major < server $needed_major; trying Docker fallback" >&2
+  else
+    echo "   LOCAL pg_dump NOT FOUND; trying Docker fallback" >&2
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "ERROR: pg_dump version mismatch (need PG $needed_major)" >&2
+    echo "       AND docker not available for fallback. Install postgresql-client-$needed_major." >&2
+    exit 2
+  fi
+
+  USE_DOCKER_PG=1
+  echo "   using DOCKER pg_dump via postgres:$needed_major image" >&2
+}
 
 # ---------------------------------------------------------------------------
 # Refuse-prod safety guard
@@ -267,14 +348,19 @@ if [ "$SRC_TENANT_COUNT" = "0" ] || [ "$SRC_TENANT_COUNT" = "-1" ]; then
   echo "            populated source for a real result." >&2
 fi
 
-# Sanity-check dst is empty (no Panorama tables).
+# Sanity-check dst is empty (no Panorama tables) AND drop the bare
+# `public` schema even when empty, because pg_dump --schema=public
+# emits `CREATE SCHEMA public;` and a vanilla Postgres target has
+# a pre-existing empty public schema (since PG15+ created at initdb).
+# With --force-truncate-dst opt-in, we unconditionally drop+create
+# public to give pg_restore a clean slate.
 DST_TABLE_COUNT=$(psql "$DST_URL" -tA -c \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
-if [ "$DST_TABLE_COUNT" -gt 0 ]; then
+if [ "$DST_TABLE_COUNT" -gt 0 ] || [ "$FORCE_TRUNCATE_DST" -eq 1 ]; then
   if [ "$FORCE_TRUNCATE_DST" -eq 1 ]; then
-    echo ">> dst has $DST_TABLE_COUNT public tables; --force-truncate-dst given, dropping"
+    echo ">> --force-truncate-dst given; dropping + recreating public schema (dst had $DST_TABLE_COUNT existing tables)"
     psql "$DST_URL" -v ON_ERROR_STOP=1 -c \
-      "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+      "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
   else
     echo "ERROR: target has $DST_TABLE_COUNT existing public tables." >&2
     echo "       Pass --force-truncate-dst to DROP SCHEMA public CASCADE and re-create." >&2
@@ -326,24 +412,94 @@ SRC_URL_NOPASS=$(strip_password "$SRC_URL")
 DST_PASS=$(extract_password "$DST_URL")
 DST_URL_NOPASS=$(strip_password "$DST_URL")
 
+# Choose pg_dump/pg_restore (local or Docker) based on src+dst PG majors.
+choose_pg_client
+
 # ---------------------------------------------------------------------------
 # 2. pg_dump source (RTO component A — dump duration)
 # ---------------------------------------------------------------------------
 
 DUMP_FILE="$OUT_DIR/source.dump"
 DUMP_LOG="$OUT_DIR/dump.log"
+DUMP_FILE_ABS="$(cd "$(dirname "$DUMP_FILE")" && pwd)/$(basename "$DUMP_FILE")"
 
 echo ">> pg_dump source → $DUMP_FILE"
 DUMP_START=$(date +%s)
-if ! PGPASSWORD="$SRC_PASS" pg_dump --no-owner --no-acl --format=custom \
-      --file="$DUMP_FILE" "$SRC_URL_NOPASS" 2>"$DUMP_LOG"; then
-  echo "ERROR: pg_dump failed; see $DUMP_LOG" >&2
-  exit 2
+# `--schema=public` would restrict the dump to the Panorama schema,
+# but pg_dump's CREATE SCHEMA public conflicts with a pre-existing
+# public schema on every target. Easier path: dump everything,
+# excluding provider-internal schemas (Supabase: auth/storage/
+# realtime/pgsodium/vault). The dump self-contains the extension
+# DDL the tables need.
+#
+# For Supabase-source drills, target MUST be `supabase/postgres:N`
+# image (vanilla postgres lacks pg_cron, supabase_vault, etc.).
+# For self-hosted-source drills against vanilla, no exclusions
+# needed; the script auto-detects via try-and-fail.
+PG_DUMP_FLAGS="--no-owner --no-acl --format=custom \
+  --exclude-schema=auth \
+  --exclude-schema=storage \
+  --exclude-schema=realtime \
+  --exclude-schema=_realtime \
+  --exclude-schema=pgsodium \
+  --exclude-schema=pgsodium_masks \
+  --exclude-schema=vault \
+  --exclude-schema=graphql \
+  --exclude-schema=graphql_public \
+  --exclude-schema=net \
+  --exclude-schema=supabase_functions \
+  --exclude-schema=supabase_migrations \
+  --exclude-schema='pg\\_temp\\_%' \
+  --exclude-schema='pg\\_toast\\_temp\\_%'"
+
+if [ "$USE_DOCKER_PG" -eq 1 ]; then
+  # Docker pg_dump fallback. --network host lets the container reach
+  # the Supabase server + the local docker_postgres_1 on its DNS name.
+  # Mount the OUT_DIR so the dump file is written to the host filesystem
+  # directly.
+  if ! docker run --rm --network host \
+        -e PGPASSWORD="$SRC_PASS" \
+        -v "$(cd "$OUT_DIR" && pwd):/out" \
+        "postgres:${TARGET_PG_MAJOR}" \
+        pg_dump $PG_DUMP_FLAGS \
+        --file="/out/$(basename "$DUMP_FILE")" "$SRC_URL_NOPASS" 2>"$DUMP_LOG"; then
+    echo "ERROR: pg_dump (docker) failed; see $DUMP_LOG" >&2
+    exit 2
+  fi
+else
+  if ! PGPASSWORD="$SRC_PASS" pg_dump $PG_DUMP_FLAGS \
+        --file="$DUMP_FILE" "$SRC_URL_NOPASS" 2>"$DUMP_LOG"; then
+    echo "ERROR: pg_dump failed; see $DUMP_LOG" >&2
+    exit 2
+  fi
 fi
 DUMP_END=$(date +%s)
 DUMP_SECONDS=$((DUMP_END - DUMP_START))
 DUMP_BYTES=$(stat -c%s "$DUMP_FILE")
 echo "   pg_dump took ${DUMP_SECONDS}s, ${DUMP_BYTES} bytes"
+
+# ---------------------------------------------------------------------------
+# 2b. Pre-restore bootstrap — install extensions + create roles on target.
+# ---------------------------------------------------------------------------
+# pg_dump --schema=public excludes CREATE EXTENSION (extensions are
+# pg_catalog-scoped). The dumped tables reference types like
+# `public.citext` that depend on the citext extension being installed
+# BEFORE the tables are restored. Solution: run supabase-bootstrap.sql
+# on the target first, which CREATE EXTENSION IF NOT EXISTS the
+# panorama-required extensions (citext, pgcrypto, uuid-ossp,
+# btree_gist) and creates the panorama_app + panorama_super_admin
+# roles needed for the post-restore rls.sql GRANTs.
+
+PREBOOT_LOG="$OUT_DIR/prerestore-bootstrap.log"
+if [ -f "$REPO_ROOT/apps/core-api/prisma/supabase-bootstrap.sql" ]; then
+  echo ">> pre-restore bootstrap (extensions + roles)"
+  if ! PGPASSWORD="$DST_PASS" psql "$DST_URL_NOPASS" -v ON_ERROR_STOP=1 \
+        -f "$REPO_ROOT/apps/core-api/prisma/supabase-bootstrap.sql" \
+        >"$PREBOOT_LOG" 2>&1; then
+    echo "ERROR: pre-restore bootstrap failed; see $PREBOOT_LOG" >&2
+    exit 2
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 3. pg_restore into target (RTO component B — restore duration)
@@ -360,10 +516,23 @@ RESTORE_START=$(date +%s)
 # `--exit-on-error` aborts on first failure; we capture the log for
 # triage. `--verbose` writes per-object progress to stderr so the
 # operator can confirm the restore is making progress on long runs.
-if ! PGPASSWORD="$DST_PASS" pg_restore --no-owner --no-acl --exit-on-error --verbose \
-      --dbname="$DST_URL_NOPASS" "$DUMP_FILE" >"$RESTORE_LOG" 2>&1; then
-  echo "ERROR: pg_restore failed; see $RESTORE_LOG" >&2
-  exit 2
+if [ "$USE_DOCKER_PG" -eq 1 ]; then
+  if ! docker run --rm --network host \
+        -e PGPASSWORD="$DST_PASS" \
+        -v "$(cd "$OUT_DIR" && pwd):/out" \
+        "postgres:${TARGET_PG_MAJOR}" \
+        pg_restore --no-owner --no-acl --exit-on-error --verbose \
+        --dbname="$DST_URL_NOPASS" "/out/$(basename "$DUMP_FILE")" \
+        >"$RESTORE_LOG" 2>&1; then
+    echo "ERROR: pg_restore (docker) failed; see $RESTORE_LOG" >&2
+    exit 2
+  fi
+else
+  if ! PGPASSWORD="$DST_PASS" pg_restore --no-owner --no-acl --exit-on-error --verbose \
+        --dbname="$DST_URL_NOPASS" "$DUMP_FILE" >"$RESTORE_LOG" 2>&1; then
+    echo "ERROR: pg_restore failed; see $RESTORE_LOG" >&2
+    exit 2
+  fi
 fi
 RESTORE_END=$(date +%s)
 RESTORE_SECONDS=$((RESTORE_END - RESTORE_START))
@@ -386,9 +555,15 @@ echo "   pg_restore took ${RESTORE_SECONDS}s"
 # they converge on the right grant + policy shape idempotently.
 
 REAPPLY_LOG="$OUT_DIR/reapply-migrations.log"
-echo ">> re-applying bootstrap + rls.sql against target (re-establishes grants)"
+echo ">> re-applying rls.sql against target (re-establishes grants + policies)"
 {
-  echo "===== bootstrap ====="
+  # Pre-restore bootstrap (§2b) already ran extensions + role creation.
+  # Re-running bootstrap here is also idempotent (CREATE EXTENSION
+  # IF NOT EXISTS + DO blocks); we run it again to ensure any post-
+  # restore role state matches what the rls.sql files expect (handles
+  # the edge case where the dump includes an explicit ROLE grant the
+  # bootstrap re-asserts).
+  echo "===== bootstrap (idempotent re-apply) ====="
   if [ -f "$REPO_ROOT/apps/core-api/prisma/supabase-bootstrap.sql" ]; then
     PGPASSWORD="$DST_PASS" psql "$DST_URL_NOPASS" -v ON_ERROR_STOP=1 \
       -f "$REPO_ROOT/apps/core-api/prisma/supabase-bootstrap.sql"

@@ -64,3 +64,4 @@ docs/audits/restore-drill-*/source.dump
 docs/audits/restore-drill-*/dump.log
 docs/audits/restore-drill-*/restore.log
 docs/audits/restore-drill-*/reapply-migrations.log
+docs/audits/restore-drill-*/prerestore-bootstrap.log

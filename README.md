@@ -163,7 +163,7 @@ Then log in at <http://localhost:3000/login> with:
 | <http://localhost:4000/health> | Core API liveness + DB ping |
 | <http://localhost:4000/api/docs> | OpenAPI Swagger UI |
 | <http://localhost:8025> | MailHog (captured outgoing emails) |
-| <http://localhost:9001> | MinIO console (`minioadmin/minioadmin`) |
+| <http://localhost:9000> | S3 API, SeaweedFS (`minioadmin/minioadmin`; no web console) |
 
 **Contributor security note:** if you use Cursor / Claude Desktop /
 any AI tool with MCP servers configured against this repo, read

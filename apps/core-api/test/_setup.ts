@@ -46,9 +46,11 @@ if (!process.env['DATABASE_PRIVILEGED_URL']) {
   process.env['DATABASE_PRIVILEGED_URL'] =
     `postgres://panorama_super_admin:panorama@${host}:${port}/${db}?schema=public`;
 }
-// MinIO dev defaults — ObjectStorageModule's loader requires these
-// at boot. Tests don't actually hit S3 at this layer, but the module
-// still parses the config eagerly.
+// Object-storage dev defaults (SeaweedFS in compose.dev.yml; the
+// credentials match infra/docker/seaweedfs-s3.dev.json).
+// ObjectStorageModule's loader requires these at boot. Tests don't
+// actually hit S3 at this layer, but the module still parses the
+// config eagerly.
 if (!process.env['S3_ENDPOINT']) process.env['S3_ENDPOINT'] = 'http://localhost:9000';
 if (!process.env['S3_BUCKET_PHOTOS']) process.env['S3_BUCKET_PHOTOS'] = 'panorama-photos';
 if (!process.env['S3_ACCESS_KEY']) process.env['S3_ACCESS_KEY'] = 'minioadmin';

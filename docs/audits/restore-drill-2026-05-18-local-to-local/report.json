@@ -1,0 +1,15 @@
+{
+  "drill_executed_at": "2026-05-19T03:31:37Z",
+  "rto_seconds_total": 4,
+  "components": {
+    "dump_seconds": 1,
+    "restore_seconds": 2,
+    "verify_seconds": 1,
+    "dump_bytes": 167930
+  },
+  "verification": {
+    "counts_match": true,
+    "chain_verify": "true"
+  },
+  "notes_for_pr2b": "Translate rto_seconds_total into the human-readable RTO claim under docs/runbooks/restore.md §RTO/RPO observation. Wall-clock RTO in a real incident adds Supabase project provisioning time + secret-rewiring + DNS cutover; this drill measures the DB cycle only."
+}
