@@ -12,9 +12,9 @@
  *
  * Licence texts come from each installed package's own LICENSE / NOTICE /
  * COPYING files (including bundler-extracted `*.LICENSE.txt`), deduplicated
- * by identical content. The LGPL section adds the full LGPL-3.0 and GPL-3.0
- * texts (vendored next to this script), because the prebuilt libvips
- * packages ship without them.
+ * by identical content. The LGPL section adds the full LGPL-3.0, GPL-3.0
+ * and MPL-1.1 (cairo) texts, vendored next to this script, because the
+ * prebuilt libvips packages ship without them.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -285,6 +285,13 @@ async function main(): Promise<void> {
       out.push('');
       out.push(licensing);
       out.push('');
+      if (/Mozilla Public License 1\.1/.test(licensing) && versions['cairo']) {
+        out.push(
+          `cairo is used under the Mozilla Public License 1.1 (text below). Source for cairo ${versions['cairo']}: ` +
+            `https://gitlab.freedesktop.org/cairo/cairo/-/tree/${versions['cairo']}`,
+        );
+        out.push('');
+      }
     }
     if (Object.keys(versions).length > 0) {
       out.push('**Bundled library versions** (`versions.json`):');
@@ -300,6 +307,10 @@ async function main(): Promise<void> {
   out.push('### GNU General Public License v3.0 (incorporated by the LGPL)');
   out.push('');
   out.push(fence(readFileSync(join(TEXTS, 'GPL-3.0.txt'), 'utf8')));
+  out.push('');
+  out.push('### Mozilla Public License 1.1 (cairo, bundled in the libvips binaries)');
+  out.push('');
+  out.push(fence(readFileSync(join(TEXTS, 'MPL-1.1.txt'), 'utf8')));
   out.push('');
 
   out.push('## Package inventory');
