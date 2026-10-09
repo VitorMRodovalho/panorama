@@ -22,6 +22,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { URL } from 'node:url';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthConfigService } from '../auth/auth.config.js';
+import { PanoramaAuditAction } from '../audit/audit-actions.js';
 
 @Injectable()
 export class BootAuditService implements OnModuleInit {
@@ -30,6 +32,7 @@ export class BootAuditService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly authConfig: AuthConfigService,
   ) {
     // Reference the prisma field so the linter doesn't flag it as
     // unused — we depend on PrismaModule being initialised before we
@@ -52,6 +55,14 @@ export class BootAuditService implements OnModuleInit {
       await this.recordRedisAudit();
     } catch (err) {
       this.log.warn({ err: String(err) }, 'redis_boot_audit_failed');
+    }
+    try {
+      await this.recordSessionSecretRotationAudit();
+    } catch (err) {
+      this.log.warn(
+        { err: String(err) },
+        'session_secret_rotation_boot_audit_failed',
+      );
     }
   }
 
@@ -99,6 +110,46 @@ export class BootAuditService implements OnModuleInit {
         },
       });
     }
+  }
+
+  /**
+   * Emit a `panorama.auth.session_secret_rotated` audit row when the
+   * SESSION_SECRET rotation window is active at boot — i.e., when
+   * `AuthConfig.sessionSecretPrevious` is set (#234).
+   *
+   * Option (a) from the issue: emit every boot with the secondary
+   * set, accept that a restart-heavy day produces N duplicates of
+   * the same logical "rotation window active" fact. The boot INFO
+   * log `auth_config_session_secret_rotation_active` already exists
+   * in stdout (#232); this row lands the same signal in the audit
+   * chain so non-stdout consumers (security-conscious tenant admins)
+   * can observe security-relevant config state from the audit feed.
+   *
+   * Hard rule mirrored from the boot INFO log: NEVER log the secret
+   * values themselves. Metadata carries only the boolean
+   * `rotationActive` — the absence of the row is the "no rotation"
+   * signal, the presence is the rotation-active signal.
+   *
+   * Operators dedupe the inevitable boot-N-times duplication by
+   * `occurredAt` window — see
+   * `docs/runbooks/secrets-rotation.md` Step 2 for the recommended
+   * filter.
+   */
+  private async recordSessionSecretRotationAudit(): Promise<void> {
+    if (this.authConfig.config.sessionSecretPrevious === undefined) {
+      // No rotation in flight — absence of the row IS the signal.
+      return;
+    }
+    await this.audit.record({
+      action: PanoramaAuditAction.AuthSessionSecretRotated,
+      resourceType: 'auth_config',
+      resourceId: 'session_secret',
+      tenantId: null,
+      actorUserId: null,
+      metadata: {
+        rotationActive: true,
+      },
+    });
   }
 
   private async recordRedisAudit(): Promise<void> {
