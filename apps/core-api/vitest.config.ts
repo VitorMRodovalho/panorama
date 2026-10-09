@@ -57,15 +57,21 @@ export default defineConfig({
         'src/scripts/**',
         'prisma/**',
       ],
-      // Honest baseline as of 2026-04-26 (PR landing #70):
-      //   statements 83.86%, branches 72.55%, functions 81.68%, lines 83.86%
-      // Floors below set just under each, rounded down to the nearest 5.
-      // Ratchet UP only — see CONTRIBUTING.md "Threshold ratchet".
+      // Re-baselined 2026-10-09 for the vitest 4 instrument change, not a
+      // coverage loss: vitest 4 remaps V8 coverage by AST, so it counts
+      // real statements only (15930 -> 4999 statements for the same 525
+      // tests). Same suite, both instruments:
+      //   vitest 3: statements 84.07, branches 73.43, functions 87.38, lines 84.07
+      //   vitest 4: statements 76.65, branches 65.54, functions 82.02, lines 79.38
+      // (previous baseline, 2026-04-26 / #70, vitest 3: 83.86 / 72.55 / 81.68 / 83.86)
+      // Floors below set just under each vitest 4 value, rounded down to
+      // the nearest 5. Ratchet UP only from here — see CONTRIBUTING.md
+      // "Threshold ratchet".
       thresholds: {
-        lines: 80,
-        statements: 80,
+        lines: 75,
+        statements: 75,
         functions: 80,
-        branches: 70,
+        branches: 65,
       },
     },
   },
