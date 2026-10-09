@@ -27,11 +27,11 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 60_000,
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    // One worker at a time: the e2e files share one Postgres and reset
+    // it per file, so they must not overlap. Vitest 4 replaced
+    // `poolOptions.forks.singleFork` with `maxWorkers`; `isolate` stays
+    // at its default (true) so every file still gets a fresh module graph.
+    maxWorkers: 1,
     // Sets FEATURE_INSPECTIONS=true and other env defaults BEFORE
     // any test file's static imports run. Required so AppModule's
     // module-load-time conditional sees the flag on.
