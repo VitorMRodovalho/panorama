@@ -53,7 +53,6 @@ function makeAuthConfig(
 	// AuthConfig fields are out of scope and stubbed to plausible
 	// values just to satisfy the type shape.
 	const config: AuthConfig = {
-		sessionSecret: 'a'.repeat(32),
 		...(sessionSecretPrevious !== undefined ? { sessionSecretPrevious } : {}),
 		sessionPassword:
 			sessionSecretPrevious !== undefined
