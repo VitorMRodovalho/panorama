@@ -196,7 +196,7 @@ export class TenantExportService {
     );
     const json = exportToJsonString(doc);
     const gzipped = gzipSync(Buffer.from(json, 'utf8'));
-    const sha256 = createHash('sha256').update(gzipped).digest('base64');
+    const sha256 = createHash('sha256').update(gzipped).digest('hex');
     const objectKey = tenantExportKey(tenantId, jobId);
 
     await this.storage.put(objectKey, gzipped, {
