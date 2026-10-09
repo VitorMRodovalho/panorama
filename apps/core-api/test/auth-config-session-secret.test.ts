@@ -6,7 +6,8 @@ import { AuthConfigService } from '../src/modules/auth/auth.config.js';
 /**
  * Regression coverage for SEC-03 / #35 — the dev-only session-secret
  * fallback (`'dev-only-insecure-session-secret-replace-me-32b'`) used
- * to land in `config.sessionSecret` for any non-production environment
+ * to land in `config.sessionPassword` (and the now-removed
+ * `config.sessionSecret` per #235) for any non-production environment
  * when `SESSION_SECRET` was unset or too short. That meant staging,
  * UAT, and CI environments carrying real tenant data ended up
  * signing sessions with a value committed in source — full session
@@ -49,8 +50,13 @@ describe('AuthConfigService — SESSION_SECRET enforcement (#35)', () => {
     vi.stubEnv('SESSION_SECRET', 'a'.repeat(32));
 
     const cfg = new AuthConfigService();
-    expect(cfg.config.sessionSecret).toBe('a'.repeat(32));
-    expect(cfg.config.sessionSecret).not.toContain('dev-only-insecure');
+    // Single-key path: sessionPassword is a bare string equal to the
+    // primary value. Post-#235 this is the only surface to assert on
+    // (the raw `sessionSecret` field was dropped — its diagnostic
+    // value is below the cost of the stale-value foot-gun documented
+    // in the field's removal rationale).
+    expect(cfg.config.sessionPassword).toBe('a'.repeat(32));
+    expect(cfg.config.sessionPassword).not.toContain('dev-only-insecure');
   });
 
   it('accepts a valid 32-char secret', () => {
@@ -65,7 +71,7 @@ describe('AuthConfigService — SESSION_SECRET enforcement (#35)', () => {
     vi.stubEnv('SESSION_SECRET', 'b'.repeat(64));
 
     const cfg = new AuthConfigService();
-    expect(cfg.config.sessionSecret).toBe('b'.repeat(64));
+    expect(cfg.config.sessionPassword).toBe('b'.repeat(64));
     expect(cfg.config.isProduction).toBe(true);
   });
 });
