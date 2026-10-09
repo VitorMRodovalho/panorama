@@ -8,6 +8,7 @@ import { PasswordService } from '../src/modules/auth/password.service.js';
 import { TenantAdminService } from '../src/modules/tenant/tenant-admin.service.js';
 import { TenantExportService } from '../src/modules/tenant-export/tenant-export.service.js';
 import { resetTestDb } from './_reset-db.js';
+import { assertObjectStorageReady } from './_s3-ready.js';
 
 /**
  * community-smoke — functional gate for ADR-0002 (oss/commercial
@@ -172,12 +173,7 @@ describe('community-smoke e2e (ADR-0002 / #49 functional gate)', () => {
     // reachable bucket the smoke flips red on infra, not on the
     // gate's actual claim. Fail fast with a useful message if the
     // dev stack isn't running.
-    const minio = await fetch('http://localhost:9000/minio/health/live').catch(() => null);
-    if (!minio || minio.status !== 200) {
-      throw new Error(
-        'MinIO not reachable at http://localhost:9000 — start the dev stack: docker-compose -f infra/docker/compose.dev.yml up -d minio',
-      );
-    }
+    await assertObjectStorageReady();
 
     adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(adminDb);

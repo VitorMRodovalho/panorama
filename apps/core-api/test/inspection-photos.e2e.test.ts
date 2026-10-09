@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
+import { assertObjectStorageReady } from './_s3-ready.js';
 
 /**
  * Photo upload + GET-redirect e2e (ADR-0012 §Execution-order step 7c).
@@ -53,15 +54,9 @@ describe('inspection photos e2e', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = APP_URL;
 
-    // Hard-fail if MinIO bucket isn't reachable — the suite cannot
+    // Hard-fail if the object-storage bucket isn't ready — the suite cannot
     // exercise the storage path without it.
-    const minioCheck = await fetch('http://localhost:9000/minio/health/live').catch(() => null);
-    if (!minioCheck || minioCheck.status !== 200) {
-      throw new Error(
-        'MinIO not reachable at http://localhost:9000 — start the dev stack: ' +
-          'docker-compose -f infra/docker/compose.dev.yml up -d minio',
-      );
-    }
+    await assertObjectStorageReady();
 
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     await resetTestDb(admin);
