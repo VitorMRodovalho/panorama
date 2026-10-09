@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   INSPECTION_PHOTO_KEY_REGEX,
@@ -10,6 +12,7 @@ import {
   isPrivateIPv6,
   loadObjectStorageConfig,
 } from '../src/modules/object-storage/object-storage.config.js';
+import { ObjectStorageService } from '../src/modules/object-storage/object-storage.service.js';
 
 /**
  * ObjectStorage unit coverage (ADR-0012).
@@ -184,5 +187,34 @@ describe('loadObjectStorageConfig', () => {
     expect(loadObjectStorageConfig({ ...baseEnv, S3_FORCE_PATH_STYLE: 'false' }).forcePathStyle).toBe(false);
     expect(loadObjectStorageConfig({ ...baseEnv, S3_FORCE_PATH_STYLE: '0' }).forcePathStyle).toBe(false);
     expect(loadObjectStorageConfig({ ...baseEnv, S3_FORCE_PATH_STYLE: 'no' }).forcePathStyle).toBe(false);
+  });
+});
+
+describe('ObjectStorageService.put — sha256 shape', () => {
+  // S3_* defaults come from test/_setup.ts. The shape check runs before
+  // any network call, so no object storage is needed here.
+  const svc = new ObjectStorageService({} as never, { record: async () => {} } as never);
+  const tenantId = '11111111-1111-4111-8111-111111111111';
+  const key = inspectionPhotoKey(
+    tenantId,
+    '22222222-2222-4222-8222-222222222222',
+    '33333333-3333-4333-8333-333333333333',
+  );
+  const body = Buffer.from('payload');
+
+  it('rejects a base64 digest (decoded as hex it truncates or empties)', async () => {
+    const b64 = createHash('sha256').update(body).digest('base64');
+    await expect(
+      svc.put(key, body, { contentType: 'image/jpeg', sha256: b64, tenantId }),
+    ).rejects.toThrow('object_storage_sha256_invalid_shape');
+  });
+
+  it('rejects a truncated or uppercase hex digest', async () => {
+    const hex = createHash('sha256').update(body).digest('hex');
+    for (const bad of [hex.slice(0, 62), hex.toUpperCase(), '']) {
+      await expect(
+        svc.put(key, body, { contentType: 'image/jpeg', sha256: bad, tenantId }),
+      ).rejects.toThrow('object_storage_sha256_invalid_shape');
+    }
   });
 });

@@ -36,7 +36,7 @@
     "@panorama/plugin-sdk": "workspace:*",
     "@panorama/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
-    "@sentry/node": "^9",
+    "@sentry/node": "^10.76.2",
     "argon2": "^0.44.0",
     "bullmq": "^5.76.6",
     "class-transformer": "^0.5.1",
