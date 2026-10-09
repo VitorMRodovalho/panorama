@@ -8,13 +8,14 @@ import * as Sentry from '@sentry/node';
  * maintainer's or Anthropic's Sentry project (AGPL right per ADR-0002).
  *
  * Hardening (the AGPL-procurement contract):
- * - `defaultIntegrations: false` — @sentry/node v9's default set
+ * - `defaultIntegrations: false` — @sentry/node's default set
  *   includes `requestDataIntegration` (sends headers + cookies +
  *   body), `httpIntegration` (instruments inbound HTTP with body
  *   capture), `localVariablesIntegration` (captures local vars at
  *   throw site, which can include passwords/tokens in scope), and
  *   `consoleIntegration`. Passing `integrations: []` alone does
  *   NOT disable defaults — only `defaultIntegrations: false` does.
+ *   Pinned by test/sentry-bootstrap.test.ts (effect, not literal).
  *   This is the BLOCKER caught by the per-PR security review
  *   (2026-05-17). Without it, self-hosting.md's "never headers,
  *   cookies, or request bodies" promise is a lie.
