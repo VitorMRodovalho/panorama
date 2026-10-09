@@ -106,34 +106,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install psql client
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-      # Start MinIO + create the panorama-photos bucket. Uses `docker
-      # run -d` instead of a service container because GH Actions
-      # services lack a `command:` knob, and MinIO needs `server /data`.
-      # Bucket creation via mc is idempotent (`--ignore-existing`).
-      - name: Start MinIO + create bucket
+      # Start S3-compatible object storage (SeaweedFS) with the
+      # panorama-photos bucket. Replaced MinIO, whose community images
+      # are no longer published (#293). `docker run -d` instead of a
+      # service container because GH Actions services lack a `command:`
+      # knob. Readiness is a signed HeadBucket, not the health endpoint:
+      # /healthz answers 200 before the startup bucket exists.
+      - name: Start object storage (SeaweedFS) + bucket
         run: |
           set -euo pipefail
-          docker run -d --name minio --network host \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z \
-            server /data
-          # Wait for MinIO readiness (max 30s).
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+          docker run -d --name s3 --network host \
+            -v "$PWD/infra/docker/seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro" \
+            chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
+            mini -ip=127.0.0.1 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json \
+            -bucket=panorama-photos -s3.autoCreateBucket=false \
+            -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
+          for i in $(seq 1 60); do
+            if (cd apps/core-api && pnpm exec tsx test/_s3-ready.cli.ts) >/dev/null 2>&1; then
+              echo "object storage ready after ${i}s"
               break
             fi
             sleep 1
-            if [ "$i" = "30" ]; then
-              echo "MinIO did not become ready in 30s; dumping logs:"
-              docker logs minio
+            if [ "$i" = "60" ]; then
+              echo "object storage did not become ready in 60s; dumping logs:"
+              (cd apps/core-api && pnpm exec tsx test/_s3-ready.cli.ts) || true
+              docker logs s3
               exit 1
             fi
           done
-          docker run --rm --network host \
-            -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 \
-            minio/mc:RELEASE.2025-08-13T08-35-41Z \
-            mb --ignore-existing local/panorama-photos
       - name: Bootstrap DB (extensions + roles)
         run: PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f infra/docker/postgres-init.sql
         env:
