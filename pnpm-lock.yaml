@@ -57,6 +57,9 @@ importers:
       vue:
         specifier: ^3.5.34
         version: 3.5.34(typescript@6.0.3)
+      yaml:
+        specifier: ^2.8.4
+        version: 2.8.4
 
   apps/core-api:
     dependencies:
