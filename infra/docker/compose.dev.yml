@@ -32,20 +32,34 @@ services:
       timeout: 3s
       retries: 10
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+  # S3-compatible object storage (SeaweedFS). Replaced MinIO, whose
+  # community images and binaries are no longer published (#293).
+  # Dev credentials live in seaweedfs-s3.dev.json and match the
+  # S3_ACCESS_KEY / S3_SECRET_KEY defaults in apps/core-api/.env.example.
+  # The bucket is created on startup; auto-create on upload is off so a
+  # missing bucket fails loudly, as it would on real S3.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     restart: unless-stopped
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+    command:
+      - mini
+      - -dir=/data
+      - -ip.bind=0.0.0.0
+      - -s3.port=9000
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -bucket=panorama-photos,panorama-backups
+      - -s3.autoCreateBucket=false
+      - -admin.ui=false
+      - -webdav=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
     ports:
       - '9000:9000'
-      - '9001:9001'
     volumes:
-      - panorama_minio:/data
+      - panorama_seaweedfs:/data
+      - ./seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/healthz']
       interval: 10s
       timeout: 3s
       retries: 10
@@ -60,4 +74,4 @@ services:
 volumes:
   panorama_pg:
   panorama_redis:
-  panorama_minio:
+  panorama_seaweedfs:

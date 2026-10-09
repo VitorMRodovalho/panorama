@@ -24,12 +24,30 @@ const DEV_OWNER_PASSWORD = 'panorama-dev-2026';
 
 function looksProd(url: string | undefined): boolean {
   if (!url) return true;
-  const lower = url.toLowerCase();
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Unparseable connection string — fail safe and refuse to seed.
+    return true;
+  }
+  // Anchor the host checks to the parsed hostname rather than a substring
+  // of the whole URL. A raw `url.includes('amazonaws.com')` is the
+  // js/incomplete-url-substring-sanitization shape: a credential or db
+  // name could carry the marker without the host being AWS, and vice
+  // versa. `hostname.endsWith(...)` matches the real authority.
+  const host = parsed.hostname.toLowerCase();
+  const dbName = parsed.pathname.toLowerCase();
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host.endsWith('.localhost');
   return (
-    lower.includes('prod') ||
-    lower.includes('production') ||
-    (lower.includes('amazonaws.com') && !lower.includes('localhost')) ||
-    (lower.includes('rds.') && !lower.includes('localhost'))
+    host.includes('prod') ||
+    dbName.includes('prod') ||
+    (!isLocal && host.endsWith('.amazonaws.com')) ||
+    (!isLocal && host.includes('.rds.'))
   );
 }
 

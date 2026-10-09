@@ -1,0 +1,10 @@
+{
+  "migrations": 28,
+  "audit_events_count": 2,
+  "audit_events_tail": "47b177fbb65bbd460504a33d061728734b88d3088c59fa6b8a2604df2a3a3d25",
+  "tenants": 2,
+  "users": 2,
+  "tenant_memberships": 2,
+  "rls_policies": 39,
+  "captured_at": "2026-05-19T03:31:36Z"
+}

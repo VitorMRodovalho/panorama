@@ -46,15 +46,15 @@
     "helmet": "^8.0.0",
     "ioredis": "^5.4.1",
     "iron-session": "^8.0.4",
-    "nanoid": "^5",
+    "nanoid": "^5.1.16",
     "nestjs-i18n": "^10.8.4",
-    "nodemailer": "^8.0.7",
+    "nodemailer": "^10.0.16",
     "openid-client": "^6.8.4",
     "pino": "^9",
     "prisma": "^6.19.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sharp": "^0.34.0",
+    "sharp": "^0.35.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -65,13 +65,13 @@
     "@types/express": "^5.0.0",
     "@types/multer": "^2.1.0",
     "@types/nodemailer": "^8.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.6",
     "eslint": "^9.16.0",
     "jose": "^6",
     "pino-pretty": "^11",
     "tsx": "^4.19.2",
     "typescript-eslint": "^8.59.2",
     "unplugin-swc": "^1.5.9",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   }
 }

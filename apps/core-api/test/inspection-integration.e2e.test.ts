@@ -11,6 +11,7 @@ import { InspectionMaintenanceService } from '../src/modules/inspection/inspecti
 import { ObjectStorageService } from '../src/modules/object-storage/object-storage.service.js';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
+import { assertObjectStorageReady } from './_s3-ready.js';
 
 /**
  * Cross-cutting integration tests — ADR-0012 §Execution-order step 10.
@@ -78,10 +79,7 @@ describe('inspection cross-cutting integration e2e (step 10)', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = APP_URL;
 
-    const minioCheck = await fetch('http://localhost:9000/minio/health/live').catch(() => null);
-    if (!minioCheck || minioCheck.status !== 200) {
-      throw new Error('MinIO not reachable at http://localhost:9000');
-    }
+    await assertObjectStorageReady();
 
     admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
     asApp = new PrismaClient({ datasources: { db: { url: APP_URL } } });

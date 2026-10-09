@@ -17,7 +17,7 @@
     "@panorama/i18n": "workspace:*",
     "@panorama/shared": "workspace:*",
     "@panorama/ui-kit": "workspace:*",
-    "next": "^16.2.6",
+    "next": "^16.3.8",
     "next-intl": "^4.11.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -36,6 +36,6 @@
     "eslint-config-next": "^16.2.6",
     "jsdom": "^25.0.1",
     "typescript": "^6.0.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   }
 }

@@ -14,7 +14,7 @@ audience.
 - **Node.js 22+** (uses `engines: ">=22"`; older versions break Vitest)
 - **pnpm 9+** (`corepack enable && corepack prepare pnpm@latest --activate`)
 - **Docker + docker-compose** (the dev stack is 4 containers: Postgres,
-  Redis, MinIO, MailHog)
+  Redis, SeaweedFS (S3-compatible object storage), MailHog)
 
 ```bash
 node --version    # v22+ ?
@@ -46,7 +46,7 @@ docker-compose -f infra/docker/compose.dev.yml ps
 ```
 
 You should see four containers `Up (healthy)`: postgres on `:5432`,
-redis on `:6379`, minio on `:9000`, mailhog on `:8025`.
+redis on `:6379`, seaweedfs (S3 API) on `:9000`, mailhog on `:8025`.
 
 > `docker compose` (with a space) is the v2 plugin syntax; `docker-compose`
 > (with a hyphen) is the legacy binary. Either works. The dev-stack
@@ -140,7 +140,7 @@ contract at the database layer
 | <http://localhost:4000/health> | API liveness + DB ping |
 | <http://localhost:4000/api-docs> | OpenAPI schema (Swagger UI) |
 | <http://localhost:8025> | MailHog — captured outgoing emails (invitations, export notifications). NEVER hits a real SMTP server in dev. |
-| <http://localhost:9001> | MinIO console; login `minioadmin/minioadmin`. Buckets `panorama-photos` + `panorama-backups` are created automatically. |
+| <http://localhost:9000> | S3 API (SeaweedFS); dev keys `minioadmin/minioadmin` from `infra/docker/seaweedfs-s3.dev.json`. Buckets `panorama-photos` + `panorama-backups` are created on startup. No web console. |
 
 ## Optional — feature flags
 
@@ -187,7 +187,7 @@ pnpm --filter @panorama/core-api test
 ```
 
 ~520 cases; ~70-90s. Tests use the same dev stack (Postgres + Redis +
-MinIO) — they reset their own state via `test/_reset-db.ts`. Don't
+SeaweedFS) — they reset their own state via `test/_reset-db.ts`. Don't
 worry about your seed data; tests run in isolation.
 
 ## When things break
@@ -196,7 +196,7 @@ worry about your seed data; tests run in isolation.
 |---|---|---|
 | `runAsSuperAdmin requires DATABASE_PRIVILEGED_URL` | Missing env var | Copy `.env.example` to `.env`; the line is in there |
 | `SESSION_SECRET must be at least 32 characters` | Placeholder not replaced | Re-run the `node -e ... | sed` snippet in step 3 |
-| `S3_ENDPOINT health check failed` | MinIO not ready | `docker-compose -f infra/docker/compose.dev.yml restart minio` and wait 10s |
+| `Object storage not ready — HeadBucket …` | SeaweedFS down or still creating its buckets | `docker-compose -f infra/docker/compose.dev.yml up -d seaweedfs` and wait 10s |
 | `Cannot connect to Postgres` | Dev stack down | `docker-compose -f infra/docker/compose.dev.yml up -d` |
 | Login returns 401 with valid creds | Seed didn't run (or ran before this PR) | `pnpm --filter @panorama/core-api prisma:seed` re-creates the password identity |
 | `pnpm install` fails on `sharp` | Native build deps missing | On Linux: `sudo apt install libvips-dev`. On macOS: `brew install vips` |

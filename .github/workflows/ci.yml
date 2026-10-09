@@ -10,14 +10,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Minimal default token for every job. The only job that needs more is
+# container-scan (security-events: write to upload SARIF), which escalates
+# locally. Closes OSSF Scorecard TokenPermissions + CodeQL
+# actions/missing-workflow-permissions on this workflow.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -90,43 +97,43 @@ jobs:
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install psql client
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-      # Start MinIO + create the panorama-photos bucket. Uses `docker
-      # run -d` instead of a service container because GH Actions
-      # services lack a `command:` knob, and MinIO needs `server /data`.
-      # Bucket creation via mc is idempotent (`--ignore-existing`).
-      - name: Start MinIO + create bucket
+      # Start S3-compatible object storage (SeaweedFS) with the
+      # panorama-photos bucket. Replaced MinIO, whose community images
+      # are no longer published (#293). `docker run -d` instead of a
+      # service container because GH Actions services lack a `command:`
+      # knob. Readiness is a signed HeadBucket, not the health endpoint:
+      # /healthz answers 200 before the startup bucket exists.
+      - name: Start object storage (SeaweedFS) + bucket
         run: |
           set -euo pipefail
-          docker run -d --name minio --network host \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z \
-            server /data
-          # Wait for MinIO readiness (max 30s).
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+          docker run -d --name s3 --network host \
+            -v "$PWD/infra/docker/seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro" \
+            chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
+            mini -ip=127.0.0.1 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json \
+            -bucket=panorama-photos -s3.autoCreateBucket=false \
+            -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
+          for i in $(seq 1 60); do
+            if (cd apps/core-api && pnpm exec tsx test/_s3-ready.cli.ts) >/dev/null 2>&1; then
+              echo "object storage ready after ${i}s"
               break
             fi
             sleep 1
-            if [ "$i" = "30" ]; then
-              echo "MinIO did not become ready in 30s; dumping logs:"
-              docker logs minio
+            if [ "$i" = "60" ]; then
+              echo "object storage did not become ready in 60s; dumping logs:"
+              (cd apps/core-api && pnpm exec tsx test/_s3-ready.cli.ts) || true
+              docker logs s3
               exit 1
             fi
           done
-          docker run --rm --network host \
-            -e MC_HOST_local=http://minioadmin:minioadmin@localhost:9000 \
-            minio/mc:RELEASE.2025-08-13T08-35-41Z \
-            mb --ignore-existing local/panorama-photos
       - name: Bootstrap DB (extensions + roles)
         run: PGPASSWORD=panorama psql -h localhost -U panorama -d panorama -v ON_ERROR_STOP=1 -f infra/docker/postgres-init.sql
         env:
@@ -196,7 +203,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: core-api-coverage
           path: apps/core-api/coverage/
@@ -206,9 +213,9 @@ jobs:
     name: Web unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -223,9 +230,9 @@ jobs:
     name: i18n coverage (EN = PT-BR = ES)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -237,9 +244,9 @@ jobs:
     name: Dependency licence scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -250,9 +257,9 @@ jobs:
     name: No enterprise imports in community sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 22
           cache: pnpm
@@ -281,17 +288,21 @@ jobs:
     #    keeps the SARIF current even if pass 2 errors.
     # 2. Blocking pass (exit-code: 1, --severity HIGH,CRITICAL,
     #    --ignore-unfixed): fails the build on real risk. Suppression
-    #    of unreachable advisories goes through .trivyignore at the
-    #    repo root (Wave 3b / #83) — every entry has a justification
-    #    header per the template; PRs adding bare CVE ids without
-    #    headers must be rejected.
+    #    of unreachable advisories goes through .trivyignore.yaml at the
+    #    repo root (Wave 3b / #83; converted from plain text 2026-09-15).
+    #    Every entry carries `statement` (classification + justification)
+    #    AND `expired_at`, which Trivy ENFORCES — the plain-text format
+    #    silently ignored the `# Expiry:` headers it carried, so one
+    #    exemption outlived its stated date by ~2 months unnoticed.
+    #    There is no permanent exemption; PRs adding an entry without
+    #    both fields must be rejected.
     #
     # Pinned action version (was @master) per OSSF Scorecard
     # pinned-deps. Bumps go through deliberate review.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Trivy report (SARIF, never blocks)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
@@ -300,15 +311,15 @@ jobs:
           output: trivy-results.sarif
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
         with:
           sarif_file: trivy-results.sarif
           category: trivy
       - name: Trivy gate (blocks on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
-          trivyignores: .trivyignore
+          trivyignores: .trivyignore.yaml
