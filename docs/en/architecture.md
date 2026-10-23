@@ -131,8 +131,9 @@ See ADR-0003. Short version:
 ## 7. i18n
 
 - `packages/i18n/{en,pt-br,es}/*.json` — translation bundles, keyed by feature
-- Frontend uses `next-intl`; backend uses `nestjs-i18n` for email / webhook
-  templates
+- Frontend uses `next-intl`. Backend email templates
+  (`apps/core-api/src/modules/**/*-email.templates.ts`) carry their EN / PT-BR /
+  ES copy inline and format dates with `Intl`; no i18n library is involved yet
 - CI check: every EN key must exist in PT-BR and ES; missing keys fail the
   build. A `scripts/i18n-check.ts` produces a coverage report per PR.
 - Contributor flow: add keys in EN, open PR, CI shows missing translations, a
