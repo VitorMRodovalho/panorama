@@ -47,7 +47,6 @@
     "ioredis": "^5.4.1",
     "iron-session": "^8.0.4",
     "nanoid": "^5.1.16",
-    "nestjs-i18n": "^10.8.4",
     "nodemailer": "^10.0.16",
     "openid-client": "^6.8.4",
     "pino": "^9",
