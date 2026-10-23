@@ -65,7 +65,7 @@
     "@types/multer": "^2.1.0",
     "@types/nodemailer": "^8.0.0",
     "@vitest/coverage-v8": "^4.1.12",
-    "eslint": "^9.16.0",
+    "eslint": "^10.13.0",
     "jose": "^6",
     "pino-pretty": "^11",
     "tsx": "^4.19.2",
