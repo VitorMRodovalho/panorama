@@ -1245,15 +1245,15 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `@nestjs/platform-express` | 11.1.19 | MIT | https://github.com/nestjs/nest |
 | `@nestjs/swagger` | 11.4.2 | MIT | https://github.com/nestjs/swagger |
 | `@nestjs/throttler` | 6.5.0 | MIT | https://github.com/nestjs/throttler |
-| `@next/env` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-darwin-arm64` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-darwin-x64` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-linux-arm64-gnu` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-linux-arm64-musl` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-linux-x64-gnu` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-linux-x64-musl` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-win32-arm64-msvc` | 16.3.8 | MIT | https://github.com/vercel/next.js |
-| `@next/swc-win32-x64-msvc` | 16.3.8 | MIT | https://github.com/vercel/next.js |
+| `@next/env` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-darwin-arm64` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-darwin-x64` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-linux-arm64-gnu` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-linux-arm64-musl` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-linux-x64-gnu` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-linux-x64-musl` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-win32-arm64-msvc` | 16.4.2 | MIT | https://github.com/vercel/next.js |
+| `@next/swc-win32-x64-msvc` | 16.4.2 | MIT | https://github.com/vercel/next.js |
 | `@nodable/entities` | 2.1.0 | MIT | https://github.com/nodable/val-parsers |
 | `@nuxt/opencollective` | 0.4.1 | MIT | https://github.com/nuxt-contrib/opencollective |
 | `@opentelemetry/api-logs` | 0.220.0 | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-js |
@@ -1518,7 +1518,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `nestjs-i18n` | 10.8.4 | MIT | https://github.com/ToonvanStrijp/nestjs-i18n |
 | `next-intl-swc-plugin-extractor` | 4.11.1 | MIT | https://github.com/amannn/next-intl |
 | `next-intl` | 4.11.1 | MIT | https://github.com/amannn/next-intl |
-| `next` | 16.3.8 | MIT | https://github.com/vercel/next.js |
+| `next` | 16.4.2 | MIT | https://github.com/vercel/next.js |
 | `node-abort-controller` | 3.1.1 | MIT | https://github.com/southpolesteve/node-abort-controller |
 | `node-addon-api` | 7.1.1 | MIT | https://github.com/nodejs/node-addon-api |
 | `node-addon-api` | 8.7.0 | MIT | https://github.com/nodejs/node-addon-api |
@@ -9283,7 +9283,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### next@16.3.8 (license.md)
+### next@16.4.2 (license.md)
 
 ```text
 The MIT License (MIT)
@@ -11795,9 +11795,9 @@ Their declared licence is in the inventory above.
 - `@img/sharp-libvips-linux-x64@1.3.4` (LGPL-3.0-or-later): https://github.com/lovell/sharp-libvips
 - `@img/sharp-libvips-linuxmusl-x64@1.3.4` (LGPL-3.0-or-later): https://github.com/lovell/sharp-libvips
 - `@msgpackr-extract/msgpackr-extract-linux-x64@3.0.3` (MIT): http://github.com/kriszyp/msgpackr-extract
-- `@next/env@16.3.8` (MIT): https://github.com/vercel/next.js
-- `@next/swc-linux-x64-gnu@16.3.8` (MIT): https://github.com/vercel/next.js
-- `@next/swc-linux-x64-musl@16.3.8` (MIT): https://github.com/vercel/next.js
+- `@next/env@16.4.2` (MIT): https://github.com/vercel/next.js
+- `@next/swc-linux-x64-gnu@16.4.2` (MIT): https://github.com/vercel/next.js
+- `@next/swc-linux-x64-musl@16.4.2` (MIT): https://github.com/vercel/next.js
 - `@schummar/icu-type-parser@1.21.5` (MIT): https://github.com/schummar/schummar-translate
 - `@sentry/server-utils@10.76.2` (MIT): https://github.com/getsentry/sentry-javascript
 - `@swc/core-linux-x64-gnu@1.15.33` (Apache-2.0 AND MIT): https://github.com/swc-project/swc

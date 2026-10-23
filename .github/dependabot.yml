@@ -39,6 +39,14 @@ updates:
           - "vitest"
           - "@playwright/*"
           - "playwright"
+      # Catch-all, declared last: whatever the named groups above did not
+      # claim lands in one minor+patch PR instead of one PR per package.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - dependencies
       - automated
@@ -59,6 +67,17 @@ updates:
       day: monday
       time: "06:00"
       timezone: America/Sao_Paulo
+    groups:
+      # init / analyze / upload-sarif must move together, majors included.
+      codeql:
+        patterns:
+          - "github/codeql-action*"
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - dependencies
       - automated
@@ -66,13 +85,43 @@ updates:
     commit-message:
       prefix: "chore(ci)"
 
+  # The only Dockerfile is the core-api image.
   - package-ecosystem: docker
+    directory: /apps/core-api
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    labels:
+      - dependencies
+      - automated
+      - infra
+    commit-message:
+      prefix: "chore(infra)"
+    ignore:
+      # The Node major follows the CI matrix and `engines`, moved by hand.
+      - dependency-name: "node"
+        update-types:
+          - version-update:semver-major
+
+  # compose.dev.yml / compose.prod.yml need the docker-compose ecosystem: a
+  # docker entry on this directory fails with "No Dockerfiles nor Kubernetes
+  # YAML found in /infra/docker".
+  - package-ecosystem: docker-compose
     directory: /infra/docker
     schedule:
       interval: weekly
       day: monday
       time: "06:00"
       timezone: America/Sao_Paulo
+    groups:
+      compose-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     labels:
       - dependencies
       - automated
