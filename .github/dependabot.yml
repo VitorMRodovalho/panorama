@@ -55,8 +55,12 @@ updates:
       prefix-development: "chore(deps-dev)"
       include: scope
     ignore:
-      # Node 20 LTS is the baseline; ignore major bumps that drop 20 support
+      # Node majors (@types/node included) follow the LTS line in .nvmrc
+      # and `engines`, moved by hand.
       - dependency-name: "node"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
 
