@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Panorama core-api production image.
 #
 # Multi-stage:
@@ -6,14 +7,12 @@
 #   2. runner  — minimal node:24-trixie-slim with tini as PID 1, runs as
 #      non-root `node`, exposes 4000.
 #
-# Sharp 0.33 prebuilt binaries assume glibc — that's why we're on bookworm-slim,
-# not alpine. Alpine would force a from-source rebuild of sharp + vips-dev.
+# Sharp's prebuilt binaries are the glibc ones — that's why we're on a Debian
+# slim image, not alpine. Alpine would force a from-source rebuild of sharp + vips-dev.
 #
 # Build:   docker build -f apps/core-api/Dockerfile -t panorama-core-api .
 # Run:     docker run --env-file .env -p 4000:4000 panorama-core-api
 # Compose: see infra/docker/compose.prod.yml
-
-# syntax=docker/dockerfile:1.7
 
 # ---------------------------------------------------------------------------
 # Stage 1 — builder
@@ -82,6 +81,9 @@ COPY --from=builder /out/dist        ./dist
 COPY --from=builder /out/node_modules ./node_modules
 COPY --from=builder /out/prisma      ./prisma
 COPY --from=builder /out/package.json ./
+# The migrator service in infra/docker/compose.prod.yml runs
+# /app/scripts/apply-migrations.sh; `pnpm deploy` does not copy scripts/.
+COPY --from=builder /repo/apps/core-api/scripts ./scripts
 
 # `pnpm deploy --prod` doesn't copy the Prisma-generated client out
 # of the builder's `node_modules/.prisma/client/` directory (the
@@ -93,7 +95,7 @@ COPY --from=builder /out/package.json ./
 # runner image just for this step.
 RUN npx --no-install prisma generate
 
-# Run as the bookworm-slim image's pre-seeded `node` user (uid 1000).
+# Run as the Debian node image's pre-seeded `node` user (uid 1000).
 USER node
 
 EXPOSE 4000

@@ -347,5 +347,7 @@ jobs:
           got="$(docker run --rm --entrypoint node panorama-core-api:ci --version)"
           echo "node in image: $got (want ${want}x, from .nvmrc)"
           case "$got" in "$want"*) ;; *) echo "::error::image Node $got does not match .nvmrc"; exit 1 ;; esac
-          docker run --rm --entrypoint sh panorama-core-api:ci -c \
-            'test -f dist/src/main.js && id -un && ls -1 /app && ls -l node_modules/.bin/prisma'
+          # The runtime entry, the migrator entry used by compose.prod.yml,
+          # and the Prisma CLI as apply-migrations.sh invokes it.
+          docker run --rm --entrypoint sh -e CHECKPOINT_DISABLE=1 panorama-core-api:ci -c \
+            'set -e; id -un; ls -1 /app; test -f dist/src/main.js; test -f scripts/apply-migrations.sh; ./node_modules/.bin/prisma --version'
