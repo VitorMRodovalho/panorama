@@ -14,28 +14,27 @@
 //     a CI fail in steady state.
 
 import js from '@eslint/js';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
-  {
-    ignores: [
-      'dist/**',
-      'coverage/**',
-      'prisma/migrations/**',
-      'node_modules/**',
-      // Generated Prisma artifacts under @prisma/client live in
-      // node_modules/.prisma but a stray check-in could land in src/
-      // — exclude defensively.
-      '**/*.generated.ts',
-      // Vitest config is a Vite-style mjs/ts at workspace root and is
-      // not in any tsconfig's "include" — type-aware lint can't parse
-      // it without forcing a tsconfig change.
-      'vitest.config.ts',
-      'eslint.config.mjs',
-    ],
-  },
+export default defineConfig(
+  globalIgnores([
+    'dist/**',
+    'coverage/**',
+    'prisma/migrations/**',
+    'node_modules/**',
+    // Generated Prisma artifacts under @prisma/client live in
+    // node_modules/.prisma but a stray check-in could land in src/
+    // — exclude defensively.
+    '**/*.generated.ts',
+    // Vitest config is a Vite-style mjs/ts at workspace root and is
+    // not in any tsconfig's "include" — type-aware lint can't parse
+    // it without forcing a tsconfig change.
+    'vitest.config.ts',
+    'eslint.config.mjs',
+  ]),
   js.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {
       parserOptions: {

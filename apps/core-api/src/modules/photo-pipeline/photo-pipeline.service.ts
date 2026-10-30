@@ -142,7 +142,7 @@ export class PhotoPipeline {
       sequentialRead: true,
     };
 
-    let inputMetadataFields: string[] = [];
+    let inputMetadataFields: string[];
     try {
       const md = await sharp(buffer, sharpInputOpts).metadata();
       // Pre-flight pixel check — sharp only enforces `limitInputPixels`
