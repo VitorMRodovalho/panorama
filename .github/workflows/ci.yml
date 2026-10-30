@@ -72,7 +72,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
         ports:
           - 6379:6379
       # MailHog — outbound SMTP target. v1.0.1 is permanent (project dormant).
@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           docker run -d --name s3 --network host \
             -v "$PWD/infra/docker/seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro" \
-            chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
+            chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8 \
             mini -ip=127.0.0.1 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json \
             -bucket=panorama-photos -s3.autoCreateBucket=false \
             -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
