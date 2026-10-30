@@ -33,7 +33,7 @@ hosted preview.
 
 🚧 **Early access — open for use, expect rough edges.** Bootstrapped 2026-04-17.
 
-- **Backend:** production-ready (NestJS 11 + Prisma 6 + Postgres RLS + OIDC end-to-end tested
+- **Backend:** production-ready (NestJS 12 + Prisma 6 + Postgres RLS + OIDC end-to-end tested
   via [#92](https://github.com/VitorMRodovalho/panorama/issues/92)). Dependency surface current
   through 2026-05-09 ([#123](https://github.com/VitorMRodovalho/panorama/issues/123)).
 - **Web app:** in active build. ~10% of feature surface today; nav + asset CRUD + checkout
