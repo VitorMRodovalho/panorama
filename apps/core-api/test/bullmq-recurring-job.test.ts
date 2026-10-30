@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -61,8 +62,11 @@ describe('ensureRecurringJob', () => {
 
   it('removes another schedule producing the same job, keeps ours, then upserts aligned', async () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    // The shape BullMQ 5 stores a repeatable under: md5 of
+    // `name:jobId:endDate:tz:every`.
+    const legacyKey = createHash('md5').update(`sweep:probe-daily:::${DAY}`).digest('hex');
     const { queue, removeJobScheduler, upsertJobScheduler } = fakeQueue([
-      { key: '0f3c9a1d2e4b5c6d7e8f9a0b1c2d3e4f', name: 'sweep' },
+      { key: legacyKey, name: 'sweep' },
       { key: 'probe-daily', name: 'sweep' },
       { key: 'other-schedule', name: 'other-job' },
     ]);
@@ -70,7 +74,7 @@ describe('ensureRecurringJob', () => {
 
     await ensureRecurringJob(queue, spec, log);
 
-    expect(removeJobScheduler.mock.calls).toEqual([['0f3c9a1d2e4b5c6d7e8f9a0b1c2d3e4f']]);
+    expect(removeJobScheduler.mock.calls).toEqual([[legacyKey]]);
     expect(upsertJobScheduler).toHaveBeenCalledTimes(1);
     const [id, repeat, template] = upsertJobScheduler.mock.calls[0] as unknown as [
       string,
