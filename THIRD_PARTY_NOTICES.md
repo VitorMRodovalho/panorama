@@ -1342,27 +1342,27 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `@smithy/util-waiter` | 4.3.0 | Apache-2.0 | https://github.com/smithy-lang/smithy-typescript |
 | `@smithy/uuid` | 1.1.2 | Apache-2.0 | https://github.com/smithy-lang/smithy-typescript |
 | `@standard-schema/spec` | 1.1.0 | MIT | https://github.com/standard-schema/standard-schema |
-| `@swc/core-darwin-arm64` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-darwin-x64` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm-gnueabihf` | 1.15.33 | Apache-2.0 | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm64-musl` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-ppc64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-s390x-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-x64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-x64-musl` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-arm64-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-ia32-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-x64-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core` | 1.15.33 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/core-darwin-arm64` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-darwin-x64` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm-gnueabihf` | 1.16.20 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm64-musl` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-ppc64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-s390x-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-x64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-x64-musl` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-arm64-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-ia32-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-x64-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core` | 1.16.20 | Apache-2.0 | https://github.com/swc-project/swc |
 | `@swc/counter` | 0.1.3 | Apache-2.0 | https://github.com/swc-project/pkgs |
 | `@swc/helpers` | 0.5.23 | Apache-2.0 | https://github.com/swc-project/swc |
-| `@swc/types` | 0.1.26 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/types` | 0.1.28 | Apache-2.0 | https://github.com/swc-project/swc |
 | `@tokenizer/inflate` | 0.4.1 | MIT | https://github.com/Borewit/tokenizer-inflate |
 | `@tokenizer/token` | 0.3.0 | MIT | https://github.com/Borewit/tokenizer-token |
 | `@types/jsonwebtoken` | 9.0.10 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@types/ms` | 2.1.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
-| `@types/node` | 22.19.17 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
+| `@types/node` | 24.19.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@types/validator` | 13.15.10 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@ucast/core` | 1.10.2 | Apache-2.0 | https://github.com/stalniy/ucast |
 | `@ucast/js` | 3.1.0 | Apache-2.0 | https://github.com/stalniy/ucast |
@@ -1374,7 +1374,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `argparse` | 2.0.1 | Python-2.0 | https://github.com/nodeca/argparse |
 | `atomic-sleep` | 1.0.0 | MIT | https://github.com/davidmarkclements/atomic-sleep |
 | `baseline-browser-mapping` | 2.11.28 | Apache-2.0 | https://github.com/web-platform-dx/baseline-browser-mapping |
-| `body-parser` | 2.3.0 | MIT | https://github.com/expressjs/body-parser |
+| `body-parser` | 2.4.0 | MIT | https://github.com/expressjs/body-parser |
 | `bowser` | 2.14.1 | MIT | https://github.com/bowser-js/bowser |
 | `buffer-equal-constant-time` | 1.0.1 | BSD-3-Clause | git@github.com:goinstant/buffer-equal-constant-time |
 | `bullmq` | 5.76.6 | MIT | https://github.com/taskforcesh/bullmq |
@@ -1446,7 +1446,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `hasown` | 2.0.3 | MIT | https://github.com/inspect-js/hasOwn |
 | `helmet` | 8.1.0 | MIT | https://github.com/helmetjs/helmet |
 | `http-errors` | 2.0.1 | MIT | https://github.com/jshttp/http-errors |
-| `iconv-lite` | 0.7.2 | MIT | https://github.com/pillarjs/iconv-lite |
+| `iconv-lite` | 0.7.3 | MIT | https://github.com/pillarjs/iconv-lite |
 | `icu-minify` | 4.11.1 | MIT | https://github.com/amannn/next-intl |
 | `ieee754` | 1.2.1 | BSD-3-Clause | https://github.com/feross/ieee754 |
 | `import-in-the-middle` | 3.5.2 | Apache-2.0 | https://github.com/nodejs/import-in-the-middle |
@@ -1492,7 +1492,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `ms` | 2.1.3 | MIT | https://github.com/vercel/ms |
 | `msgpackr-extract` | 3.0.3 | MIT | http://github.com/kriszyp/msgpackr-extract |
 | `msgpackr` | 2.0.1 | MIT | http://github.com/kriszyp/msgpackr |
-| `multer` | 2.4.0 | MIT | https://github.com/expressjs/multer |
+| `multer` | 2.5.0 | MIT | https://github.com/expressjs/multer |
 | `nanoid` | 3.3.20 | MIT | https://github.com/ai/nanoid |
 | `nanoid` | 5.1.16 | MIT | https://github.com/ai/nanoid |
 | `negotiator` | 1.0.0 | MIT | https://github.com/jshttp/negotiator |
@@ -1505,7 +1505,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `node-fetch-native` | 1.6.7 | MIT | https://github.com/unjs/node-fetch-native |
 | `node-gyp-build-optional-packages` | 5.2.2 | MIT | https://github.com/prebuild/node-gyp-build |
 | `node-gyp-build` | 4.8.4 | MIT | https://github.com/prebuild/node-gyp-build |
-| `nodemailer` | 10.0.16 | MIT-0 | https://github.com/nodemailer/nodemailer |
+| `nodemailer` | 10.3.1 | MIT-0 | https://github.com/nodemailer/nodemailer |
 | `nypm` | 0.6.6 | MIT | https://github.com/unjs/nypm |
 | `oauth4webapi` | 3.8.6 | MIT | https://github.com/panva/oauth4webapi |
 | `object-assign` | 4.1.1 | MIT | https://github.com/sindresorhus/object-assign |
@@ -1538,7 +1538,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `process-warning` | 5.0.0 | MIT | https://github.com/fastify/process-warning |
 | `proxy-addr` | 2.0.8 | MIT | https://github.com/jshttp/proxy-addr |
 | `pure-rand` | 6.1.0 | MIT | https://github.com/dubzzz/pure-rand |
-| `qs` | 6.16.0 | BSD-3-Clause | https://github.com/ljharb/qs |
+| `qs` | 6.17.1 | BSD-3-Clause | https://github.com/ljharb/qs |
 | `quick-format-unescaped` | 4.0.4 | MIT | https://github.com/davidmarkclements/quick-format |
 | `range-parser` | 1.2.1 | MIT | https://github.com/jshttp/range-parser |
 | `raw-body` | 3.0.2 | MIT | https://github.com/stream-utils/raw-body |
@@ -1593,7 +1593,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `uid` | 2.0.2 | MIT | https://github.com/lukeed/uid |
 | `uint8array-extras` | 1.5.0 | MIT | https://github.com/sindresorhus/uint8array-extras |
 | `uncrypto` | 0.1.3 | MIT | https://github.com/unjs/uncrypto |
-| `undici-types` | 6.21.0 | MIT | https://github.com/nodejs/undici |
+| `undici-types` | 7.24.6 | MIT | https://github.com/nodejs/undici |
 | `unpipe` | 1.0.0 | MIT | https://github.com/stream-utils/unpipe |
 | `use-intl` | 4.11.1 | MIT | https://github.com/amannn/next-intl |
 | `utils-merge` | 1.0.1 | MIT | https://github.com/jaredhanson/utils-merge |
@@ -1602,7 +1602,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `which` | 2.0.2 | ISC | https://github.com/isaacs/node-which |
 | `wrappy` | 1.0.2 | ISC | https://github.com/npm/wrappy |
 | `xml-naming` | 0.1.0 | MIT | https://github.com/NaturalIntelligence/xml-naming |
-| `zod` | 4.4.3 | MIT | https://github.com/colinhacks/zod |
+| `zod` | 4.6.7 | MIT | https://github.com/colinhacks/zod |
 
 ## Licence and notice texts
 
@@ -4479,17 +4479,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### @swc/core@1.15.33 (README.md, License section)
+### @swc/core-linux-x64-gnu@1.16.20 (LICENSE) and 4 more
 
-```text
-SWC is primarily distributed under the terms of the Apache License (Version 2.0).
-
-See [LICENSE](LICENSE) for details.
-```
-
-### @swc/helpers@0.5.23 (LICENSE) and 1 more
-
-Shipped by: `@swc/helpers@0.5.23 (LICENSE)`, `@swc/types@0.1.26 (LICENSE)`
+Shipped by: `@swc/core-linux-x64-gnu@1.16.20 (LICENSE)`, `@swc/core-linux-x64-musl@1.16.20 (LICENSE)`, `@swc/core@1.16.20 (LICENSE)`, `@swc/helpers@0.5.23 (LICENSE)`, `@swc/types@0.1.28 (LICENSE)`
 
 ```text
                               Apache License
@@ -4731,7 +4723,7 @@ THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ### @types/jsonwebtoken@9.0.10 (LICENSE) and 3 more
 
-Shipped by: `@types/jsonwebtoken@9.0.10 (LICENSE)`, `@types/ms@2.1.0 (LICENSE)`, `@types/node@22.19.17 (LICENSE)`, `@types/validator@13.15.10 (LICENSE)`
+Shipped by: `@types/jsonwebtoken@9.0.10 (LICENSE)`, `@types/ms@2.1.0 (LICENSE)`, `@types/node@24.19.2 (LICENSE)`, `@types/validator@13.15.10 (LICENSE)`
 
 ```text
     MIT License
@@ -5327,9 +5319,9 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### body-parser@2.3.0 (LICENSE) and 3 more
+### body-parser@2.4.0 (LICENSE) and 3 more
 
-Shipped by: `body-parser@2.3.0 (LICENSE)`, `type-is@1.6.18 (LICENSE)`, `type-is@2.0.1 (LICENSE)`, `type-is@2.1.0 (LICENSE)`
+Shipped by: `body-parser@2.4.0 (LICENSE)`, `type-is@1.6.18 (LICENSE)`, `type-is@2.0.1 (LICENSE)`, `type-is@2.1.0 (LICENSE)`
 
 ```text
 (The MIT License)
@@ -7889,7 +7881,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### iconv-lite@0.7.2 (LICENSE)
+### iconv-lite@0.7.3 (LICENSE)
 
 ```text
 Copyright (c) 2011 Alexander Shtuchkin
@@ -8918,7 +8910,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### multer@2.4.0 (LICENSE)
+### multer@2.5.0 (LICENSE)
 
 ```text
 Copyright (c) 2014 Hage Yaapa <[http://www.hacksparrow.com](http://www.hacksparrow.com)>
@@ -9234,7 +9226,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### nodemailer@10.0.16 (LICENSE)
+### nodemailer@10.3.1 (LICENSE)
 
 ```text
 Copyright (c) 2011-2023 Andris Reinman
@@ -9930,7 +9922,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### qs@6.16.0 (LICENSE.md)
+### qs@6.17.1 (LICENSE.md)
 
 ```text
 BSD 3-Clause License
@@ -11281,7 +11273,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### undici-types@6.21.0 (LICENSE)
+### undici-types@7.24.6 (LICENSE)
 
 ```text
 MIT License
@@ -11384,7 +11376,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### zod@4.4.3 (LICENSE)
+### zod@4.6.7 (LICENSE)
 
 ```text
 MIT License
@@ -11425,8 +11417,6 @@ Their declared licence is in the inventory above.
 - `@next/swc-linux-x64-musl@16.4.2` (MIT): https://github.com/vercel/next.js
 - `@schummar/icu-type-parser@1.21.5` (MIT): https://github.com/schummar/schummar-translate
 - `@sentry/server-utils@10.76.2` (MIT): https://github.com/getsentry/sentry-javascript
-- `@swc/core-linux-x64-gnu@1.15.33` (Apache-2.0 AND MIT): https://github.com/swc-project/swc
-- `@swc/core-linux-x64-musl@1.15.33` (Apache-2.0 AND MIT): https://github.com/swc-project/swc
 - `@swc/counter@0.1.3` (Apache-2.0): https://github.com/swc-project/pkgs
 - `client-only@0.0.1` (MIT): https://reactjs.org/
 - `server-only@0.0.1` (MIT): https://reactjs.org/
