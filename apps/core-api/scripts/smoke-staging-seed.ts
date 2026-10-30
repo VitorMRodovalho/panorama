@@ -33,7 +33,7 @@
  * — so this script writes `subject = OWNER_EMAIL`. Tracked in #187.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import argon2 from 'argon2';
 import { readFileSync } from 'node:fs';
 
@@ -56,7 +56,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    console.error('DATABASE_URL is not set.');
+    process.exit(1);
+  }
+  const prisma = createPrismaClient(databaseUrl);
 
   try {
     // 1. Tenant + its system-actor user (mirrors test/_create-tenant.ts).

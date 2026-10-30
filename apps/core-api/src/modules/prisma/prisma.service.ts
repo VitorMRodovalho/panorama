@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '../../generated/prisma/client.js';
 import { currentTenantId } from '../tenant/tenant.context.js';
+import { createPgAdapter } from './prisma-client.factory.js';
 
 /**
  * Postgres serialization-failure SQLSTATE. Surfaced by Prisma as
@@ -154,13 +155,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   constructor(
     @Inject(PRISMA_SERVICE_OPTIONS) @Optional() opts?: PrismaServiceOptions,
   ) {
+    // Prisma 7 needs the connection string when the client is built
+    // (driver adapter), not at first connect. Resolve it before
+    // `super()`; with no URL at all, refuse instead of letting `pg`
+    // fall back to the libpq PG* environment variables / localhost.
+    const appUrl = opts?.datasourceUrl ?? process.env['DATABASE_URL'];
+    if (!appUrl) {
+      throw new Error(
+        'PrismaService: DATABASE_URL is not set. It identifies the appClient ' +
+          '(panorama_app, NOBYPASSRLS); the API cannot start without it.',
+      );
+    }
     super({
+      adapter: createPgAdapter(appUrl),
       log: [
         { emit: 'event', level: 'warn' },
         { emit: 'event', level: 'error' },
         { emit: 'event', level: 'query' },
       ],
-      ...(opts?.datasourceUrl ? { datasources: { db: { url: opts.datasourceUrl } } } : {}),
     });
     this.privilegedUrl =
       opts?.privilegedDatasourceUrl ?? process.env['DATABASE_PRIVILEGED_URL'];
@@ -171,11 +183,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // instantiate a single super-admin-URL PrismaService for fixture
     // setup; the v2 trust boundary is a production posture, not a
     // dev one.
-    const appUrl = opts?.datasourceUrl ?? process.env['DATABASE_URL'];
     if (
       process.env['NODE_ENV'] === 'production' &&
       this.privilegedUrl &&
-      appUrl &&
       this.privilegedUrl === appUrl
     ) {
       throw new Error(
@@ -244,7 +254,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       );
     }
     this.privilegedClient = new PrismaClient({
-      datasources: { db: { url: this.privilegedUrl } },
+      adapter: createPgAdapter(this.privilegedUrl),
       log: [
         { emit: 'event', level: 'warn' },
         { emit: 'event', level: 'error' },

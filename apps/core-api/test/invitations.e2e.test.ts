@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
@@ -62,7 +62,7 @@ describe('invitation flow e2e', () => {
     process.env.INVITE_RATE_ADMIN_HOUR = '10000';
     process.env.INVITE_RATE_TENANT_DAY = '100000';
 
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
     await resetTestDb(adminDb);
 
     const tenant = await createTenantForTest(adminDb, {
@@ -363,7 +363,7 @@ describe('invitation flow e2e', () => {
     if (!('token' in created.body)) throw new Error('expected success body');
 
     // Seed a user for the invite so the accept can complete.
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
     const user = await adminDb.user.create({
       data: { email: 'double@invitation-test.example', displayName: 'Double Click' },
     });
@@ -419,7 +419,7 @@ describe('invitation flow e2e', () => {
     if (!('token' in created.body)) throw new Error('expected success body');
 
     // Backdate expiresAt via super-admin DB client.
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
     await adminDb.invitation.update({
       where: { id: created.body.id },
       data: { expiresAt: new Date(Date.now() - 1000) },
@@ -448,7 +448,7 @@ describe('invitation flow e2e', () => {
     const first = await createInvitation(adminCookie, 'collide@invitation-test.example');
     if (!('token' in first.body)) throw new Error('expected first create to succeed');
 
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
     await adminDb.invitation.update({
       where: { id: first.body.id },
       data: { expiresAt: new Date(Date.now() - 1000) },
@@ -478,7 +478,7 @@ describe('invitation flow e2e', () => {
     // `acceptedAt: null` from `revoked`) would cross-contaminate the
     // partitions — these assertions pin each arm.
     const cookie = await loginCookie(admin.email, admin.password);
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
 
     const openEmail = `filter-open@invitation-test.example`;
     const acceptedEmail = `filter-accepted@invitation-test.example`;
@@ -555,7 +555,7 @@ describe('invitation flow e2e', () => {
     );
     if (!('token' in created.body)) throw new Error('expected success body');
 
-    const adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const adminDb = createPrismaClient(ADMIN_URL);
     const user = await adminDb.user.create({
       data: { email: 'race@invitation-test.example', displayName: 'Race Target' },
     });

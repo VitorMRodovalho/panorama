@@ -55,6 +55,8 @@ export default defineConfig({
         'src/**/index.ts',
         'src/main.ts',
         'src/scripts/**',
+        // Prisma Client output (`prisma generate`), not hand-written code.
+        'src/generated/**',
         'prisma/**',
       ],
       // Re-baselined 2026-10-09 for the vitest 4 instrument change, not a

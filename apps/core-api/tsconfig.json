@@ -12,6 +12,6 @@
     "strict": true,
     "types": ["node", "multer"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "prisma/seed.ts", "scripts/**/*.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "prisma/seed.ts", "scripts/**/*.ts", "prisma.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

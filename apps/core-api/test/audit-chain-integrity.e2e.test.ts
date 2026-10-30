@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { createHash } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
 import { AuditService } from '../src/modules/audit/audit.service.js';
@@ -68,7 +69,7 @@ describe('audit hash-chain integrity — batched recordWithin', () => {
     process.env.SESSION_SECRET = process.env.SESSION_SECRET ?? 'a'.repeat(32);
     process.env.DATABASE_URL = APP_URL;
 
-    adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    adminDb = createPrismaClient(ADMIN_URL);
     await resetTestDb(adminDb);
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

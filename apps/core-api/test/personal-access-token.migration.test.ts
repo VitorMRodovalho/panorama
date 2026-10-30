@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { randomBytes } from 'node:crypto';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
@@ -32,7 +33,7 @@ describe('migration 0009 — personal_access_tokens', () => {
   let userId: string;
 
   beforeAll(async () => {
-    db = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    db = createPrismaClient(ADMIN_URL);
     await resetTestDb(db);
 
     const tenant = await createTenantForTest(db, {

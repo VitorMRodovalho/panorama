@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { createHash } from 'node:crypto';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
@@ -32,7 +32,7 @@ const DB = process.env.PG_DB ?? 'panorama';
 const ADMIN_URL = `postgres://panorama_super_admin:panorama@${HOST}:${PORT}/${DB}?schema=public`;
 
 describe('migration 0015 — Wave 1 corrections', () => {
-  const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+  const admin = createPrismaClient(ADMIN_URL);
   let tenantId: string;
   let userId: string;
 

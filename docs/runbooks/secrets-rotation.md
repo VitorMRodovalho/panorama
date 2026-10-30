@@ -388,9 +388,10 @@ reset.
 # Health endpoint returns 200 + DB-reachable
 curl -fsSL https://api.panorama.example/health | jq
 
-# Confirm prisma can read after rotation
+# Confirm prisma can connect after rotation (Prisma 7: the client is
+# compiled into dist/ and built through the pg driver adapter factory)
 fly ssh console --app panorama-staging \
-    --command "node -e 'require(\"/app/node_modules/@prisma/client\").PrismaClient().auditEvent.count().then(c => console.log(c))'"
+    --command "node -e 'const db = require(\"/app/dist/src/modules/prisma/prisma-client.factory.js\").createPrismaClient(process.env.DATABASE_URL); db.\$queryRawUnsafe(\"SELECT 1 AS ok\").then(r => { console.log(r); return db.\$disconnect(); })'"
 ```
 
 ### Rollback

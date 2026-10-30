@@ -43,7 +43,10 @@ RUN pnpm install --frozen-lockfile
 COPY apps/core-api/ apps/core-api/
 COPY packages/ packages/
 
-# Prisma generate first (writes the client into node_modules). Then
+# Prisma generate first (Prisma 7 `prisma-client` generator: writes the
+# client as TypeScript into apps/core-api/src/generated/prisma, so the
+# nest build below compiles it into dist/ with the rest of the app;
+# prisma.config.ts tolerates the missing DATABASE_URL here). Then
 # turbo-driven build with `--filter @panorama/core-api...` which
 # picks up the workspace package dependencies (`@panorama/shared`,
 # `@panorama/migrator`, `@panorama/plugin-sdk`) AND core-api in
@@ -83,15 +86,12 @@ COPY --from=builder /out/node_modules ./node_modules
 COPY --from=builder /out/prisma      ./prisma
 COPY --from=builder /out/package.json ./
 
-# `pnpm deploy --prod` doesn't copy the Prisma-generated client out
-# of the builder's `node_modules/.prisma/client/` directory (the
-# generated files live alongside @prisma/client but in a hidden
-# `.prisma` subdir that pnpm doesn't recognise as a real package).
-# Re-run `prisma generate` here so the runtime image has the
-# generated .prisma/client/default module @prisma/client expects.
-# Invoke via npx (ships with node) to avoid adding pnpm to the
-# runner image just for this step.
-RUN npx --no-install prisma generate
+# Prisma 7: the generated client is TypeScript under src/generated/prisma,
+# compiled into dist/ by the builder's nest build, so the runner stage no
+# longer runs `prisma generate`. The CLI (`prisma migrate deploy` in
+# scripts/apply-migrations.sh, `prisma --version`) loads prisma.config.ts
+# from /app for the schema path and the datasource URL.
+COPY --from=builder /out/prisma.config.ts ./
 
 # Run as the bookworm-slim image's pre-seeded `node` user (uid 1000).
 USER node

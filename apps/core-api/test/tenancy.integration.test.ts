@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { resetTestDb } from './_reset-db.js';
 import { createTenantForTest } from './_create-tenant.js';
 
@@ -28,8 +28,8 @@ const APP_URL   = `postgres://panorama_app:panorama@${HOST}:${PORT}/${DB}?schema
 const ADMIN_URL = `postgres://panorama_super_admin:panorama@${HOST}:${PORT}/${DB}?schema=public`;
 
 describe('tenant isolation (Prisma middleware + Postgres RLS)', () => {
-  const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
-  const app   = new PrismaClient({ datasources: { db: { url: APP_URL } } });
+  const admin = createPrismaClient(ADMIN_URL);
+  const app   = createPrismaClient(APP_URL);
 
   let tenantA: string;
   let tenantB: string;

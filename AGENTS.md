@@ -22,7 +22,7 @@ This file holds **how to operate as an agent in Panorama**. For sub-agent specia
 
 Unified open-source platform for IT asset + operational fleet management. Successor to Snipe-IT + SnipeScheduler-FleetManager. **AGPL-3.0** (fork-friendly, copyleft).
 
-**Stack:** TypeScript monorepo (pnpm + Turborepo). NestJS 11 backend (`apps/core-api`) + Next.js frontend (`apps/web`) + Prisma 6 + PostgreSQL with RLS. OIDC end-to-end. Hash-chained tamper-detected audit log. Multi-tenant from construction (RLS forced at every tenant-scoped table). Trilingual EN/PT-BR/ES.
+**Stack:** TypeScript monorepo (pnpm + Turborepo). NestJS 11 backend (`apps/core-api`) + Next.js frontend (`apps/web`) + Prisma 7 + PostgreSQL with RLS. OIDC end-to-end. Hash-chained tamper-detected audit log. Multi-tenant from construction (RLS forced at every tenant-scoped table). Trilingual EN/PT-BR/ES.
 
 **Packages:** `i18n`, `migrator`, `plugin-sdk`, `shared`, `ui-kit`.
 
