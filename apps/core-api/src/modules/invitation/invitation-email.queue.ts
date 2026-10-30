@@ -3,6 +3,7 @@ import { Queue, QueueEvents, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EmailService } from '../email/email.service.js';
+import { BULLMQ_REDIS_PROTOCOL, ensureRecurringJob } from '../../shared/queue/bullmq.js';
 import { InvitationService } from './invitation.service.js';
 import { InvitationConfigService } from './invitation.config.js';
 import {
@@ -34,6 +35,8 @@ import type { InvitationQueuePort } from './invitation.queue.js';
 const EMAIL_QUEUE = 'invitation-email';
 const MAINTENANCE_QUEUE = 'invitation-maintenance';
 const MAINTENANCE_JOB = 'sweep';
+const MAINTENANCE_SCHEDULER_ID = 'invitation-maintenance-hourly';
+const MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 
 interface InvitationEmailJobData {
   invitationId: string;
@@ -144,13 +147,24 @@ export class BullMqInvitationQueue
       async () => this.runMaintenance(),
       { connection: this.makeConnection() },
     );
+    this.emailWorker.on('error', (err) =>
+      this.log.error({ err: String(err) }, 'invitation_email_worker_error'),
+    );
+    this.maintenanceWorker.on('error', (err) =>
+      this.log.error({ err: String(err) }, 'invitation_maintenance_worker_error'),
+    );
 
-    // Hourly maintenance. BullMQ dedupes on jobId so a restart doesn't
-    // spawn parallel schedulers.
-    await this.maintenanceQueue.add(MAINTENANCE_JOB, {}, {
-      repeat: { every: 60 * 60 * 1000 },
-      jobId: MAINTENANCE_JOB,
-    });
+    // Hourly maintenance. The Job Scheduler is keyed on its id, so a
+    // restart doesn't spawn parallel schedules.
+    await ensureRecurringJob(
+      this.maintenanceQueue,
+      {
+        schedulerId: MAINTENANCE_SCHEDULER_ID,
+        jobName: MAINTENANCE_JOB,
+        everyMs: MAINTENANCE_INTERVAL_MS,
+      },
+      this.log,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -309,6 +323,7 @@ export class BullMqInvitationQueue
       lazyConnect: false,
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
+      protocol: BULLMQ_REDIS_PROTOCOL,
     });
     this.connections.push(conn);
     return conn;

@@ -48,11 +48,12 @@ import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { BULLMQ_REDIS_PROTOCOL, ensureRecurringJob } from '../../shared/queue/bullmq.js';
 
 const PM_DUE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PM_DUE_QUEUE = 'maintenance-pm-due';
 const PM_DUE_JOB_NAME = 'sweep';
-const PM_DUE_REPEATABLE_KEY = 'pm-due-daily';
+const PM_DUE_SCHEDULER_ID = 'pm-due-daily';
 const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ADR-0016 §9 thresholds — hardcoded per the spec (vs. derived from
@@ -119,7 +120,7 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
   async start(): Promise<void> {
     if (this.pmDueQueue) return;
     // Mirrors InspectionMaintenanceService.start photo-sweep pattern:
-    // BullMQ repeatable with stable jobId so a Fly machine restart
+    // BullMQ Job Scheduler with a stable id so a Fly machine restart
     // re-attaches to the existing schedule rather than spawning a
     // duplicate or skipping a run.
     this.pmDueQueue = new Queue(PM_DUE_QUEUE, {
@@ -139,15 +140,21 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
       // failures has consistent severity across the same file.
       this.log.error({ err: String(err) }, 'pm_due_sweep_job_failed'),
     );
-    await this.pmDueQueue.add(
-      PM_DUE_JOB_NAME,
-      {},
+    this.pmDueWorker.on('error', (err) =>
+      this.log.error({ err: String(err) }, 'pm_due_sweep_worker_error'),
+    );
+    await ensureRecurringJob(
+      this.pmDueQueue,
       {
-        jobId: PM_DUE_REPEATABLE_KEY,
-        repeat: { every: PM_DUE_INTERVAL_MS },
-        removeOnComplete: { age: 7 * 24 * 60 * 60, count: 30 },
-        removeOnFail: { age: 30 * 24 * 60 * 60, count: 30 },
+        schedulerId: PM_DUE_SCHEDULER_ID,
+        jobName: PM_DUE_JOB_NAME,
+        everyMs: PM_DUE_INTERVAL_MS,
+        jobOptions: {
+          removeOnComplete: { age: 7 * 24 * 60 * 60, count: 30 },
+          removeOnFail: { age: 30 * 24 * 60 * 60, count: 30 },
+        },
       },
+      this.log,
     );
     this.log.log('maintenance_sweep_started');
   }
@@ -495,6 +502,7 @@ export class MaintenanceSweepService implements OnModuleInit, OnModuleDestroy {
       lazyConnect: false,
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
+      protocol: BULLMQ_REDIS_PROTOCOL,
     });
     this.redisConnections.push(conn);
     return conn;

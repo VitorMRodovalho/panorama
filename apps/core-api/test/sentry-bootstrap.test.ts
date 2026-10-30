@@ -7,9 +7,10 @@ import { initSentryIfConfigured } from '../src/shared/observability/sentry.boots
  * Pins the privacy contract of `initSentryIfConfigured` (ADR-0018 §2):
  * an opted-in Sentry must never carry headers, cookies, request bodies
  * or local variables. The guarantee rests on `defaultIntegrations:
- * false`; this suite asserts the EFFECT (what is installed, what an
- * event carries), not the option literal, so an SDK major that changes
- * how defaults are resolved turns it red.
+ * false`, with every SDK 11 `dataCollection` category off behind it;
+ * this suite asserts the EFFECT (what is installed, what the SDK
+ * resolved, what an event carries), not the option literal, so an SDK
+ * major that changes how defaults are resolved turns it red.
  *
  * The DSN points at a closed local port, so nothing leaves the process.
  */
@@ -26,6 +27,24 @@ const FORBIDDEN_INTEGRATIONS = [
   'Modules',
   'Context',
 ];
+
+/**
+ * True when a resolved `dataCollection` value would collect something:
+ * `true`, a non-empty list (`httpBodies`), a positive count
+ * (`frameContextLines`), an `{ allow }` / `{ deny }` filter, or a nested
+ * object with any such member.
+ */
+function collectsSomething(value: unknown): boolean {
+  if (value === false || value === undefined || value === null) return false;
+  if (value === true) return true;
+  if (typeof value === 'number') return value > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') {
+    if ('allow' in value || 'deny' in value) return true;
+    return Object.values(value).some(collectsSomething);
+  }
+  return true;
+}
 
 describe('initSentryIfConfigured — privacy contract', () => {
   afterEach(async () => {
@@ -46,7 +65,39 @@ describe('initSentryIfConfigured — privacy contract', () => {
     for (const name of FORBIDDEN_INTEGRATIONS) {
       expect(client?.getIntegrationByName(name), name).toBeUndefined();
     }
-    expect(client?.getOptions().sendDefaultPii).toBe(false);
+  });
+
+  it('installs nothing beyond what the SDK forces (allowlist)', () => {
+    // The denylist above only names integrations someone thought of;
+    // this pins the whole resolved set. SDK 11 adds `SpanStreaming`
+    // even with `defaultIntegrations: false`; with tracing off it has
+    // nothing to send (see "records no spans").
+    vi.stubEnv('SENTRY_DSN', DSN);
+    initSentryIfConfigured();
+    const names = (Sentry.getClient()?.getOptions().integrations ?? []).map((i) => i.name);
+    expect(names).toEqual(['SpanStreaming']);
+  });
+
+  it('resolves every data-collection category to off', () => {
+    // SDK 11 replaced `sendDefaultPii` with `dataCollection`, and an
+    // unset category COLLECTS. This walks the SDK's resolved view, not
+    // our literal, so a category a later SDK adds (and defaults on)
+    // turns this red instead of shipping silently.
+    vi.stubEnv('SENTRY_DSN', DSN);
+    initSentryIfConfigured();
+    const resolved = Sentry.getClient()?.getDataCollectionOptions();
+    expect(resolved).toBeDefined();
+    const collecting = Object.entries(resolved ?? {})
+      .filter(([, value]) => collectsSomething(value))
+      .map(([key]) => key);
+    expect(collecting).toEqual([]);
+  });
+
+  it('records no spans', () => {
+    vi.stubEnv('SENTRY_DSN', DSN);
+    initSentryIfConfigured();
+    const recording = Sentry.startSpan({ name: 'probe' }, (span) => span.isRecording());
+    expect(recording).toBe(false);
   });
 
   it('sends an error event without request headers, cookies, body or IP', async () => {
