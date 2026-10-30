@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "echo 'shared \u2014 types only, no runtime tests yet'",
+    "test": "echo 'shared — types only, no runtime tests yet'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
@@ -20,7 +20,10 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.2",
     "vitest": "^4.1.12"
   }
 }

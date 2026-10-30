@@ -1,3 +1,61 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# Settings that lived in .npmrc and package.json#pnpm until pnpm 11, which
+# reads neither (only auth/registry stay in .npmrc).
+
+# Fail the install when a dependency declares an incompatible Node in
+# `engines`. The other former .npmrc keys (strict-peer-dependencies=false,
+# auto-install-peers=true, enable-pre-post-scripts=true) are pnpm 12 defaults.
+engineStrict: true
+
+# Dependency build scripts run only for packages set to true here. An
+# unlisted package with a build script fails the install (strictDepBuilds
+# is on by default).
+allowBuilds:
+  # Needed: @prisma/engines downloads the engine binaries, prisma checks
+  # the environment, argon2 compiles its addon where no prebuild matches.
+  '@prisma/engines': true
+  'prisma': true
+  'argon2': true
+  # Not needed: its postinstall looks for a schema at the workspace root
+  # and finds none; CI and the Dockerfile run `prisma generate` explicitly.
+  '@prisma/client': false
+  # Not needed: the platform binary ships as an optional dependency, and
+  # the script only checks it or builds from source on request.
+  '@parcel/watcher': false
+  '@swc/core': false
+  'esbuild': false
+  'msgpackr-extract': false
+  'unrs-resolver': false
+  # Not needed: a donation banner and an install-time analytics ping.
+  '@nestjs/core': false
+  '@scarf/scarf': false
+
+# Each override is bounded to the major that contains its fix.
+overrides:
+  '@babel/core': '>=7.29.6'
+  'body-parser': '>=2.4.0 <3'
+  'brace-expansion@1': '>=1.1.18 <2'
+  'brace-expansion@2': '>=2.1.4 <3'
+  'brace-expansion@5': '>=5.0.7 <6'
+  'browserslist': '>=4.28.7 <5'
+  'deepmerge-ts': '>=8.0.0 <9'
+  'esbuild': '>=0.28.1'
+  'fast-copy': '>=3.1.0 <4'
+  'fast-uri': '>=3.1.9 <4'
+  'file-type': '>=21.3.2'
+  'form-data': '>=4.0.6'
+  'js-yaml@4': '>=4.3.2 <5'
+  'multer': '>=2.5.0 <3'
+  'nanoid@>=5': '>=5.1.16 <6'
+  'next': '>=16.4.2 <17'
+  'nodemailer': '>=10.3.1 <11'
+  'postcss': '>=8.5.23 <9'
+  'proxy-addr': '>=2.0.8 <3'
+  'qs': '>=6.16.1 <7'
+  'sharp': '>=0.35.5 <0.36'
+  'source-map-js': '>=1.2.2 <2'
+  'vite': '>=7.3.7 <8'
+  'ws@>=8.0.0 <8.21.0': '>=8.21.0'
