@@ -11,7 +11,7 @@ audience.
 
 ## Prerequisites
 
-- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.11.0"`)
+- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.15.0"`)
 - **pnpm**, the version pinned in `package.json` `packageManager`
   (`corepack enable` picks it up; no global pnpm needed)
 - **Docker + docker-compose** (the dev stack is 4 containers: Postgres,
