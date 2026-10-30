@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type TenantMembership, type Tenant } from '@prisma/client';
+import { Prisma, type TenantMembership, type Tenant } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PanoramaAuditAction } from '../audit/audit-actions.js';

@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
@@ -59,7 +60,7 @@ describe('tenant settings (Round 4 PR5)', () => {
     process.env['SESSION_SECRET'] = process.env['SESSION_SECRET'] ?? 'a'.repeat(32);
     process.env['DATABASE_URL'] = APP_URL;
 
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

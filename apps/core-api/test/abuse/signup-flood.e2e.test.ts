@@ -4,7 +4,8 @@ import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { PrismaClient, type AuditEvent } from '@prisma/client';
+import type { AuditEvent } from '../../src/generated/prisma/client.js';
+import { createPrismaClient } from '../../src/modules/prisma/prisma-client.factory.js';
 import { Redis } from 'ioredis';
 import { AppModule } from '../../src/app.module.js';
 import { OidcService, type OidcUserInfo } from '../../src/modules/auth/oidc.service.js';
@@ -74,7 +75,7 @@ describe('abuse: signup flood (Wave 0 Round 3)', () => {
     // anything resolvable is fine since we mock OidcService.start.
     process.env['APP_BASE_URL'] = process.env['APP_BASE_URL'] ?? 'http://localhost:4000';
 
-    const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
     await admin.$disconnect();
 
@@ -137,7 +138,7 @@ describe('abuse: signup flood (Wave 0 Round 3)', () => {
     // Expect at most 5 unknown_provider rows + the remainder as
     // ratelimit_tripped(ip) rows.
     const xff = '13.0.0.1';
-    const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const admin = createPrismaClient(ADMIN_URL);
     try {
       // Clear any earlier audit rows from sibling tests so the
       // count assertions are clean.
@@ -252,7 +253,7 @@ describe('abuse: signup flood — anti-spoof (Wave 0 Round 3)', () => {
     process.env['OIDC_GOOGLE_CLIENT_SECRET'] = 'test-google-secret';
     process.env['APP_BASE_URL'] = process.env['APP_BASE_URL'] ?? 'http://localhost:4000';
 
-    const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
     await admin.$disconnect();
 

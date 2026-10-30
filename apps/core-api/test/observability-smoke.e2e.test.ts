@@ -41,7 +41,13 @@ describe('observability — request-id propagation (ADR-0018)', () => {
     process.env['SESSION_SECRET'] = process.env['SESSION_SECRET'] ?? 'a'.repeat(32);
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication({ logger: ['error', 'warn'] });
+    app = moduleRef.createNestApplication({
+      logger: ['error', 'warn'],
+      // Stricter than main.ts (which only warns on a shadow): a duplicate
+      // or shadowed route anywhere in AppModule throws RouteConflictException
+      // from app.init() below, so it fails CI instead of reaching a deploy.
+      routeConflictPolicy: { duplicate: 'error', shadow: 'error' },
+    });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );

@@ -1,24 +1,23 @@
+# syntax=docker/dockerfile:1
 # Panorama core-api production image.
 #
 # Multi-stage:
 #   1. builder — installs full workspace deps, runs prisma generate + nest build,
 #      then pnpm-deploys a self-contained `/out` dir with prod-only deps + dist.
-#   2. runner  — minimal node:22-bookworm-slim with tini as PID 1, runs as
+#   2. runner  — minimal node:24-trixie-slim with tini as PID 1, runs as
 #      non-root `node`, exposes 4000.
 #
-# Sharp 0.33 prebuilt binaries assume glibc — that's why we're on bookworm-slim,
-# not alpine. Alpine would force a from-source rebuild of sharp + vips-dev.
+# Sharp's prebuilt binaries are the glibc ones — that's why we're on a Debian
+# slim image, not alpine. Alpine would force a from-source rebuild of sharp + vips-dev.
 #
 # Build:   docker build -f apps/core-api/Dockerfile -t panorama-core-api .
 # Run:     docker run --env-file .env -p 4000:4000 panorama-core-api
 # Compose: see infra/docker/compose.prod.yml
 
-# syntax=docker/dockerfile:1.7
-
 # ---------------------------------------------------------------------------
 # Stage 1 — builder
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS builder
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS builder
 
 ENV PNPM_HOME="/pnpm" \
     PATH="/pnpm:$PATH" \
@@ -43,7 +42,10 @@ RUN pnpm install --frozen-lockfile
 COPY apps/core-api/ apps/core-api/
 COPY packages/ packages/
 
-# Prisma generate first (writes the client into node_modules). Then
+# Prisma generate first (Prisma 7 `prisma-client` generator: writes the
+# client as TypeScript into apps/core-api/src/generated/prisma, so the
+# nest build below compiles it into dist/ with the rest of the app;
+# prisma.config.ts tolerates the missing DATABASE_URL here). Then
 # turbo-driven build with `--filter @panorama/core-api...` which
 # picks up the workspace package dependencies (`@panorama/shared`,
 # `@panorama/migrator`, `@panorama/plugin-sdk`) AND core-api in
@@ -61,7 +63,7 @@ RUN pnpm deploy --filter @panorama/core-api --prod /out
 # ---------------------------------------------------------------------------
 # Stage 2 — runner
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS runner
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS runner
 
 # tini = PID 1 so signals (SIGTERM, SIGINT) propagate to node and shutdown
 # hooks fire (Nest's onModuleDestroy, BullMQ worker.close, Prisma $disconnect).
@@ -82,18 +84,18 @@ COPY --from=builder /out/dist        ./dist
 COPY --from=builder /out/node_modules ./node_modules
 COPY --from=builder /out/prisma      ./prisma
 COPY --from=builder /out/package.json ./
+# The migrator service in infra/docker/compose.prod.yml runs
+# /app/scripts/apply-migrations.sh; `pnpm deploy` does not copy scripts/.
+COPY --from=builder /repo/apps/core-api/scripts ./scripts
 
-# `pnpm deploy --prod` doesn't copy the Prisma-generated client out
-# of the builder's `node_modules/.prisma/client/` directory (the
-# generated files live alongside @prisma/client but in a hidden
-# `.prisma` subdir that pnpm doesn't recognise as a real package).
-# Re-run `prisma generate` here so the runtime image has the
-# generated .prisma/client/default module @prisma/client expects.
-# Invoke via npx (ships with node) to avoid adding pnpm to the
-# runner image just for this step.
-RUN npx --no-install prisma generate
+# Prisma 7: the generated client is TypeScript under src/generated/prisma,
+# compiled into dist/ by the builder's nest build, so the runner stage no
+# longer runs `prisma generate`. The CLI (`prisma migrate deploy` in
+# scripts/apply-migrations.sh, `prisma --version`) loads prisma.config.ts
+# from /app for the schema path and the datasource URL.
+COPY --from=builder /out/prisma.config.ts ./
 
-# Run as the bookworm-slim image's pre-seeded `node` user (uid 1000).
+# Run as the Debian node image's pre-seeded `node` user (uid 1000).
 USER node
 
 EXPOSE 4000

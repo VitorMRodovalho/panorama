@@ -13,7 +13,7 @@ This file holds **how to operate as an agent in Panorama**. For sub-agent specia
 | Architecture decisions | `docs/adr/` |
 | Audit findings | `docs/audits/` (3-wave QA/QC done 2026-04-23, 126 findings) |
 | Current wave plan | `docs/audits/HANDOFF-2026-05-09-session-end.md` |
-| Security policy | `SECURITY.md`, `.gitleaks.toml`, `.trivyignore`, `.runAsSuperAdmin.allowlist.json` |
+| Security policy | `SECURITY.md`, `.gitleaks.toml`, `.trivyignore.yaml`, `.runAsSuperAdmin.allowlist.json` |
 | Contributing | `CONTRIBUTING.md` |
 | Workspace structure | `pnpm-workspace.yaml`, `turbo.json` |
 | Validation | `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm build` |
@@ -22,7 +22,7 @@ This file holds **how to operate as an agent in Panorama**. For sub-agent specia
 
 Unified open-source platform for IT asset + operational fleet management. Successor to Snipe-IT + SnipeScheduler-FleetManager. **AGPL-3.0** (fork-friendly, copyleft).
 
-**Stack:** TypeScript monorepo (pnpm + Turborepo). NestJS 11 backend (`apps/core-api`) + Next.js frontend (`apps/web`) + Prisma 6 + PostgreSQL with RLS. OIDC end-to-end. Hash-chained tamper-detected audit log. Multi-tenant from construction (RLS forced at every tenant-scoped table). Trilingual EN/PT-BR/ES.
+**Stack:** TypeScript monorepo (pnpm + Turborepo). NestJS 11 backend (`apps/core-api`) + Next.js frontend (`apps/web`) + Prisma 7 + PostgreSQL with RLS. OIDC end-to-end. Hash-chained tamper-detected audit log. Multi-tenant from construction (RLS forced at every tenant-scoped table). Trilingual EN/PT-BR/ES.
 
 **Packages:** `i18n`, `migrator`, `plugin-sdk`, `shared`, `ui-kit`.
 

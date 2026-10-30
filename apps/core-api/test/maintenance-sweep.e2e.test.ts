@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { Redis } from 'ioredis';
 import { AppModule } from '../src/app.module.js';
 import { TenantAdminService } from '../src/modules/tenant/tenant-admin.service.js';
@@ -99,7 +100,7 @@ describe('maintenance PM-due sweep e2e', () => {
     process.env.DATABASE_URL = APP_URL;
     process.env.REDIS_URL = REDIS_URL;
 
-    adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    adminDb = createPrismaClient(ADMIN_URL);
     await resetTestDb(adminDb);
 
     redis = new Redis(REDIS_URL, {

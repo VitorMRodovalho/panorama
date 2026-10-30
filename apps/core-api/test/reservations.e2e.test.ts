@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { TenantAdminService } from '../src/modules/tenant/tenant-admin.service.js';
@@ -86,7 +87,7 @@ describe('reservation flow e2e', () => {
     process.env.INVITE_RATE_ADMIN_HOUR = '10000';
     process.env.INVITE_RATE_TENANT_DAY = '100000';
 
-    adminDb = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    adminDb = createPrismaClient(ADMIN_URL);
     await resetTestDb(adminDb);
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
