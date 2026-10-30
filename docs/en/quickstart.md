@@ -11,14 +11,15 @@ audience.
 
 ## Prerequisites
 
-- **Node.js 22+** (uses `engines: ">=22"`; older versions break Vitest)
-- **pnpm 9+** (`corepack enable && corepack prepare pnpm@latest --activate`)
+- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.11.0"`)
+- **pnpm**, the version pinned in `package.json` `packageManager`
+  (`corepack enable` picks it up; no global pnpm needed)
 - **Docker + docker-compose** (the dev stack is 4 containers: Postgres,
   Redis, SeaweedFS (S3-compatible object storage), MailHog)
 
 ```bash
-node --version    # v22+ ?
-pnpm --version    # 9+ ?
+node --version    # v24.x ?
+pnpm --version    # same as packageManager ?
 docker compose version  # any modern version
 ```
 

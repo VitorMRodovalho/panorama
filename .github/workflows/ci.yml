@@ -26,7 +26,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Prisma Client's types (e.g. $transaction) are only generated once
@@ -101,7 +101,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install psql client
@@ -217,7 +217,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Workspace package dist/ has to exist for @panorama/i18n's JSON
@@ -234,7 +234,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm i18n:check
@@ -248,7 +248,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm license:check
@@ -261,7 +261,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Static gate for ADR-0002 (oss/commercial split). Round 5 PR1 / #49
@@ -327,3 +327,25 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
+
+  image-build:
+    name: Container image build (core-api)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # No other job builds apps/core-api/Dockerfile, so a broken base image,
+    # pnpm deploy or prisma generate step would only surface on a
+    # self-host install. Build only; nothing is pushed.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker build --file apps/core-api/Dockerfile --tag panorama-core-api:ci .
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          want="v$(cut -d. -f1 .nvmrc)."
+          got="$(docker run --rm --entrypoint node panorama-core-api:ci --version)"
+          echo "node in image: $got (want ${want}x, from .nvmrc)"
+          case "$got" in "$want"*) ;; *) echo "::error::image Node $got does not match .nvmrc"; exit 1 ;; esac
+          docker run --rm --entrypoint sh panorama-core-api:ci -c \
+            'test -f dist/src/main.js && id -un && ls -1 /app && ls -l node_modules/.bin/prisma'

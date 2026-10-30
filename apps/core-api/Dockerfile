@@ -3,7 +3,7 @@
 # Multi-stage:
 #   1. builder — installs full workspace deps, runs prisma generate + nest build,
 #      then pnpm-deploys a self-contained `/out` dir with prod-only deps + dist.
-#   2. runner  — minimal node:22-bookworm-slim with tini as PID 1, runs as
+#   2. runner  — minimal node:24-trixie-slim with tini as PID 1, runs as
 #      non-root `node`, exposes 4000.
 #
 # Sharp 0.33 prebuilt binaries assume glibc — that's why we're on bookworm-slim,
@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — builder
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS builder
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS builder
 
 ENV PNPM_HOME="/pnpm" \
     PATH="/pnpm:$PATH" \
@@ -61,7 +61,7 @@ RUN pnpm deploy --filter @panorama/core-api --prod /out
 # ---------------------------------------------------------------------------
 # Stage 2 — runner
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS runner
+FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS runner
 
 # tini = PID 1 so signals (SIGTERM, SIGINT) propagate to node and shutdown
 # hooks fire (Nest's onModuleDestroy, BullMQ worker.close, Prisma $disconnect).

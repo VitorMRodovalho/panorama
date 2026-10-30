@@ -1342,27 +1342,27 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `@smithy/util-waiter` | 4.3.0 | Apache-2.0 | https://github.com/smithy-lang/smithy-typescript |
 | `@smithy/uuid` | 1.1.2 | Apache-2.0 | https://github.com/smithy-lang/smithy-typescript |
 | `@standard-schema/spec` | 1.1.0 | MIT | https://github.com/standard-schema/standard-schema |
-| `@swc/core-darwin-arm64` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-darwin-x64` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm-gnueabihf` | 1.15.33 | Apache-2.0 | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-arm64-musl` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-ppc64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-s390x-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-x64-gnu` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-linux-x64-musl` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-arm64-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-ia32-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core-win32-x64-msvc` | 1.15.33 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
-| `@swc/core` | 1.15.33 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/core-darwin-arm64` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-darwin-x64` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm-gnueabihf` | 1.16.20 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-arm64-musl` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-ppc64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-s390x-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-x64-gnu` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-linux-x64-musl` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-arm64-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-ia32-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core-win32-x64-msvc` | 1.16.20 | Apache-2.0 AND MIT | https://github.com/swc-project/swc |
+| `@swc/core` | 1.16.20 | Apache-2.0 | https://github.com/swc-project/swc |
 | `@swc/counter` | 0.1.3 | Apache-2.0 | https://github.com/swc-project/pkgs |
 | `@swc/helpers` | 0.5.23 | Apache-2.0 | https://github.com/swc-project/swc |
-| `@swc/types` | 0.1.26 | Apache-2.0 | https://github.com/swc-project/swc |
+| `@swc/types` | 0.1.28 | Apache-2.0 | https://github.com/swc-project/swc |
 | `@tokenizer/inflate` | 0.4.1 | MIT | https://github.com/Borewit/tokenizer-inflate |
 | `@tokenizer/token` | 0.3.0 | MIT | https://github.com/Borewit/tokenizer-token |
 | `@types/jsonwebtoken` | 9.0.10 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@types/ms` | 2.1.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
-| `@types/node` | 22.19.17 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
+| `@types/node` | 24.19.2 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@types/validator` | 13.15.10 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | `@ucast/core` | 1.10.2 | Apache-2.0 | https://github.com/stalniy/ucast |
 | `@ucast/js` | 3.1.0 | Apache-2.0 | https://github.com/stalniy/ucast |
@@ -1593,7 +1593,7 @@ NOTE: The text of this Exhibit A may differ slightly from the text of the notice
 | `uid` | 2.0.2 | MIT | https://github.com/lukeed/uid |
 | `uint8array-extras` | 1.5.0 | MIT | https://github.com/sindresorhus/uint8array-extras |
 | `uncrypto` | 0.1.3 | MIT | https://github.com/unjs/uncrypto |
-| `undici-types` | 6.21.0 | MIT | https://github.com/nodejs/undici |
+| `undici-types` | 7.24.6 | MIT | https://github.com/nodejs/undici |
 | `unpipe` | 1.0.0 | MIT | https://github.com/stream-utils/unpipe |
 | `use-intl` | 4.11.1 | MIT | https://github.com/amannn/next-intl |
 | `utils-merge` | 1.0.1 | MIT | https://github.com/jaredhanson/utils-merge |
@@ -4479,17 +4479,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### @swc/core@1.15.33 (README.md, License section)
+### @swc/core-linux-x64-gnu@1.16.20 (LICENSE) and 4 more
 
-```text
-SWC is primarily distributed under the terms of the Apache License (Version 2.0).
-
-See [LICENSE](LICENSE) for details.
-```
-
-### @swc/helpers@0.5.23 (LICENSE) and 1 more
-
-Shipped by: `@swc/helpers@0.5.23 (LICENSE)`, `@swc/types@0.1.26 (LICENSE)`
+Shipped by: `@swc/core-linux-x64-gnu@1.16.20 (LICENSE)`, `@swc/core-linux-x64-musl@1.16.20 (LICENSE)`, `@swc/core@1.16.20 (LICENSE)`, `@swc/helpers@0.5.23 (LICENSE)`, `@swc/types@0.1.28 (LICENSE)`
 
 ```text
                               Apache License
@@ -4731,7 +4723,7 @@ THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ### @types/jsonwebtoken@9.0.10 (LICENSE) and 3 more
 
-Shipped by: `@types/jsonwebtoken@9.0.10 (LICENSE)`, `@types/ms@2.1.0 (LICENSE)`, `@types/node@22.19.17 (LICENSE)`, `@types/validator@13.15.10 (LICENSE)`
+Shipped by: `@types/jsonwebtoken@9.0.10 (LICENSE)`, `@types/ms@2.1.0 (LICENSE)`, `@types/node@24.19.2 (LICENSE)`, `@types/validator@13.15.10 (LICENSE)`
 
 ```text
     MIT License
@@ -11281,7 +11273,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### undici-types@6.21.0 (LICENSE)
+### undici-types@7.24.6 (LICENSE)
 
 ```text
 MIT License
@@ -11425,8 +11417,6 @@ Their declared licence is in the inventory above.
 - `@next/swc-linux-x64-musl@16.4.2` (MIT): https://github.com/vercel/next.js
 - `@schummar/icu-type-parser@1.21.5` (MIT): https://github.com/schummar/schummar-translate
 - `@sentry/server-utils@10.76.2` (MIT): https://github.com/getsentry/sentry-javascript
-- `@swc/core-linux-x64-gnu@1.15.33` (Apache-2.0 AND MIT): https://github.com/swc-project/swc
-- `@swc/core-linux-x64-musl@1.15.33` (Apache-2.0 AND MIT): https://github.com/swc-project/swc
 - `@swc/counter@0.1.3` (Apache-2.0): https://github.com/swc-project/pkgs
 - `client-only@0.0.1` (MIT): https://reactjs.org/
 - `server-only@0.0.1` (MIT): https://reactjs.org/
