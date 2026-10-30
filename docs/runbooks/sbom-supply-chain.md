@@ -188,7 +188,7 @@ For deeper questions, contact `vitor@vitormr.dev`.
 ## What this runbook does NOT cover
 
 - **Container-image SBOMs.** Panorama ships as a Node app + npm
-  deps SBOM; the Docker base images (`node:22-alpine`, etc.) have
+  deps SBOM; the Docker base images (`node:24-trixie-slim`, etc.) have
   their own SBOMs published by their maintainers. Operators
   running containerised deployments should generate their image
   SBOM via `syft <image>` or `trivy image --format cyclonedx`.
