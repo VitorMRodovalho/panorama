@@ -19,11 +19,19 @@ import * as Sentry from '@sentry/node';
  *   This is the BLOCKER caught by the per-PR security review
  *   (2026-05-17). Without it, self-hosting.md's "never headers,
  *   cookies, or request bodies" promise is a lie.
- * - `skipOpenTelemetrySetup: true` — we don't ship traces (alt A in
- *   ADR-0018). Without this, the SDK installs OTel HTTP
- *   instrumentation even when tracesSampleRate is 0.
- * - `sendDefaultPii: false` — belt-and-suspenders with the
- *   integration list; the AllExceptionsFilter sets only
+ * - Tracing off: no `tracesSampleRate` / `tracesSampler` and
+ *   `enableOpenTelemetrySetup: false` — we don't ship traces (alt A
+ *   in ADR-0018). SDK 11 replaced `skipOpenTelemetrySetup: true` with
+ *   `enableOpenTelemetrySetup: false` (its default for @sentry/node,
+ *   kept explicit) and emits HTTP spans whenever tracing is enabled,
+ *   so the v10 `tracesSampleRate: 0` is dropped per the v10 -> v11
+ *   migration guide ("Turning Sentry tracing off").
+ * - `dataCollection` with every category off — SDK 11 removed
+ *   `sendDefaultPii` and made an UNSET `dataCollection` permissive
+ *   (user info, cookies, headers, bodies, query params, DB/queue
+ *   payloads, stack-frame variables all collected by default). Each
+ *   category is disabled explicitly; belt-and-suspenders with the
+ *   integration list. The AllExceptionsFilter sets only
  *   `setUser({ id: userId })` and tag `tenantId`/`requestId`.
  * - `debug: false` — the SDK never prints config / DSN to stdout
  *   on boot. main.ts logs only `{ sentryEnabled: boolean }`.
@@ -41,12 +49,24 @@ export function initSentryIfConfigured(): boolean {
   const options: Sentry.NodeOptions = {
     dsn,
     debug: false,
-    sendDefaultPii: false,
-    tracesSampleRate: 0,
     environment: process.env['NODE_ENV'] ?? 'production',
     defaultIntegrations: false,
     integrations: [],
-    skipOpenTelemetrySetup: true,
+    enableOpenTelemetrySetup: false,
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      mcp: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: 0,
+    },
   };
   const release = process.env['SENTRY_RELEASE'];
   if (release) options.release = release;

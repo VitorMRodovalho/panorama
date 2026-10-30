@@ -221,3 +221,37 @@ describe('AuthConfigService — SESSION_SECRET_PREVIOUS rotation', () => {
     expect(reread).toEqual({});
   });
 });
+
+/**
+ * Seal-format stability across iron-session majors. A library upgrade
+ * that stops reading cookies already in browsers signs every user out
+ * on deploy, with no error anywhere. The fixture below was sealed by
+ * iron-session 8.0.4 (`ttl: 0`, so it never expires) under the
+ * rotation-map password shape AuthConfigService builds, with test-only
+ * keys. The installed version must still read it.
+ */
+describe('iron-session seal format — cookies issued before an upgrade', () => {
+  const ROTATION_PASSWORD = { 1: 'a'.repeat(32), 2: 'b'.repeat(32) };
+  const SEALED_BY_IRON_SESSION_8 =
+    'Fe26.2*2*3af47613abb6f0aa52f9905dfc73b1173c545384b1e118da6dcba8ba6701d969' +
+    '*ymil6ga_ryvA38o9ilbX2A*D8jAfYJYep-0fk44PFA8k7ntyJgNnC6rfkMrQQDENV04JxtM3D' +
+    'SioU7eA5h93BtPJdNLy_jOVIjaqBhzJm3Jm0zCxlCsNCxEuPML-SimJZc**eaf370803394515c' +
+    'e471ac4b97cf34407cc3d920a921e93ee93aa4f0cdc3317a*R5d3DlqKD4bYlKJFoNJbHi9gs_' +
+    'tXbvWf2gsC-182ExQ~2';
+
+  it('reads a session sealed by iron-session 8', async () => {
+    const reread = await unsealData<Record<string, unknown>>(SEALED_BY_IRON_SESSION_8, {
+      password: ROTATION_PASSWORD,
+      ttl: 0,
+    });
+    expect(reread).toEqual({ userId: 'u-v8', currentTenantId: 't-v8', issuedAt: 1761868800 });
+  });
+
+  it('rejects the same seal under a different password (control)', async () => {
+    const reread = await unsealData<Record<string, unknown>>(SEALED_BY_IRON_SESSION_8, {
+      password: { 2: 'c'.repeat(32) },
+      ttl: 0,
+    });
+    expect(reread).toEqual({});
+  });
+});
