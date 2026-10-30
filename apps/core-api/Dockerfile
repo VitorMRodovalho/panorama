@@ -25,8 +25,8 @@ WORKDIR /repo
 # pnpm's documented way to add it to an image: copy /opt/pnpm (it carries
 # the node-gyp pnpm uses for native builds) from the official image whose C
 # library matches ours (Debian -> the non-alpine tag). Keep the tag equal
-# to `packageManager` in package.json; on a mismatch pnpm downloads the
-# declared version (pmOnFail: download).
+# to `packageManager` in package.json: pnpm-workspace.yaml sets
+# `pmOnFail: ignore`, so pnpm will not switch versions by itself.
 COPY --from=ghcr.io/pnpm/pnpm:12.16.1@sha256:33081d3d2c96ba582d316cfd630f0f43961d9c60ff919b50edd1835a1462976b /opt/pnpm /opt/pnpm
 RUN for bin in pnpm pn pnpx pnx; do ln -s "/opt/pnpm/$bin" "/usr/local/bin/$bin"; done
 
