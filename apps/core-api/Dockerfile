@@ -19,12 +19,16 @@
 # ---------------------------------------------------------------------------
 FROM node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS builder
 
-ENV PNPM_HOME="/pnpm" \
-    PATH="/pnpm:$PATH" \
-    CI=1
+ENV CI=1
 WORKDIR /repo
 
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+# pnpm's documented way to add it to an image: copy /opt/pnpm (it carries
+# the node-gyp pnpm uses for native builds) from the official image whose C
+# library matches ours (Debian -> the non-alpine tag). Keep the tag equal
+# to `packageManager` in package.json: pnpm-workspace.yaml sets
+# `pmOnFail: ignore`, so pnpm will not switch versions by itself.
+COPY --from=ghcr.io/pnpm/pnpm:12.16.1@sha256:33081d3d2c96ba582d316cfd630f0f43961d9c60ff919b50edd1835a1462976b /opt/pnpm /opt/pnpm
+RUN for bin in pnpm pn pnpx pnx; do ln -s "/opt/pnpm/$bin" "/usr/local/bin/$bin"; done
 
 # Workspace manifests first → maximal Docker layer cache reuse on source-only edits.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json ./

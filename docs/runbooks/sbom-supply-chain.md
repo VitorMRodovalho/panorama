@@ -28,7 +28,8 @@ installs at runtime, with:
 What it does **NOT** contain:
 
 - devDependencies (vitest, prettier, eslint, etc.) — stripped by
-  `pnpm install --prod`. SBOM reflects what ships, not what builds.
+  `pnpm sbom --prod` (after `pnpm install --prod`). SBOM reflects what
+  ships, not what builds.
 - Postgres / Redis / Docker base-image dependencies. The SBOM is
   scoped to the Node.js runtime surface; OS-level dependencies
   live in the container's separate SBOM (out of scope today; see
@@ -173,7 +174,7 @@ A summary of Panorama's supply-chain posture as of 2026-05-18:
 | Property | Status |
 |---|---|
 | SBOM format | CycloneDX 1.5 JSON |
-| SBOM generation | Reproducible via `pnpm install --prod --frozen-lockfile` + `@cyclonedx/cyclonedx-npm@^3` |
+| SBOM generation | Reproducible via `pnpm install --prod --frozen-lockfile` + `pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.5 --prod` |
 | Signing | cosign keyless (sigstore Fulcio + GH OIDC) on release tags |
 | Transparency log | Rekor — every signing event publicly auditable |
 | Lockfile pinning | pnpm-lock.yaml committed; CI gates use `--frozen-lockfile` |
