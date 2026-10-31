@@ -9,6 +9,7 @@
 // `pnpm --filter @panorama/web lint` runs `eslint .` directly; Next 16
 // removed the `next lint` command.
 
+import { defineConfig, globalIgnores } from 'eslint/config';
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -20,15 +21,16 @@ const __dirname = path.dirname(__filename);
 // (see its dependencies). Do NOT spread `tseslint.configs.recommended`
 // here too — that re-registers the same plugin name and ESLint 10 hard-
 // errors with `Cannot redefine plugin "@typescript-eslint"`.
-export default [
-  {
-    ignores: [
-      '.next/**',
-      'node_modules/**',
-      'next-env.d.ts',
-      'eslint.config.mjs',
-    ],
-  },
+//
+// `defineConfig` + `globalIgnores` from `eslint/config` is the shape the
+// Next.js ESLint docs (16.4) and ESLint 10 document for flat configs.
+export default defineConfig([
+  globalIgnores([
+    '.next/**',
+    'node_modules/**',
+    'next-env.d.ts',
+    'eslint.config.mjs',
+  ]),
   ...nextCoreWebVitals,
   {
     languageOptions: {
@@ -58,4 +60,4 @@ export default [
       // (added in #149), not by ESLint.
     },
   },
-];
+]);

@@ -1,7 +1,7 @@
 {
   "name": "@panorama/plugin-sdk",
   "version": "0.0.0",
-  "description": "Panorama plugin SDK \u2014 typed event contract (types-only at 0.3 per ADR-0006).",
+  "description": "Panorama plugin SDK — typed event contract (types-only at 0.3 per ADR-0006).",
   "license": "AGPL-3.0-or-later",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,13 +10,16 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "echo 'plugin-sdk \u2014 runtime + tests land with first plugin in 0.4'",
+    "test": "echo 'plugin-sdk — runtime + tests land with first plugin in 0.4'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.2",
-    "typescript": "^6.0.3"
+    "eslint": "^10.14.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1"
   }
 }
