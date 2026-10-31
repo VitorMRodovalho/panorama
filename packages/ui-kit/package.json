@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "echo 'ui-kit \u2014 scaffold only, first components land in 0.2'",
+    "test": "echo 'ui-kit — scaffold only, first components land in 0.2'",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.3.0",
     "eslint": "^10.14.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"

@@ -19,7 +19,6 @@ updates:
       next:
         patterns:
           - "next"
-          - "next-intl"
           - "eslint-config-next"
       react:
         patterns:
