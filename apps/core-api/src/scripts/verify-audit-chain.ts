@@ -37,7 +37,7 @@
  *       empty result when a cutover marker was expected, etc.)
  */
 
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../modules/prisma/prisma-client.factory.js';
 import { createHash } from 'node:crypto';
 
 interface AuditRow {
@@ -105,7 +105,7 @@ async function main(): Promise<number> {
   }
 
   const json = process.argv.includes('--json');
-  const prisma = new PrismaClient({ datasources: { db: { url } } });
+  const prisma = createPrismaClient(url);
 
   try {
     // CRITICAL: `panorama_enable_bypass_rls()` sets a tx-local GUC

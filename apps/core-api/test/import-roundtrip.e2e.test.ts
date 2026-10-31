@@ -5,7 +5,8 @@ import { AddressInfo } from 'node:net';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { runMigrate } from '@panorama/migrator';
 import { ImportService } from '../src/modules/import/import.service.js';
 import { PrismaService } from '../src/modules/prisma/prisma.service.js';
@@ -173,7 +174,7 @@ describe('migrator → import-fixtures round-trip', () => {
     process.env.DATABASE_URL = ADMIN_URL;
 
     // Fresh DB state — super_admin wipes; BYPASSRLS handles cross-tenant reach.
-    adminPrisma = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    adminPrisma = createPrismaClient(ADMIN_URL);
     await resetTestDb(adminPrisma);
 
     mock = await startMock(buildMock());

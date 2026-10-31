@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
@@ -46,7 +46,7 @@ describe('assets e2e', () => {
     process.env.DATABASE_URL = APP_URL;
 
     // Seed fixtures via the super-admin role (bypass RLS).
-    const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     const a = await createTenantForTest(admin, {

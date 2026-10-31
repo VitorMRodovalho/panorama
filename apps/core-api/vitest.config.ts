@@ -55,6 +55,8 @@ export default defineConfig({
         'src/**/index.ts',
         'src/main.ts',
         'src/scripts/**',
+        // Prisma Client output (`prisma generate`), not hand-written code.
+        'src/generated/**',
         // Top-level prisma/ (seed, migrations). Vitest 5 matches these
         // patterns relative to the project root; vitest <=4 matched with
         // picomatch `contains`, so this entry also dropped

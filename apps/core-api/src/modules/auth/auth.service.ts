@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { PanoramaAuditAction } from '../audit/audit-actions.js';

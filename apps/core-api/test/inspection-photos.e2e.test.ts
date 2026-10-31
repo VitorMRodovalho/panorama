@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { randomUUID, createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { AppModule } from '../src/app.module.js';
@@ -58,7 +59,7 @@ describe('inspection photos e2e', () => {
     // exercise the storage path without it.
     await assertObjectStorageReady();
 
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     const a = await createTenantForTest(admin, {

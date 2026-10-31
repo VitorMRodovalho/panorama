@@ -15,7 +15,7 @@ import {
 } from '@panorama/shared';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface ImportOptions {

@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { Redis } from 'ioredis';
 import { gunzipSync } from 'node:zlib';
 import { AppModule } from '../src/app.module.js';
@@ -68,7 +69,7 @@ describe('tenant export (ADR-0020 §8, PR 4)', () => {
     process.env['SESSION_SECRET'] = process.env['SESSION_SECRET'] ?? 'a'.repeat(32);
     process.env['DATABASE_URL'] = APP_URL;
 
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     redis = new Redis(REDIS_URL);
