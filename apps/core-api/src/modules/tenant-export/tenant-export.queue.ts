@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
+import { BULLMQ_REDIS_PROTOCOL } from '../../shared/queue/bullmq.js';
 import { TenantExportService } from './tenant-export.service.js';
 
 /**
@@ -67,8 +68,9 @@ export class TenantExportQueue implements OnModuleInit, OnModuleDestroy {
     if (this.queue) return;
     const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379/0';
 
-    const queueConn = new Redis(redisUrl, { maxRetriesPerRequest: null });
-    const workerConn = new Redis(redisUrl, { maxRetriesPerRequest: null });
+    const connOpts = { maxRetriesPerRequest: null, protocol: BULLMQ_REDIS_PROTOCOL };
+    const queueConn = new Redis(redisUrl, connOpts);
+    const workerConn = new Redis(redisUrl, connOpts);
     this.redisConnections = [queueConn, workerConn];
 
     this.queue = new Queue<TenantExportJobPayload>(TENANT_EXPORT_QUEUE, {
@@ -80,6 +82,9 @@ export class TenantExportQueue implements OnModuleInit, OnModuleDestroy {
         await this.exports.runJob(job.data.jobId);
       },
       { connection: workerConn, concurrency: 1 },
+    );
+    this.worker.on('error', (err) =>
+      this.log.error({ err: String(err) }, 'tenant_export_worker_error'),
     );
     this.log.log('tenant_export_queue_started');
   }
