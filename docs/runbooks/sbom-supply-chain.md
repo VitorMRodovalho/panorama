@@ -57,11 +57,11 @@ workflow:
 1. Regenerates the SBOM
 2. Signs it via cosign keyless (GitHub OIDC → Fulcio → ephemeral
    cert; signature logged to Rekor transparency log)
-3. Attaches three files to the GitHub release:
+3. Attaches two files to the GitHub release:
    - `panorama-sbom.json` — the SBOM itself
-   - `panorama-sbom.json.sig` — detached signature
-   - `panorama-sbom.json.crt` — Fulcio cert tying the signature
-     to the workflow run that produced it
+   - `panorama-sbom.json.sigstore.json` — the Sigstore bundle
+     (cosign 3): the signature, the Fulcio cert tying it to the
+     workflow run that produced it, and the Rekor inclusion proof
 
 Releases live at:
 
@@ -69,7 +69,7 @@ Releases live at:
 https://github.com/VitorMRodovalho/panorama/releases
 ```
 
-Each release's Assets section carries the three files.
+Each release's Assets section carries the two files.
 
 ## How to verify a signed SBOM
 
@@ -91,16 +91,15 @@ cosign version
 Verify the SBOM signature:
 
 ```bash
-# Download the three files from the release Assets:
+# Download the two files from the release Assets:
 gh release download v0.x -p 'panorama-sbom.json*'
 
-# Verify against the GitHub-OIDC identity that signed.
-# The cert-identity-regexp matches any workflow run on the panorama
-# repo's main branch; the cert-oidc-issuer is the GH Actions OIDC
-# provider.
+# Verify against the GitHub-OIDC identity that signed (cosign 3+).
+# The cert-identity-regexp matches the sbom.yml workflow run on a
+# `v*` release tag of the panorama repo; the cert-oidc-issuer is
+# the GH Actions OIDC provider.
 cosign verify-blob \
-    --signature panorama-sbom.json.sig \
-    --certificate panorama-sbom.json.crt \
+    --bundle panorama-sbom.json.sigstore.json \
     --certificate-identity-regexp "https://github.com/VitorMRodovalho/panorama/.github/workflows/sbom.yml@refs/tags/v.*" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     panorama-sbom.json
@@ -189,7 +188,7 @@ For deeper questions, contact `vitor@vitormr.dev`.
 ## What this runbook does NOT cover
 
 - **Container-image SBOMs.** Panorama ships as a Node app + npm
-  deps SBOM; the Docker base images (`node:22-alpine`, etc.) have
+  deps SBOM; the Docker base images (`node:24-trixie-slim`, etc.) have
   their own SBOMs published by their maintainers. Operators
   running containerised deployments should generate their image
   SBOM via `syft <image>` or `trivy image --format cyclonedx`.

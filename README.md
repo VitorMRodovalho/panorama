@@ -138,7 +138,7 @@ test cross-tenant isolation — at
 The TL;DR:
 
 ```bash
-# Pre-req: Node 22+, pnpm 9+, Docker, Docker Compose v2
+# Pre-req: Node 24 (.nvmrc), pnpm via corepack (packageManager), Docker, Docker Compose v2
 corepack enable
 pnpm install
 cp apps/core-api/.env.example apps/core-api/.env

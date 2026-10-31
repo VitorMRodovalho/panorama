@@ -108,7 +108,7 @@ export class SignupStateStore {
     if (!key || typeof key !== 'string' || key.length === 0) {
       return { kind: 'missing' };
     }
-    let raw: string | null = null;
+    let raw: string | null;
     try {
       raw = await this.redis.client.getdel(KEY_PREFIX + key);
     } catch (err) {

@@ -58,7 +58,9 @@ fi
 MIGRATE_URL="${DATABASE_DIRECT_URL:-$DATABASE_URL}"
 
 echo ">> prisma migrate deploy"
-DATABASE_URL="$MIGRATE_URL" node ./node_modules/.bin/prisma migrate deploy
+# Run the bin shim itself: under pnpm it is a /bin/sh script, so
+# `node ./node_modules/.bin/prisma` fails with a SyntaxError.
+DATABASE_URL="$MIGRATE_URL" ./node_modules/.bin/prisma migrate deploy
 
 echo ">> applying rls.sql files in migration order"
 for dir in prisma/migrations/*/; do

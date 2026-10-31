@@ -55,6 +55,10 @@ export default defineConfig({
         'src/**/index.ts',
         'src/main.ts',
         'src/scripts/**',
+        // Top-level prisma/ (seed, migrations). Vitest 5 matches these
+        // patterns relative to the project root; vitest <=4 matched with
+        // picomatch `contains`, so this entry also dropped
+        // src/modules/prisma/** (PrismaService) from the report.
         'prisma/**',
       ],
       // Re-baselined 2026-10-09 for the vitest 4 instrument change, not a

@@ -5,21 +5,20 @@
 // package's tsconfig and would error on parser projectService discovery.
 
 import js from '@eslint/js';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
-  {
-    ignores: [
-      'dist/**',
-      'coverage/**',
-      'node_modules/**',
-      'test/**',
-      'vitest.config.ts',
-      'eslint.config.mjs',
-    ],
-  },
+export default defineConfig(
+  globalIgnores([
+    'dist/**',
+    'coverage/**',
+    'node_modules/**',
+    'test/**',
+    'vitest.config.ts',
+    'eslint.config.mjs',
+  ]),
   js.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {
       parserOptions: {

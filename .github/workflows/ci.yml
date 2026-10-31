@@ -22,11 +22,11 @@ jobs:
     name: Lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Prisma Client's types (e.g. $transaction) are only generated once
@@ -72,7 +72,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
         ports:
           - 6379:6379
       # MailHog — outbound SMTP target. v1.0.1 is permanent (project dormant).
@@ -97,11 +97,11 @@ jobs:
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install psql client
@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           docker run -d --name s3 --network host \
             -v "$PWD/infra/docker/seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro" \
-            chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
+            chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8 \
             mini -ip=127.0.0.1 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json \
             -bucket=panorama-photos -s3.autoCreateBucket=false \
             -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
@@ -203,21 +203,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: core-api-coverage
           path: apps/core-api/coverage/
           retention-days: 14
 
   web-test:
-    name: Web unit tests
+    name: Web unit tests + Next.js build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Workspace package dist/ has to exist for @panorama/i18n's JSON
@@ -225,16 +225,21 @@ jobs:
       # the core-api test job's pre-build at line 141.
       - run: pnpm --filter '!@panorama/core-api' --filter '!@panorama/web' build
       - run: pnpm --filter @panorama/web test
+      # No other job runs `next build`, so a type or route error only the
+      # production compiler sees would merge unnoticed. Needs no env vars.
+      - run: pnpm --filter @panorama/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
 
   i18n-coverage:
     name: i18n coverage (EN = PT-BR = ES)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm i18n:check
@@ -244,11 +249,11 @@ jobs:
     name: Dependency licence scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm license:check
@@ -257,11 +262,11 @@ jobs:
     name: No enterprise imports in community sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Static gate for ADR-0002 (oss/commercial split). Round 5 PR1 / #49
@@ -300,10 +305,12 @@ jobs:
     # Pinned action version (was @master) per OSSF Scorecard
     # pinned-deps. Bumps go through deliberate review.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy report (SARIF, never blocks)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          # The action's default Trivy is older than the latest release.
+          version: v0.76.1
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: '0'
@@ -311,15 +318,41 @@ jobs:
           output: trivy-results.sarif
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-results.sarif
           category: trivy
       - name: Trivy gate (blocks on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          # Trivy v0.76.1 is already on PATH from the SARIF pass.
+          skip-setup-trivy: true
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
+
+  image-build:
+    name: Container image build (core-api)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # No other job builds apps/core-api/Dockerfile, so a broken base image,
+    # pnpm deploy or prisma generate step would only surface on a
+    # self-host install. Build only; nothing is pushed.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker build --file apps/core-api/Dockerfile --tag panorama-core-api:ci .
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          want="v$(cut -d. -f1 .nvmrc)."
+          got="$(docker run --rm --entrypoint node panorama-core-api:ci --version)"
+          echo "node in image: $got (want ${want}x, from .nvmrc)"
+          case "$got" in "$want"*) ;; *) echo "::error::image Node $got does not match .nvmrc"; exit 1 ;; esac
+          # The runtime entry, the migrator entry used by compose.prod.yml,
+          # and the Prisma CLI as apply-migrations.sh invokes it.
+          docker run --rm --entrypoint sh -e CHECKPOINT_DISABLE=1 panorama-core-api:ci -c \
+            'set -e; id -un; ls -1 /app; test -f dist/src/main.js; test -f scripts/apply-migrations.sh; ./node_modules/.bin/prisma --version'

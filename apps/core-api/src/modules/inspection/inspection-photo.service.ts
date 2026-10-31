@@ -405,7 +405,7 @@ export class InspectionPhotoService {
   ): Promise<void> {
     const ttlSeconds = viewKind === 'list' ? 300 : 60;
     const key = `audit:photo-view:${actor.userId}:${photoId}:${viewKind}`;
-    let shouldRecord = true;
+    let shouldRecord: boolean;
     try {
       const reply = await this.redis.client.set(key, '1', 'EX', ttlSeconds, 'NX');
       shouldRecord = reply === 'OK';
