@@ -70,6 +70,15 @@ updates:
         versions:
           - "0.45.0"
           - "0.45.1"
+      # TypeScript 7.0 ships the `tsc` executable but not the compiler API.
+      # The Nest CLI (core-api build), typescript-eslint (peer
+      # ">=4.8.4 <6.1.0") and scripts/i18n-jsx-gate.ts need that API, so
+      # #354 (6.0.3 -> 7.0.2) failed lint, build and the i18n job. Remove this
+      # entry once a 7.x release ships the compiler API (announced for 7.1)
+      # AND typescript-eslint's typescript peer range includes it.
+      - dependency-name: "typescript"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
