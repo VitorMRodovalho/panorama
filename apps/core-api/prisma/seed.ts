@@ -6,10 +6,19 @@
  * Never runs in production: the script exits immediately if the DATABASE_URL
  * looks prod-like, unless ALLOW_DESTRUCTIVE_SEED=true.
  */
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 
-const prisma = new PrismaClient();
+// Run through `prisma db seed` (the `prisma:seed` script), which loads
+// `.env` via prisma.config.ts. Prisma 7 builds the client from an
+// explicit connection string; without one, refuse rather than let `pg`
+// fall back to the PG* environment variables.
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error('DATABASE_URL is not set; refusing to seed.');
+  process.exit(1);
+}
+const prisma = createPrismaClient(databaseUrl);
 const passwords = new PasswordService();
 
 /**

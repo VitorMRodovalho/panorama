@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { AuthService } from '../src/modules/auth/auth.service.js';
 import { resetTestDb } from './_reset-db.js';
@@ -40,7 +41,7 @@ describe('buildSessionForUser — pendingVerification filter (ADR-0020 §3)', ()
     process.env['SESSION_SECRET'] = process.env['SESSION_SECRET'] ?? 'a'.repeat(32);
     process.env['DATABASE_URL'] = APP_URL;
 
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     const moduleRef = await Test.createTestingModule({

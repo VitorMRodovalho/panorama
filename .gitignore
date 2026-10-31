@@ -26,6 +26,9 @@ apps/*/.env*
 # Prisma local bits
 apps/core-api/prisma/*.db
 apps/core-api/prisma/*.db-journal
+# Prisma Client (Prisma 7 `prisma-client` generator output). Regenerated
+# by `pnpm --filter @panorama/core-api prisma:generate`; never committed.
+apps/core-api/src/generated/
 
 # IDE / OS
 .idea/

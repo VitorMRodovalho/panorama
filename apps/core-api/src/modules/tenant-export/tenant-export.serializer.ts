@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 
 /**
  * ADR-0020 §8 — collect every tenant-scoped row into a single

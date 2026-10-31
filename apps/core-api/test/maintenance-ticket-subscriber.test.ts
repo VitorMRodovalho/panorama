@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NotificationEvent } from '@prisma/client';
+import type { NotificationEvent } from '../src/generated/prisma/client.js';
 import { MaintenanceTicketSubscriber } from '../src/modules/maintenance/maintenance-ticket.subscriber.js';
 import type {
   AutoOpenResult,

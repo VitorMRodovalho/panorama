@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import type { NotificationEvent, Prisma } from '@prisma/client';
+import type { NotificationEvent, Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ChannelRegistry, type ChannelHandler } from './channel-registry.js';

@@ -63,7 +63,7 @@ export class TurnstileVerifier {
 
     const tokenHash = sha256Hex(token);
     const dedupeKey = DEDUPE_PREFIX + tokenHash;
-    let dedupeAccepted = false;
+    let dedupeAccepted: boolean;
     try {
       // NX + EX in one round-trip: only the first request to present
       // the token wins; subsequent attempts within the window return

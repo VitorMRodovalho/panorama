@@ -34,7 +34,7 @@ trilingüe desde el día 1 (EN/PT-BR/ES). Auto-hospédalo o usa la vista previa 
 
 🚧 **Acceso anticipado — abierto al uso, esperá aristas.** Inicio 2026-04-17.
 
-- **Backend:** listo para producción (NestJS 11 + Prisma 6 + Postgres RLS + OIDC probado
+- **Backend:** listo para producción (NestJS 12 + Prisma 7 + Postgres RLS + OIDC probado
   end-to-end vía [#92](https://github.com/VitorMRodovalho/panorama/issues/92)). Dependencias
   al día hasta 2026-05-09 ([#123](https://github.com/VitorMRodovalho/panorama/issues/123)).
 - **App web:** en construcción activa. ~10% de la superficie de funcionalidades hoy;

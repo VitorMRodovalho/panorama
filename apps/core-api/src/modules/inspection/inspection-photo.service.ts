@@ -18,7 +18,7 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { InspectionPhoto } from '@prisma/client';
+import type { InspectionPhoto } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ObjectStorageService } from '../object-storage/object-storage.service.js';
@@ -405,7 +405,7 @@ export class InspectionPhotoService {
   ): Promise<void> {
     const ttlSeconds = viewKind === 'list' ? 300 : 60;
     const key = `audit:photo-view:${actor.userId}:${photoId}:${viewKind}`;
-    let shouldRecord = true;
+    let shouldRecord: boolean;
     try {
       const reply = await this.redis.client.set(key, '1', 'EX', ttlSeconds, 'NX');
       shouldRecord = reply === 'OK';

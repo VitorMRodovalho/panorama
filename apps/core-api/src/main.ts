@@ -17,6 +17,13 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    // Nest 12 route-conflict detector (opt-in; off by default). Express
+    // matches routes in registration order, so a `@Get(':id')` declared
+    // before `@Get('me')` silently swallows it. A duplicate (same method
+    // and path) refuses to boot; a shadow is logged. CI is stricter:
+    // observability-smoke.e2e.test.ts boots AppModule with both kinds
+    // set to 'error', so a new conflict fails there before any deploy.
+    routeConflictPolicy: { duplicate: 'error', shadow: 'warn' },
   });
 
   // Replace Nest's default line-formatted Logger with pino. The

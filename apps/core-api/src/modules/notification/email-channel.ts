@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { NotificationEvent } from '@prisma/client';
+import type { NotificationEvent } from '../../generated/prisma/client.js';
 import { EmailService } from '../email/email.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ChannelHandler } from './channel-registry.js';

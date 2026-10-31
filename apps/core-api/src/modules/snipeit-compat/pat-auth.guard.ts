@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import type { PersonalAccessToken } from '@prisma/client';
+import type { PersonalAccessToken } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PatMembershipCache } from '../auth/pat-membership-cache.service.js';
 import { PersonalAccessTokenService } from '../auth/personal-access-token.service.js';

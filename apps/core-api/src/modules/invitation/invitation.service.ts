@@ -9,8 +9,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { uniqueViolationOf } from '../prisma/prisma-errors.js';
 import { AuditService } from '../audit/audit.service.js';
 import { RateLimiter, type RateLimitDecision } from '../redis/rate-limiter.js';
 import { InvitationConfigService } from './invitation.config.js';
@@ -789,26 +790,21 @@ export class InvitationService {
   }
 
   /**
-   * Prisma's P2002 for `invitations_one_open_per_tenant_email` surfaces
-   * as `meta.target = ['tenantId', 'email']` — the partial-unique index
-   * is invisible to Prisma's error-shaping. We infer the collision from
-   * the column tuple + the `invitations` model so other unique keys
-   * (e.g. a future secondary index) don't false-match.
+   * The P2002 for `invitations_one_open_per_tenant_email` (a partial
+   * unique index). Under Prisma 7 the violated constraint comes from
+   * the pg driver adapter: by name (`index`) when Postgres reports it,
+   * else as the key columns (`fields`). Matching on the column tuple
+   * only within this model's create path keeps other unique keys (e.g.
+   * a future secondary index) from false-matching.
    */
   private isOpenInvitationCollision(err: unknown): boolean {
-    if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
-    if (err.code !== 'P2002') return false;
-    const target = (err.meta as { target?: unknown } | undefined)?.target;
-    if (typeof target === 'string') {
-      return target.includes('invitations_one_open_per_tenant_email');
+    const violation = uniqueViolationOf(err);
+    if (!violation) return false;
+    if (violation.index !== undefined) {
+      return violation.index === 'invitations_one_open_per_tenant_email';
     }
-    if (Array.isArray(target)) {
-      const cols = target.map((t) => String(t));
-      if (cols.some((c) => c.includes('invitations_one_open_per_tenant_email'))) return true;
-      const set = new Set(cols.map((c) => c.toLowerCase()));
-      return set.has('tenantid') && set.has('email');
-    }
-    return false;
+    const set = new Set((violation.fields ?? []).map((c) => c.toLowerCase()));
+    return set.has('tenantid') && set.has('email');
   }
 
   private rejectIfLimited(decision: RateLimitDecision, label: string): void {
