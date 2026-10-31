@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { enableGracefulShutdown } from './bootstrap/shutdown-hooks.js';
 import { resolveTrustProxyHops } from './bootstrap/trust-proxy-hops.js';
 import { PinoLoggerService } from './shared/observability/pino-logger.service.js';
 import { initSentryIfConfigured } from './shared/observability/sentry.bootstrap.js';
@@ -70,6 +71,10 @@ async function bootstrap(): Promise<void> {
   // forwards 5xx exceptions to Sentry when opted in (ADR-0018 §2 + §3).
   // Tightly scoped — does NOT auto-attach req body / headers.
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // SIGTERM / SIGINT run the module destroy and shutdown hooks (Prisma,
+  // Redis, BullMQ workers, HTTP server) before the process exits.
+  enableGracefulShutdown(app);
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
