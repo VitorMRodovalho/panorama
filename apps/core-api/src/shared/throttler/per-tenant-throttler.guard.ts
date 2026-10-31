@@ -21,6 +21,13 @@ import { currentTenantId } from '../../modules/tenant/tenant.context.js';
  *   run, so `currentTenantId()` is the authoritative tenant on every
  *   authenticated request.
  *
+ * The IP part comes from the base guard's `getTracker`, which (since
+ * @nestjs/throttler 6.7.0) masks IPv6 sources to their /64, so a client
+ * cannot get a fresh bucket per request by rotating addresses inside
+ * its own allocation. IPv4, IPv4-mapped and loopback addresses come
+ * back unchanged. The prefix length is the module's `ipv6SubnetPrefix`
+ * option (default 64).
+ *
  * The fall-back to `'unknown'` for missing IP is defensive — Fly's
  * edge always populates X-Forwarded-For, but a misconfigured proxy
  * could theoretically strip it. `'unknown'` is the shared bucket for
@@ -30,7 +37,7 @@ import { currentTenantId } from '../../modules/tenant/tenant.context.js';
 export class PerTenantThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Request): Promise<string> {
     const tenantId = currentTenantId();
-    const ip = req.ip ?? 'unknown';
+    const ip = req.ip ? await super.getTracker(req) : 'unknown';
     return tenantId ? `${tenantId}:${ip}` : ip;
   }
 }

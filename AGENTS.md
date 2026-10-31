@@ -13,7 +13,7 @@ This file holds **how to operate as an agent in Panorama**. For sub-agent specia
 | Architecture decisions | `docs/adr/` |
 | Audit findings | `docs/audits/` (3-wave QA/QC done 2026-04-23, 126 findings) |
 | Current wave plan | `docs/audits/HANDOFF-2026-05-09-session-end.md` |
-| Security policy | `SECURITY.md`, `.gitleaks.toml`, `.trivyignore`, `.runAsSuperAdmin.allowlist.json` |
+| Security policy | `SECURITY.md`, `.gitleaks.toml`, `.trivyignore.yaml`, `.runAsSuperAdmin.allowlist.json` |
 | Contributing | `CONTRIBUTING.md` |
 | Workspace structure | `pnpm-workspace.yaml`, `turbo.json` |
 | Validation | `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm build` |

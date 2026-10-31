@@ -57,6 +57,10 @@ export default defineConfig({
         'src/scripts/**',
         // Prisma Client output (`prisma generate`), not hand-written code.
         'src/generated/**',
+        // Top-level prisma/ (seed, migrations). Vitest 5 matches these
+        // patterns relative to the project root; vitest <=4 matched with
+        // picomatch `contains`, so this entry also dropped
+        // src/modules/prisma/** (PrismaService) from the report.
         'prisma/**',
       ],
       // Re-baselined 2026-10-09 for the vitest 4 instrument change, not a

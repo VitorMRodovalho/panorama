@@ -33,7 +33,7 @@ hosted preview.
 
 🚧 **Early access — open for use, expect rough edges.** Bootstrapped 2026-04-17.
 
-- **Backend:** production-ready (NestJS 11 + Prisma 7 + Postgres RLS + OIDC end-to-end tested
+- **Backend:** production-ready (NestJS 12 + Prisma 7 + Postgres RLS + OIDC end-to-end tested
   via [#92](https://github.com/VitorMRodovalho/panorama/issues/92)). Dependency surface current
   through 2026-05-09 ([#123](https://github.com/VitorMRodovalho/panorama/issues/123)).
 - **Web app:** in active build. ~10% of feature surface today; nav + asset CRUD + checkout
@@ -138,7 +138,7 @@ test cross-tenant isolation — at
 The TL;DR:
 
 ```bash
-# Pre-req: Node 22+, pnpm 9+, Docker, Docker Compose v2
+# Pre-req: Node 24 (.nvmrc), pnpm via corepack (packageManager), Docker, Docker Compose v2
 corepack enable
 pnpm install
 cp apps/core-api/.env.example apps/core-api/.env
