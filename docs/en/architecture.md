@@ -22,7 +22,7 @@ self-hosting. Kept deliberately code-focused; product/marketing lives in the REA
                                          │
                         ┌────────────────┴─────────────────┐
                         │        apps/core-api              │
-                        │        (NestJS 10, Node 20)       │
+                        │        (NestJS, Node 24 LTS)      │
                         │  ┌───────────────────────────┐    │
                         │  │  Domain modules:          │    │
                         │  │  auth, tenants, users,    │    │
