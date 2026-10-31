@@ -135,7 +135,7 @@ echo ">> artefact dir: $OUT_DIR" >&2
 #
 # pg_dump refuses to dump a server whose major version is newer than the
 # client's major (it accepts SAME or OLDER server). Real-world drift:
-# Supabase upgraded staging to PG17 while the local dev-stack runs PG16.
+# Supabase upgraded staging to PG17 while the local dev-stack still ran PG16.
 # Solution: if local pg_dump major < server major, fall back to running
 # pg_dump/pg_restore inside a `postgres:<server-major>` Docker container.
 # psql + jq are local-only (no version coupling on the client side for
