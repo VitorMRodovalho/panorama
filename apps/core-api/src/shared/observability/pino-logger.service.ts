@@ -156,19 +156,26 @@ export class PinoLoggerService implements LoggerService {
   /**
    * Nest's Logger calls our methods with positional args that vary by
    * call site: `log('msg', 'Context')`, `error('msg', stack, 'Context')`,
-   * `warn({ structured: true }, 'Context')`. Normalize into a single
-   * `{ context?, stack?, ...obj }, msg` shape pino accepts.
+   * `warn({ structured: true }, 'event_name', 'Context')`. Normalize into
+   * a single `{ context?, stack?, ...obj }, msg` shape pino accepts.
    */
   private emit(level: LogLevel, message: unknown, rest: unknown[]): void {
     const pinoLevel = NEST_TO_PINO[level];
     const tail = rest.slice();
     let context: string | undefined;
     let stack: string | undefined;
+    let event: string | undefined;
 
     if (tail.length > 0 && typeof tail[tail.length - 1] === 'string') {
       context = tail.pop() as string;
     }
-    if (level === 'error' && tail.length > 0 && typeof tail[0] === 'string') {
+    const isPlainObject = !!message && typeof message === 'object' && !(message instanceof Error);
+    if (isPlainObject && typeof tail[0] === 'string') {
+      // Object-first call, `log.warn({ err }, 'event_name')`: the string
+      // after the object is the event name (pino's msg), at every level.
+      // At error level it is not a stack trace (#337).
+      event = tail.shift() as string;
+    } else if (level === 'error' && tail.length > 0 && typeof tail[0] === 'string') {
       stack = tail.shift() as string;
     }
 
@@ -180,8 +187,10 @@ export class PinoLoggerService implements LoggerService {
       this.logger[pinoLevel](meta, message);
     } else if (message instanceof Error) {
       this.logger[pinoLevel]({ ...meta, err: message }, message.message);
-    } else if (message && typeof message === 'object') {
-      this.logger[pinoLevel]({ ...meta, ...(message as Record<string, unknown>) });
+    } else if (isPlainObject) {
+      const fields = { ...meta, ...(message as Record<string, unknown>) };
+      if (event !== undefined) this.logger[pinoLevel](fields, event);
+      else this.logger[pinoLevel](fields);
     } else {
       this.logger[pinoLevel](meta, String(message));
     }
