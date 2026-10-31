@@ -144,3 +144,12 @@ updates:
       - infra
     commit-message:
       prefix: "chore(infra)"
+    ignore:
+      # The Postgres major follows the managed Postgres the hosted
+      # staging runs (17), moved by hand together with the CI service
+      # image in ci.yml, which Dependabot does not update. A major also
+      # needs a dump/restore of existing volumes (docs/en/self-hosting.md),
+      # and from 18 the official image changes its volume layout.
+      - dependency-name: "postgres"
+        update-types:
+          - version-update:semver-major

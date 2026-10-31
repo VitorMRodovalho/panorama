@@ -157,6 +157,40 @@ the release that moved to Prisma 7:
   transaction-mode pooler works as is. Keep `DATABASE_DIRECT_URL` for
   migrations behind a pooler.
 
+### Postgres 16 → 17 (Compose)
+
+The Compose files moved from Postgres 16 to 17. Postgres does not open
+a data directory written by another major version: on the old volume
+the `postgres` container exits with `FATAL: database files are
+incompatible with server` and leaves the data untouched. Move the data
+with a logical dump:
+
+```bash
+C="docker compose -f infra/docker/compose.prod.yml"
+VOL=docker_panorama_pg   # <project>_panorama_pg; the project defaults to `docker`
+
+# 1. Still on the old release: dump everything, roles included.
+$C exec -T postgres pg_dumpall -U "$POSTGRES_USER" > panorama-pg16.sql
+$C down
+
+# 2. Keep a copy of the old volume until the restore is verified.
+docker run --rm -v "$VOL":/v:ro -v "$PWD":/out alpine \
+  tar czf /out/panorama_pg-16.tar.gz -C /v .
+docker volume rm "$VOL"
+
+# 3. On the new release: Postgres 17 on a fresh volume, then restore.
+$C up -d postgres
+$C exec -T postgres psql -U "$POSTGRES_USER" -d postgres < panorama-pg16.sql
+```
+
+Step 3 prints five `already exists` errors, all expected. The
+database and the `panorama` role come from `POSTGRES_DB` and
+`POSTGRES_USER`, and `postgres-init.sql` creates `panorama_app`,
+`panorama_super_admin` and the `panorama_system` schema before the
+restore runs. Compare row counts against the old instance, then run the
+migrator and bring up the API as above. `compose.dev.yml` takes the
+same steps.
+
 ## TLS + reverse proxy
 
 Panorama itself does NOT terminate TLS. Put **Caddy / nginx /
