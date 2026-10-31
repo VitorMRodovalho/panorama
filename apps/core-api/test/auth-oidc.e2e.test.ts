@@ -5,7 +5,8 @@ import type { INestApplication } from '@nestjs/common';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { exportJWK, generateKeyPair, type JWK, type KeyObject, SignJWT } from 'jose';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 
 // IMPORTANT: env vars MUST be set before any module that reads them
 // loads. AppModule's transitive imports (AuthConfigService) read
@@ -228,7 +229,7 @@ describe('OIDC end-to-end (stubbed Google IdP) — #92', () => {
 
     // 3. Reset DB + seed tenant + user (whose email matches the stub's
     //    id_token claim — so loginWithOidc takes the email-link path).
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
     const tenant = await createTenantForTest(admin, {
       slug: 'oidc-e2e',

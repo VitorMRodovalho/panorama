@@ -6,16 +6,17 @@ import {
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
+import { BULLMQ_REDIS_PROTOCOL, ensureRecurringJob } from '../../shared/queue/bullmq.js';
 import { TenantDeletionService } from './tenant-deletion.service.js';
 
 /**
  * ADR-0020 §7 — purge cron.
  *
- * Daily BullMQ repeatable job that asks `TenantDeletionService` to
+ * Daily BullMQ Job Scheduler that asks `TenantDeletionService` to
  * process every tenant whose `deletionScheduledAt` is in the past.
  * Mirrors the `MaintenanceSweepService` shape (#74 / ADR-0016 §9):
  * Queue + Worker on the same process, idle-in-tests, single
- * repeatable-key so a redeploy doesn't accumulate duplicate jobs.
+ * scheduler id so a redeploy doesn't accumulate duplicate jobs.
  *
  * The actual cascade work lives in the service; this file is the
  * scheduling shell.
@@ -23,7 +24,7 @@ import { TenantDeletionService } from './tenant-deletion.service.js';
 
 const PURGE_QUEUE = 'tenant-deletion-purge';
 const PURGE_JOB_NAME = 'sweep';
-const PURGE_REPEATABLE_KEY = 'tenant-deletion-daily';
+const PURGE_SCHEDULER_ID = 'tenant-deletion-daily';
 const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -51,8 +52,9 @@ export class TenantDeletionSweepService implements OnModuleInit, OnModuleDestroy
     if (this.queue) return;
     const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379/0';
 
-    const queueConn = new Redis(redisUrl, { maxRetriesPerRequest: null });
-    const workerConn = new Redis(redisUrl, { maxRetriesPerRequest: null });
+    const connOpts = { maxRetriesPerRequest: null, protocol: BULLMQ_REDIS_PROTOCOL };
+    const queueConn = new Redis(redisUrl, connOpts);
+    const workerConn = new Redis(redisUrl, connOpts);
     this.redisConnections = [queueConn, workerConn];
 
     this.queue = new Queue(PURGE_QUEUE, { connection: queueConn });
@@ -65,18 +67,21 @@ export class TenantDeletionSweepService implements OnModuleInit, OnModuleDestroy
       },
       { connection: workerConn, concurrency: 1 },
     );
+    this.worker.on('error', (err) =>
+      this.log.error({ err: String(err) }, 'tenant_deletion_worker_error'),
+    );
 
-    // One repeatable per process — re-creating with the same key is
-    // idempotent in BullMQ 5.x; the old upcoming job is replaced.
-    await this.queue.add(
-      PURGE_JOB_NAME,
-      {},
+    // One schedule per queue — upserting the same scheduler id is
+    // idempotent; the pending next job is replaced, not duplicated.
+    await ensureRecurringJob(
+      this.queue,
       {
-        repeat: { every: PURGE_INTERVAL_MS },
-        jobId: PURGE_REPEATABLE_KEY,
-        removeOnComplete: true,
-        removeOnFail: 10,
+        schedulerId: PURGE_SCHEDULER_ID,
+        jobName: PURGE_JOB_NAME,
+        everyMs: PURGE_INTERVAL_MS,
+        jobOptions: { removeOnComplete: true, removeOnFail: 10 },
       },
+      this.log,
     );
 
     this.log.log({ intervalMs: PURGE_INTERVAL_MS }, 'tenant_deletion_sweep_started');

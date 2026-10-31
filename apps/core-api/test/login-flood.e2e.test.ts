@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { resetTestDb } from './_reset-db.js';
 
@@ -43,7 +43,7 @@ describe('abuse: login flood (Wave 0 Round 2)', () => {
     // Reset is needed because the throttler bucket persists across
     // tests within a process; an empty DB ensures the login lookups
     // return 401 quickly without depending on seeded state.
-    const admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    const admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
     await admin.$disconnect();
 

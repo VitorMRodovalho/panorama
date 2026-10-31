@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { enableGracefulShutdown } from './bootstrap/shutdown-hooks.js';
 import { resolveTrustProxyHops } from './bootstrap/trust-proxy-hops.js';
 import { PinoLoggerService } from './shared/observability/pino-logger.service.js';
 import { initSentryIfConfigured } from './shared/observability/sentry.bootstrap.js';
@@ -17,6 +18,13 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    // Nest 12 route-conflict detector (opt-in; off by default). Express
+    // matches routes in registration order, so a `@Get(':id')` declared
+    // before `@Get('me')` silently swallows it. A duplicate (same method
+    // and path) refuses to boot; a shadow is logged. CI is stricter:
+    // observability-smoke.e2e.test.ts boots AppModule with both kinds
+    // set to 'error', so a new conflict fails there before any deploy.
+    routeConflictPolicy: { duplicate: 'error', shadow: 'warn' },
   });
 
   // Replace Nest's default line-formatted Logger with pino. The
@@ -63,6 +71,10 @@ async function bootstrap(): Promise<void> {
   // forwards 5xx exceptions to Sentry when opted in (ADR-0018 §2 + §3).
   // Tightly scoped — does NOT auto-attach req body / headers.
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // SIGTERM / SIGINT run the module destroy and shutdown hooks (Prisma,
+  // Redis, BullMQ workers, HTTP server) before the process exits.
+  enableGracefulShutdown(app);
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);

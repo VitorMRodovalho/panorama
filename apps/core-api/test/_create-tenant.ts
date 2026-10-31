@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../src/generated/prisma/client.js';
 
 /**
  * Shared test helper: create a tenant with its required system user

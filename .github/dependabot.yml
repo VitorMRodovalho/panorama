@@ -19,7 +19,6 @@ updates:
       next:
         patterns:
           - "next"
-          - "next-intl"
           - "eslint-config-next"
       react:
         patterns:
@@ -63,6 +62,14 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
+      # argon2 0.45.0 and 0.45.1 write PHC strings as m,p,t; the spec
+      # requires m,t,p (ranisalt/node-argon2#559).
+      # test/password.service.test.ts fails on them. Only these two
+      # versions are listed, so a fixed release is still proposed.
+      - dependency-name: "argon2"
+        versions:
+          - "0.45.0"
+          - "0.45.1"
 
   - package-ecosystem: github-actions
     directory: /
@@ -137,3 +144,12 @@ updates:
       - infra
     commit-message:
       prefix: "chore(infra)"
+    ignore:
+      # The Postgres major follows the managed Postgres the hosted
+      # staging runs (17), moved by hand together with the CI service
+      # image in ci.yml, which Dependabot does not update. A major also
+      # needs a dump/restore of existing volumes (docs/en/self-hosting.md),
+      # and from 18 the official image changes its volume layout.
+      - dependency-name: "postgres"
+        update-types:
+          - version-update:semver-major

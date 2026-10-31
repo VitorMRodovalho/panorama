@@ -60,7 +60,9 @@ export class RateLimiter {
         return { allowed: true, remaining: Math.max(0, limit - count), retryAfterSeconds: 0 };
       }
       // Over budget: return the oldest member's age to compute retry-after.
-      const oldest = await this.redis.client.zrange(key, 0, 0, 'WITHSCORES');
+      // `stop` as a string: ioredis 6.0.0 types `stop` as
+      // `string | Buffer` only (redis/ioredis#2162, fixed in 6.1).
+      const oldest = await this.redis.client.zrange(key, 0, '0', 'WITHSCORES');
       const oldestScore = oldest.length >= 2 ? Number(oldest[1]) : now - windowMs;
       const retryAfterMs = Math.max(0, oldestScore + windowMs - now);
       return {
@@ -83,7 +85,7 @@ export class RateLimiter {
    */
   async release(key: string, limit: number, windowMs: number): Promise<void> {
     try {
-      const members = await this.redis.client.zrange(key, -1, -1);
+      const members = await this.redis.client.zrange(key, -1, '-1'); // ioredis#2162
       if (members.length > 0) {
         await this.redis.client.zrem(key, members[0]!);
       }

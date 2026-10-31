@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import type { PersonalAccessToken, Prisma } from '@prisma/client';
+import type { PersonalAccessToken, Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { RateLimiter } from '../redis/rate-limiter.js';

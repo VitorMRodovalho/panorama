@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NotificationEvent } from '@prisma/client';
+import type { NotificationEvent } from '../src/generated/prisma/client.js';
 import { InspectionOutcomeEmailChannel } from '../src/modules/notification/inspection-outcome-email-channel.js';
 import type { EmailService } from '../src/modules/email/email.service.js';
 import type { PrismaService } from '../src/modules/prisma/prisma.service.js';

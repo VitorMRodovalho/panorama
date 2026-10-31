@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { AppModule } from '../src/app.module.js';
 import { PasswordService } from '../src/modules/auth/password.service.js';
 import { resetTestDb } from './_reset-db.js';
@@ -51,7 +52,7 @@ describe('reservation inspection tether e2e', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = APP_URL;
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     const a = await createTenantForTest(admin, {

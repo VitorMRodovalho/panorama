@@ -61,7 +61,7 @@ self-hosting. Kept deliberately code-focused; product/marketing lives in the REA
 
 ## 2. Data plane
 
-Postgres 16 with:
+Postgres 17 with:
 
 - `pg_stat_statements`, `pgcrypto`, `uuid-ossp`
 - `pgvector` (Enterprise-only for predictive maintenance embeddings)
@@ -131,9 +131,11 @@ See ADR-0003. Short version:
 ## 7. i18n
 
 - `packages/i18n/{en,pt-br,es}/*.json` — translation bundles, keyed by feature
-- Frontend uses `next-intl`. Backend email templates
+- Frontend: `apps/web/src/lib/i18n.ts`, a server-only loader over those
+  bundles. Backend email templates
   (`apps/core-api/src/modules/**/*-email.templates.ts`) carry their EN / PT-BR /
-  ES copy inline and format dates with `Intl`; no i18n library is involved yet
+  ES copy inline and format dates with `Intl`. Neither side uses an i18n
+  library yet
 - CI check: every EN key must exist in PT-BR and ES; missing keys fail the
   build. A `scripts/i18n-check.ts` produces a coverage report per PR.
 - Contributor flow: add keys in EN, open PR, CI shows missing translations, a

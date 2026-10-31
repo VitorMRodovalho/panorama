@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import argon2 from 'argon2';
 
+// argon2 renamed its `Options` typedef to `HashOptions` in 0.45.0
+// without a release note, which turned `argon2.Options` into an
+// unresolved (error) type. Derive the alias from the public `hash()`
+// signature instead, so a typedef rename cannot silently untype the
+// call sites again (same approach as `IronSessionPassword` in
+// auth.config.ts).
+type Argon2HashOptions = NonNullable<Parameters<typeof argon2.hash>[1]>;
+
 /**
  * Password hashing + verification. Argon2id with the OWASP 2024
  * recommended parameters as the floor. We tune `memoryCost` up on
@@ -11,7 +19,7 @@ import argon2 from 'argon2';
 export class PasswordService {
   private readonly log = new Logger('PasswordService');
 
-  private readonly hashOptions: argon2.Options = {
+  private readonly hashOptions: Argon2HashOptions = {
     type: argon2.argon2id,
     memoryCost: 19_456, // KiB = ~19 MiB
     timeCost: 2,

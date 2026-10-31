@@ -4,7 +4,8 @@ import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/client.js';
+import { createPrismaClient } from '../src/modules/prisma/prisma-client.factory.js';
 import { Redis } from 'ioredis';
 import { AppModule } from '../src/app.module.js';
 import { OidcService, type OidcUserInfo } from '../src/modules/auth/oidc.service.js';
@@ -68,7 +69,7 @@ describe('email verification (ADR-0020 §3, PR 2)', () => {
     process.env['OIDC_GOOGLE_CLIENT_SECRET'] = 'test-google-secret';
     process.env['APP_BASE_URL'] = process.env['APP_BASE_URL'] ?? 'http://localhost:4000';
 
-    admin = new PrismaClient({ datasources: { db: { url: ADMIN_URL } } });
+    admin = createPrismaClient(ADMIN_URL);
     await resetTestDb(admin);
 
     redis = new Redis(REDIS_URL);

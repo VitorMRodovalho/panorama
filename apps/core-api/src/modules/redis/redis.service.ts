@@ -19,11 +19,14 @@ export class RedisService implements OnModuleDestroy {
   get client(): Redis {
     if (this._client) return this._client;
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379/0';
-    const opts: RedisOptions = {
+    // `satisfies`, not an annotation: ioredis 6's exported RedisOptions
+    // declares `replyMapping?: … | undefined`, which the constructor's
+    // own parameter type rejects under `exactOptionalPropertyTypes`.
+    const opts = {
       lazyConnect: false,
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
-    };
+    } satisfies RedisOptions;
     const client = new Redis(url, opts);
     client.on('error', (err: Error) => this.log.warn({ err: String(err) }, 'redis_error'));
     this._client = client;

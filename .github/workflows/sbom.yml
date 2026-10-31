@@ -74,16 +74,17 @@ jobs:
         id: generate
         run: |
           set -euo pipefail
-          # @cyclonedx/cyclonedx-npm walks the installed node_modules
-          # tree and emits a CycloneDX v1.5 JSON SBOM. Pinned major
-          # version; bump deliberately.
-          pnpm dlx @cyclonedx/cyclonedx-npm@^3 \
-            --output-format JSON \
-            --output-file panorama-sbom.json \
-            --spec-version 1.5 \
-            --short-PURLs \
-            --omit dev \
-            --validate
+          # pnpm's own `sbom` command (pnpm 11+) reads pnpm-lock.yaml for
+          # the whole workspace and the store for each package's metadata
+          # (licences), so the install above stays. `--prod` leaves out
+          # what only devDependencies reach. CycloneDX 1.5 is kept on
+          # purpose: the generator changed, the published format did not.
+          pnpm sbom \
+            --sbom-format cyclonedx \
+            --sbom-spec-version 1.5 \
+            --sbom-type application \
+            --prod \
+            --out panorama-sbom.json
           # Emit metadata that the sigstore step + release attachment
           # consumes.
           echo "sbom_path=panorama-sbom.json" >> "$GITHUB_OUTPUT"

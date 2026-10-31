@@ -55,7 +55,9 @@ git checkout v0.3.0   # replace with the latest tag
 cp .env.example .env
 # Edit .env — at minimum set:
 #   POSTGRES_PASSWORD     (strong random)
-#   DATABASE_URL          (panorama_app role; sslmode=require if pointing off-host)
+#   DATABASE_URL          (panorama_app role; sslmode=require if pointing off-host,
+#                          which verifies the certificate: see "Database connection
+#                          strings under Prisma 7" below)
 #   DATABASE_PRIVILEGED_URL (panorama_super_admin role; ADR-0015)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (the MinIO sidecar uses these as its root creds)
 #   SESSION_SECRET        (generate via `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`)
@@ -125,6 +127,69 @@ docker compose -f infra/docker/compose.prod.yml up -d core-api
 
 The migrator service is idempotent. Re-running it on an unchanged
 DB is a no-op.
+
+### Database connection strings under Prisma 7
+
+The API talks to Postgres through `node-postgres` (Prisma 7's
+`@prisma/adapter-pg` driver adapter), not Prisma's former Rust engine.
+Check `DATABASE_URL` / `DATABASE_PRIVILEGED_URL` when you upgrade past
+the release that moved to Prisma 7:
+
+- **TLS.** `sslmode=require` (and `prefer`, `verify-ca`) now **verify the
+  server certificate and host name** (node-postgres treats them as
+  `verify-full`) and log a `SECURITY WARNING` about the alias. Prisma 6
+  encrypted without verifying. If your Postgres presents a certificate
+  from a private CA (common on managed providers), trust that CA: point
+  `NODE_EXTRA_CA_CERTS` at the CA bundle, or add
+  `sslrootcert=/path/to/ca.pem` to the URL. Do not disable verification.
+  `prisma migrate deploy` (the migrator) still runs on Prisma's schema
+  engine binary, not node-postgres, so this change applies to the API.
+- **Pool size.** `connection_limit=N` is still honoured (it sets the
+  node-postgres pool size). Without it the pool holds up to 10
+  connections per client (Prisma 6 derived it from the CPU count). The
+  API runs two clients (app + privileged, ADR-0015).
+- **Timeouts.** Connecting or waiting for a pooled connection gives up
+  after 5 s, and idle connections close after 300 s (the Prisma 6
+  defaults). `pool_timeout`, `connect_timeout` and `socket_timeout` in
+  the URL are ignored.
+- **Poolers.** `pgbouncer=true` is ignored and no longer needed: the
+  adapter does not cache named prepared statements, so a
+  transaction-mode pooler works as is. Keep `DATABASE_DIRECT_URL` for
+  migrations behind a pooler.
+
+### Postgres 16 → 17 (Compose)
+
+The Compose files moved from Postgres 16 to 17. Postgres does not open
+a data directory written by another major version: on the old volume
+the `postgres` container exits with `FATAL: database files are
+incompatible with server` and leaves the data untouched. Move the data
+with a logical dump:
+
+```bash
+C="docker compose -f infra/docker/compose.prod.yml"
+VOL=docker_panorama_pg   # <project>_panorama_pg; the project defaults to `docker`
+
+# 1. Still on the old release: dump everything, roles included.
+$C exec -T postgres pg_dumpall -U "$POSTGRES_USER" > panorama-pg16.sql
+$C down
+
+# 2. Keep a copy of the old volume until the restore is verified.
+docker run --rm -v "$VOL":/v:ro -v "$PWD":/out alpine \
+  tar czf /out/panorama_pg-16.tar.gz -C /v .
+docker volume rm "$VOL"
+
+# 3. On the new release: Postgres 17 on a fresh volume, then restore.
+$C up -d postgres
+$C exec -T postgres psql -U "$POSTGRES_USER" -d postgres < panorama-pg16.sql
+```
+
+Step 3 prints five `already exists` errors, all expected. The
+database and the `panorama` role come from `POSTGRES_DB` and
+`POSTGRES_USER`, and `postgres-init.sql` creates `panorama_app`,
+`panorama_super_admin` and the `panorama_system` schema before the
+restore runs. Compare row counts against the old instance, then run the
+migrator and bring up the API as above. `compose.dev.yml` takes the
+same steps.
 
 ## TLS + reverse proxy
 

@@ -21,7 +21,7 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-panorama}
@@ -39,7 +39,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
     restart: unless-stopped
     command: ['redis-server', '--save', '60', '1', '--loglevel', 'warning']
     ports:

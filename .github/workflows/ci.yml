@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
         env:
           POSTGRES_USER: panorama
           POSTGRES_PASSWORD: panorama
@@ -72,7 +72,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
         ports:
           - 6379:6379
       # MailHog — outbound SMTP target. v1.0.1 is permanent (project dormant).
@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           docker run -d --name s3 --network host \
             -v "$PWD/infra/docker/seaweedfs-s3.dev.json:/etc/seaweedfs/s3.json:ro" \
-            chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
+            chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8 \
             mini -ip=127.0.0.1 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json \
             -bucket=panorama-photos -s3.autoCreateBucket=false \
             -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
@@ -210,7 +210,7 @@ jobs:
           retention-days: 14
 
   web-test:
-    name: Web unit tests
+    name: Web unit tests + Next.js build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -225,6 +225,11 @@ jobs:
       # the core-api test job's pre-build at line 141.
       - run: pnpm --filter '!@panorama/core-api' --filter '!@panorama/web' build
       - run: pnpm --filter @panorama/web test
+      # No other job runs `next build`, so a type or route error only the
+      # production compiler sees would merge unnoticed. Needs no env vars.
+      - run: pnpm --filter @panorama/web build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
 
   i18n-coverage:
     name: i18n coverage (EN = PT-BR = ES)

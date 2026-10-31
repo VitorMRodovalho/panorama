@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { getIronSession, type SessionOptions } from 'iron-session';
+import { getIronSession, type SessionOptions, type UnsealErrorReason } from 'iron-session';
 import type { Request, Response } from 'express';
 import { AuthConfigService } from './auth.config.js';
 import type { OidcStateCookie, PanoramaSession } from './session.types.js';
@@ -19,6 +19,23 @@ export class SessionService {
 
   constructor(private readonly cfg: AuthConfigService) {}
 
+  /**
+   * iron-session 9 hook: a cookie that cannot be read yields an empty
+   * session either way; this only makes the reason visible. Expiry is
+   * how sessions normally end, so it stays at debug. `unknown-password`
+   * points at a botched SESSION_SECRET rotation, `invalid` at tampering
+   * or probing. Neither the cookie nor the error is logged.
+   */
+  private unsealErrorLogger(cookieName: string): (reason: UnsealErrorReason) => void {
+    return (reason) => {
+      if (reason === 'expired') {
+        this.log.debug({ cookieName, reason }, 'session_cookie_unseal_failed');
+      } else {
+        this.log.warn({ cookieName, reason }, 'session_cookie_unseal_failed');
+      }
+    };
+  }
+
   private sessionOptions(): SessionOptions {
     const { sessionPassword, sessionCookieName, sessionMaxAgeSeconds, isProduction } = this.cfg.config;
     return {
@@ -27,6 +44,7 @@ export class SessionService {
       // all keys are tried for decrypt). See AuthConfigService.
       password: sessionPassword,
       cookieName: sessionCookieName,
+      onUnsealError: this.unsealErrorLogger(sessionCookieName),
       ttl: sessionMaxAgeSeconds,
       cookieOptions: {
         httpOnly: true,
@@ -48,6 +66,7 @@ export class SessionService {
       // key would 500 every callback during a rotation window.
       password: sessionPassword,
       cookieName: oauthStateCookieName,
+      onUnsealError: this.unsealErrorLogger(oauthStateCookieName),
       ttl: oauthStateMaxAgeSeconds,
       cookieOptions: {
         httpOnly: true,

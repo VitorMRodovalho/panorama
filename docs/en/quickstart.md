@@ -11,7 +11,7 @@ audience.
 
 ## Prerequisites
 
-- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.11.0"`)
+- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.15.0"`)
 - **pnpm**, the version pinned in `package.json` `packageManager`
   (`corepack enable` picks it up; no global pnpm needed)
 - **Docker + docker-compose** (the dev stack is 4 containers: Postgres,
@@ -71,12 +71,20 @@ NEW=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url
 sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$NEW|" apps/core-api/.env
 ```
 
-## 4. Apply migrations + seed
+## 4. Generate the Prisma Client, apply migrations + seed
 
 ```bash
+pnpm --filter @panorama/core-api prisma:generate
 pnpm --filter @panorama/core-api prisma:deploy
 pnpm --filter @panorama/core-api prisma:seed
 ```
+
+Prisma 7 does not generate the client on `pnpm install` any more, and
+`prisma migrate dev` no longer runs `generate` or the seed for you. Re-run
+`prisma:generate` after every change to `apps/core-api/prisma/schema.prisma`
+(the client lands in `apps/core-api/src/generated/prisma`, which is
+gitignored). The Prisma CLI reads `apps/core-api/.env` through
+`apps/core-api/prisma.config.ts`.
 
 The seed output ends with:
 

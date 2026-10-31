@@ -36,10 +36,11 @@ import {
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ObjectStorageService } from '../object-storage/object-storage.service.js';
+import { BULLMQ_REDIS_PROTOCOL, ensureRecurringJob } from '../../shared/queue/bullmq.js';
 import {
   effectiveRetentionDays,
   parseInspectionTenantConfig,
@@ -53,12 +54,12 @@ const STALE_BATCH_SIZE = 500;
 // ADR-0015 v2 — durable scheduling for the photo retention sweep.
 // `setInterval` resets on Fly machine restart; the 24 h cadence on a
 // DOT 49 CFR §396.3 compliance signal can drift by days under
-// restart-heavy days. BullMQ's repeatable-job dedupes on jobId so a
+// restart-heavy days. A BullMQ Job Scheduler is keyed on its id, so a
 // restart re-attaches to the existing schedule. Stale-IN_PROGRESS
 // (1 h) stays on setInterval — losing a poll cycle there is fine.
 const PHOTO_SWEEP_QUEUE = 'inspection-photo-retention';
 const PHOTO_SWEEP_JOB_NAME = 'sweep';
-const PHOTO_SWEEP_REPEATABLE_KEY = 'photo-retention-daily';
+const PHOTO_SWEEP_SCHEDULER_ID = 'photo-retention-daily';
 
 @Injectable()
 export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestroy {
@@ -97,8 +98,8 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
       }, STALE_SWEEP_INTERVAL_MS);
     }
 
-    // Photo retention sweep — durable BullMQ repeatable job. The
-    // jobId-based dedupe means a Fly machine restart re-attaches
+    // Photo retention sweep — durable BullMQ Job Scheduler. The
+    // scheduler-id upsert means a Fly machine restart re-attaches
     // to the existing schedule rather than spawning a duplicate or
     // skipping a run.
     if (!this.photoSweepQueue) {
@@ -116,15 +117,21 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
       this.photoSweepWorker.on('failed', (_job, err) =>
         this.log.warn({ err: String(err) }, 'photo_sweep_job_failed'),
       );
-      await this.photoSweepQueue.add(
-        PHOTO_SWEEP_JOB_NAME,
-        {},
+      this.photoSweepWorker.on('error', (err) =>
+        this.log.error({ err: String(err) }, 'photo_sweep_worker_error'),
+      );
+      await ensureRecurringJob(
+        this.photoSweepQueue,
         {
-          jobId: PHOTO_SWEEP_REPEATABLE_KEY,
-          repeat: { every: PHOTO_SWEEP_INTERVAL_MS },
-          removeOnComplete: { age: 7 * 24 * 60 * 60, count: 30 },
-          removeOnFail: { age: 30 * 24 * 60 * 60, count: 30 },
+          schedulerId: PHOTO_SWEEP_SCHEDULER_ID,
+          jobName: PHOTO_SWEEP_JOB_NAME,
+          everyMs: PHOTO_SWEEP_INTERVAL_MS,
+          jobOptions: {
+            removeOnComplete: { age: 7 * 24 * 60 * 60, count: 30 },
+            removeOnFail: { age: 30 * 24 * 60 * 60, count: 30 },
+          },
         },
+        this.log,
       );
     }
 
@@ -153,8 +160,9 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
   /**
    * BullMQ requires the same `lazyConnect: false` /
    * `enableReadyCheck: false` / `maxRetriesPerRequest: null` shape on
-   * every connection — mirrors the invitation queue pattern at
-   * `invitation-email.queue.ts:230-239`.
+   * every connection — mirrors the invitation queue pattern in
+   * `invitation-email.queue.ts` `makeConnection()`. RESP2 per
+   * `BULLMQ_REDIS_PROTOCOL`.
    */
   private makeRedis(): Redis {
     const url = process.env['REDIS_URL'] ?? 'redis://localhost:6379/0';
@@ -162,6 +170,7 @@ export class InspectionMaintenanceService implements OnModuleInit, OnModuleDestr
       lazyConnect: false,
       enableReadyCheck: false,
       maxRetriesPerRequest: null,
+      protocol: BULLMQ_REDIS_PROTOCOL,
     });
     this.redisConnections.push(conn);
     return conn;
