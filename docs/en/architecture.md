@@ -61,7 +61,7 @@ self-hosting. Kept deliberately code-focused; product/marketing lives in the REA
 
 ## 2. Data plane
 
-Postgres 16 with:
+Postgres 17 with:
 
 - `pg_stat_statements`, `pgcrypto`, `uuid-ossp`
 - `pgvector` (Enterprise-only for predictive maintenance embeddings)

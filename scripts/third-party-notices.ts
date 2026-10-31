@@ -19,7 +19,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
+import { parseAllDocuments } from 'yaml';
 
 const ROOT = join(__dirname, '..');
 const STORE = join(ROOT, 'node_modules', '.pnpm');
@@ -170,8 +170,32 @@ function cell(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
+// pnpm 11+ writes the package manager's own lock (an importer that only
+// carries configDependencies / packageManagerDependencies) as a separate YAML
+// document ahead of the project lockfile. Skip that document and refuse to
+// guess if the rest is not exactly one project lockfile.
+function readLockfile(text: string): Lockfile {
+  const docs = parseAllDocuments(text);
+  if (!Array.isArray(docs)) throw new Error('pnpm-lock.yaml: no YAML document found');
+  const isPnpmOwnLock = (d: Partial<Lockfile>): boolean => {
+    const root = (d.importers?.['.'] ?? {}) as Record<string, unknown>;
+    return 'packageManagerDependencies' in root || 'configDependencies' in root;
+  };
+  const projects = docs
+    .map((d) => {
+      if (d.errors.length > 0) throw new Error(`pnpm-lock.yaml: ${d.errors[0]?.message}`);
+      return d.toJS() as Partial<Lockfile> | null;
+    })
+    .filter((d): d is Lockfile => Boolean(d?.importers?.['.'] && d.packages && d.snapshots))
+    .filter((d) => !isPnpmOwnLock(d));
+  if (projects.length !== 1) {
+    throw new Error(`pnpm-lock.yaml: expected 1 project document, found ${projects.length}`);
+  }
+  return projects[0] as Lockfile;
+}
+
 async function main(): Promise<void> {
-  const lock = parse(readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf8')) as Lockfile;
+  const lock = readLockfile(readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf8'));
   const storeDirs = readdirSync(STORE);
   const keys = prodClosure(lock);
 
