@@ -46,9 +46,18 @@ Use `scripts/setup-staging-env.sh` (interactive bootstrapper added
 ./scripts/setup-staging-env.sh
 ```
 
-It prompts for the two URLs (hidden input), validates shape, probes
-both connections with non-destructive `SELECT`s, and writes
-`apps/core-api/.env.staging` at mode 600. The file is gitignored.
+It asks for the project's CA certificate (or reads its path from
+`SUPABASE_CA_FILE`), prompts for the two URLs (hidden input), validates
+shape, probes both connections with non-destructive `SELECT`s under
+`sslmode=verify-full`, and writes `apps/core-api/.env.staging` at mode
+600. The file is gitignored.
+
+First download the CA certificate (project's **Database Settings → SSL
+Configuration**) and check its fingerprint against
+[Supabase: trust the provider's CA](../en/self-hosting.md#supabase-trust-the-provider-s-ca).
+Without it the API cannot connect: Node does not trust Supabase's root.
+The script writes the CA's absolute path into all three URLs, in the
+TLS form each client needs.
 
 In the Supabase dashboard for the project:
 
@@ -164,12 +173,17 @@ loose — investigate before proceeding.
 
 ## Step 5 — Configure the staging Fly.io app
 
-Outside Supabase, create the Fly app pointing at the URLs from step 1:
+Outside Supabase, create the Fly app pointing at the URLs from step 1.
+The TLS parameters name the CA by its path **inside the container**
+(`/etc/panorama/supabase-ca.crt` below): ship the certificate with the
+deploy so that file exists at boot, and run the handshake check from
+[Supabase: trust the provider's CA](../en/self-hosting.md#supabase-trust-the-provider-s-ca)
+for each host and port first.
 
 ```bash
 flyctl apps create panorama-staging --org personal
 flyctl secrets set --app panorama-staging \
-  DATABASE_URL="postgres://postgres:...@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10&sslmode=require" \
+  DATABASE_URL="postgres://postgres:...@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10&sslmode=verify-full&sslrootcert=/etc/panorama/supabase-ca.crt" \
   # connection_limit=10 — per Prisma client × 2 clients (app + privileged
   # per ADR-0015) × Fly instances ≤ 100 to leave headroom under Supabase
   # Pro pooler's 200 client-conn cap. Public-preview budget assumes ≤2
@@ -177,8 +191,10 @@ flyctl secrets set --app panorama-staging \
   # fraction = ~10 in-flight × 2 clients = 20 client conns per instance.
   # If you ever scale beyond 4 instances, lower this or request the
   # Supabase pooler cap bump first.
-  DATABASE_PRIVILEGED_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
-  DATABASE_DIRECT_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=require" \
+  DATABASE_PRIVILEGED_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=verify-full&sslrootcert=/etc/panorama/supabase-ca.crt" \
+  # DATABASE_DIRECT_URL is read only by `prisma migrate deploy`, whose
+  # engine verifies only with sslaccept=strict and the CA in sslcert.
+  DATABASE_DIRECT_URL="postgres://postgres:...@db.<project-ref>.supabase.co:5432/postgres?sslmode=require&sslaccept=strict&sslcert=/etc/panorama/supabase-ca.crt" \
   REDIS_URL="rediss://default:...@<upstash-endpoint>:6379" \
   S3_ENDPOINT="https://<r2-account-id>.r2.cloudflarestorage.com" \
   S3_REGION="auto" \
