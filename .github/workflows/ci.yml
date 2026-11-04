@@ -348,10 +348,13 @@ jobs:
       - name: Smoke
         run: |
           set -euo pipefail
-          want="v$(cut -d. -f1 .nvmrc)."
+          # Exact match: .nvmrc pins the version every setup-node step
+          # runs, and it must equal the image's base. A base-image bump
+          # therefore has to move .nvmrc in the same PR.
+          want="v$(tr -d '[:space:]' < .nvmrc)"
           got="$(docker run --rm --entrypoint node panorama-core-api:ci --version)"
-          echo "node in image: $got (want ${want}x, from .nvmrc)"
-          case "$got" in "$want"*) ;; *) echo "::error::image Node $got does not match .nvmrc"; exit 1 ;; esac
+          echo "node in image: $got (want $want, from .nvmrc)"
+          [ "$got" = "$want" ] || { echo "::error::image Node $got does not equal .nvmrc ($want)"; exit 1; }
           # The runtime entry, the migrator entry used by compose.prod.yml,
           # and the Prisma CLI as apply-migrations.sh invokes it.
           docker run --rm --entrypoint sh -e CHECKPOINT_DISABLE=1 panorama-core-api:ci -c \

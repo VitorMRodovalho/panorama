@@ -11,7 +11,11 @@ audience.
 
 ## Prerequisites
 
-- **Node.js 24 LTS** (`.nvmrc`; `engines: ">=24.15.0"`)
+- **Node.js 24 LTS, 24.22.1 or later** (`engines: ">=24.22.1"`). That is
+  the first 24.x with the brotli decoder fix (CVE-2026-111497), and the API
+  decodes brotli request bodies. `pnpm install` refuses an older Node
+  because the workspace sets `engineStrict`. `.nvmrc` holds the exact
+  version CI and the container image run.
 - **pnpm**, the version pinned in `package.json` `packageManager`
   (`corepack enable` picks it up; no global pnpm needed)
 - **Docker + docker-compose** (the dev stack is 4 containers: Postgres,
