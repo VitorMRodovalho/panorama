@@ -11,7 +11,7 @@
   "homepage": "https://panorama.vitormr.dev",
   "packageManager": "pnpm@12.16.1",
   "engines": {
-    "node": ">=24.15.0",
+    "node": ">=24.22.1",
     "pnpm": ">=12.2.0"
   },
   "scripts": {

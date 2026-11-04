@@ -126,6 +126,8 @@ updates:
       prefix: "chore(infra)"
     ignore:
       # The Node major follows the CI matrix and `engines`, moved by hand.
+      # A base-image bump must also move .nvmrc in the same PR: the
+      # image-build job fails while the two differ.
       - dependency-name: "node"
         update-types:
           - version-update:semver-major
