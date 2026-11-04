@@ -309,8 +309,9 @@ fly secrets list --app panorama-staging | grep DATABASE_
 # state is gone.
 
 # Capture the local .env.staging if you have one:
-OLD_POOLER_URL=$(grep '^DATABASE_URL=' apps/core-api/.env.staging | cut -d= -f2-)
-OLD_DIRECT_URL=$(grep '^DATABASE_DIRECT_URL=' apps/core-api/.env.staging | cut -d= -f2-)
+# (source it in a subshell: setup-staging-env.sh single-quotes the values)
+OLD_POOLER_URL=$(set -a; . apps/core-api/.env.staging; printf '%s' "$DATABASE_URL")
+OLD_DIRECT_URL=$(set -a; . apps/core-api/.env.staging; printf '%s' "$DATABASE_DIRECT_URL")
 : "${OLD_POOLER_URL:?capture OLD before proceeding — no rollback otherwise}"
 ```
 
@@ -336,15 +337,20 @@ replica × replica count).
 
 # 3. Locally regenerate the .env.staging from the new pooler URL:
 ./scripts/setup-staging-env.sh
-# `setup-staging-env.sh` reads NEW_POOLER_URL + NEW_DIRECT_URL from
-# your shell and writes apps/core-api/.env.staging. See
+# `setup-staging-env.sh` prompts for the two URLs (paste the new ones)
+# and the CA file, and writes apps/core-api/.env.staging. See
 # scripts/setup-staging-env.sh for the exact shape.
 
-# 4. Push to Fly:
+# 4. Push to Fly. The dashboard's URLs carry no CA, and without one
+#    the API cannot connect: append the TLS parameters each client
+#    needs (setup-supabase-staging.md step 5). CA is the certificate's
+#    path inside the container. If a pasted URL already has a query
+#    string, drop its ssl* parameters and join with `&` instead of `?`.
+CA=/etc/panorama/supabase-ca.crt
 fly secrets set --app panorama-staging \
-    DATABASE_URL="$NEW_POOLER_URL" \
-    DATABASE_DIRECT_URL="$NEW_DIRECT_URL" \
-    DATABASE_PRIVILEGED_URL="$NEW_DIRECT_URL"
+    DATABASE_URL="$NEW_POOLER_URL?sslmode=verify-full&sslrootcert=$CA" \
+    DATABASE_DIRECT_URL="$NEW_DIRECT_URL?sslmode=require&sslaccept=strict&sslcert=$CA" \
+    DATABASE_PRIVILEGED_URL="$NEW_DIRECT_URL?sslmode=verify-full&sslrootcert=$CA"
 # `fly secrets set` triggers an automatic redeploy; for rolling
 # behavior add `--stage` then `fly deploy --strategy rolling`.
 

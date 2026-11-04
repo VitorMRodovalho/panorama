@@ -55,8 +55,8 @@ git checkout v0.3.0   # replace with the latest tag
 cp .env.example .env
 # Edit .env — at minimum set:
 #   POSTGRES_PASSWORD     (strong random)
-#   DATABASE_URL          (panorama_app role; sslmode=require if pointing off-host,
-#                          which verifies the certificate: see "Database connection
+#   DATABASE_URL          (panorama_app role; sslmode=verify-full if pointing off-host,
+#                          plus sslrootcert= for a private CA: see "Database connection
 #                          strings under Prisma 7" below)
 #   DATABASE_PRIVILEGED_URL (panorama_super_admin role; ADR-0015)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (the MinIO sidecar uses these as its root creds)
@@ -138,12 +138,25 @@ the release that moved to Prisma 7:
 - **TLS.** `sslmode=require` (and `prefer`, `verify-ca`) now **verify the
   server certificate and host name** (node-postgres treats them as
   `verify-full`) and log a `SECURITY WARNING` about the alias. Prisma 6
-  encrypted without verifying. If your Postgres presents a certificate
-  from a private CA (common on managed providers), trust that CA: point
-  `NODE_EXTRA_CA_CERTS` at the CA bundle, or add
-  `sslrootcert=/path/to/ca.pem` to the URL. Do not disable verification.
-  `prisma migrate deploy` (the migrator) still runs on Prisma's schema
-  engine binary, not node-postgres, so this change applies to the API.
+  encrypted without verifying. Write `sslmode=verify-full`: it means the
+  same today and keeps that meaning when node-postgres gives `require`
+  libpq's meaning (encrypt, do not verify), the change the warning
+  announces. If your Postgres presents a certificate from a private CA
+  (common on managed providers), trust that CA: add
+  `sslrootcert=/path/to/ca.crt` to the URL, or point
+  `NODE_EXTRA_CA_CERTS` at the CA bundle. Do not disable verification.
+- **Migrations read the URL differently.** `prisma migrate deploy` (the
+  migrator) runs on Prisma's schema engine, not node-postgres. The engine
+  ignores `sslrootcert`, and unless the URL says `sslaccept=strict` it
+  does not verify the certificate at all, whatever `sslmode` says
+  (measured with Prisma 7.10.1). A migration that succeeds therefore
+  proves nothing about whether the API can connect. To verify migrations
+  too, set `DATABASE_DIRECT_URL`, which the migrator prefers over
+  `DATABASE_URL`, with
+  `sslmode=require&sslaccept=strict&sslcert=/path/to/ca.crt` (here
+  `sslcert` is the CA to trust). Keep that form out of
+  `DATABASE_URL` and `DATABASE_PRIVILEGED_URL`: node-postgres and `psql`
+  read `sslcert` as a client certificate, and `psql` rejects `sslaccept`.
 - **Pool size.** `connection_limit=N` is still honoured (it sets the
   node-postgres pool size). Without it the pool holds up to 10
   connections per client (Prisma 6 derived it from the CPU count). The
@@ -156,6 +169,58 @@ the release that moved to Prisma 7:
   adapter does not cache named prepared statements, so a
   transaction-mode pooler works as is. Keep `DATABASE_DIRECT_URL` for
   migrations behind a pooler.
+
+### Supabase: trust the provider's CA
+
+Supabase's endpoints (the transaction pooler on 6543, the session
+pooler and the direct connection on 5432) present a certificate chain
+that ends in **Supabase Root 2021 CA**, which is not in Node's CA
+store. With `sslmode=require` and no CA, the API fails every
+connection with `SELF_SIGNED_CERT_IN_CHAIN`, while `prisma migrate
+deploy` succeeds because it does not verify (see above).
+
+1. Download the certificate from the Supabase dashboard: the
+   project's Database Settings → SSL Configuration. Check it before you
+   trust it:
+
+   ```bash
+   openssl x509 -in supabase-ca.crt -noout -subject -enddate -fingerprint -sha256
+   # subject=C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+   # notAfter=Apr 26 10:56:53 2031 GMT
+   # sha256 Fingerprint=80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA
+   ```
+
+2. Put the file where every process that connects can read it: the
+   API container, the migrator, and your workstation if you run
+   migrations from it. Reference it by absolute path, in a path without
+   spaces or URL special characters, in the form each client needs:
+
+   ```bash
+   DATABASE_URL='postgres://postgres.<ref>:<pwd>@<pooler-host>:6543/postgres?sslmode=verify-full&sslrootcert=/etc/panorama/supabase-ca.crt'
+   DATABASE_PRIVILEGED_URL='postgres://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres?sslmode=verify-full&sslrootcert=/etc/panorama/supabase-ca.crt'
+   DATABASE_DIRECT_URL='postgres://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres?sslmode=require&sslaccept=strict&sslcert=/etc/panorama/supabase-ca.crt'
+   ```
+
+   Quote the values in any file a shell sources: an unquoted `&` ends
+   the assignment.
+
+3. Before the first deploy, check each host and port in those URLs
+   with a handshake that sends no credentials. It stops before
+   authentication, so it is never a failed login, and Supabase can
+   close the direct port to your address after failed logins:
+
+   ```bash
+   openssl s_client -starttls postgres -connect <host>:<port> \
+     -verify_hostname <host> -verify_return_error \
+     -CAfile /etc/panorama/supabase-ca.crt </dev/null 2>&1 | grep 'Verify return code'
+   # Verify return code: 0 (ok)
+   ```
+
+   Without `-CAfile` the same command reports `self-signed certificate
+   in certificate chain`: that is what the API sees with no CA.
+
+`scripts/setup-staging-env.sh` writes `apps/core-api/.env.staging` in
+these forms and probes it with `sslmode=verify-full`.
 
 ### Postgres 16 → 17 (Compose)
 
