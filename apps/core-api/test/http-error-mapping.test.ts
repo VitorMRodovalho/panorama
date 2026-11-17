@@ -1,8 +1,11 @@
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Body, Controller, Module, Post, ValidationPipe, type INestApplication } from '@nestjs/common';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { Body, Controller, Module, Post, ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { IsString } from 'class-validator';
+import { configureBodyParsers } from '../src/bootstrap/body-parsers.js';
 import { AllExceptionsFilter } from '../src/shared/observability/all-exceptions.filter.js';
 
 /**
@@ -16,8 +19,9 @@ import { AllExceptionsFilter } from '../src/shared/observability/all-exceptions.
  * forwarded to Sentry). Since @nestjs/platform-express 12.3 the adapter
  * maps every `http-errors` 4xx to an HttpException with its own status.
  *
- * No database: a throwaway controller behind the same global pipe and
- * filter that main.ts registers.
+ * No database: a throwaway controller behind the same body parsers, global
+ * pipe and filter that main.ts registers. The parsers refuse compressed
+ * bodies (inflate: false), which body-parser answers with a 415.
  */
 
 class EchoDto {
@@ -37,12 +41,16 @@ class EchoController {
 class EchoModule {}
 
 describe('HTTP adapter error mapping through AllExceptionsFilter', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let url: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [EchoModule] }).compile();
-    app = moduleRef.createNestApplication({ logger: false });
+    app = moduleRef.createNestApplication<NestExpressApplication>({
+      logger: false,
+      bodyParser: false,
+    });
+    configureBodyParsers(app);
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
@@ -56,10 +64,13 @@ describe('HTTP adapter error mapping through AllExceptionsFilter', () => {
     if (app) await app.close();
   });
 
-  async function post(body: string): Promise<{ status: number; json: Record<string, unknown> }> {
+  async function post(
+    body: string | Uint8Array,
+    headers: Record<string, string> = {},
+  ): Promise<{ status: number; json: Record<string, unknown> }> {
     const res = await fetch(`${url}/echo`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...headers },
       body,
     });
     return { status: res.status, json: (await res.json()) as Record<string, unknown> };
@@ -85,6 +96,31 @@ describe('HTTP adapter error mapping through AllExceptionsFilter', () => {
     expect(res.json['statusCode']).toBe(413);
     expect(res.json['message']).toBe('request entity too large');
     expect(res.json).toHaveProperty('ref');
+  });
+
+  it('accepts an explicit identity encoding', async () => {
+    const res = await post(JSON.stringify({ name: 'ok' }), { 'content-encoding': 'identity' });
+    expect(res.status).toBe(201);
+  });
+
+  it.each([
+    ['gzip', gzipSync],
+    ['br', brotliCompressSync],
+  ])('refuses a %s-compressed body with a 415 instead of inflating it', async (enc, compress) => {
+    const res = await post(compress(Buffer.from(JSON.stringify({ name: 'ok' }))), {
+      'content-encoding': enc,
+    });
+    expect(res.status).toBe(415);
+    expect(res.json['statusCode']).toBe(415);
+    expect(res.json).toHaveProperty('ref');
+  });
+
+  it('refuses a compressed urlencoded body too', async () => {
+    const res = await post(gzipSync(Buffer.from('name=ok')), {
+      'content-type': 'application/x-www-form-urlencoded',
+      'content-encoding': 'gzip',
+    });
+    expect(res.status).toBe(415);
   });
 
   it('rejects a property outside the DTO with a 400', async () => {

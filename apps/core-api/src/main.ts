@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { configureBodyParsers } from './bootstrap/body-parsers.js';
 import { enableGracefulShutdown } from './bootstrap/shutdown-hooks.js';
 import { resolveTrustProxyHops } from './bootstrap/trust-proxy-hops.js';
 import { PinoLoggerService } from './shared/observability/pino-logger.service.js';
@@ -25,6 +26,8 @@ async function bootstrap(): Promise<void> {
     // observability-smoke.e2e.test.ts boots AppModule with both kinds
     // set to 'error', so a new conflict fails there before any deploy.
     routeConflictPolicy: { duplicate: 'error', shadow: 'warn' },
+    // Registered below by configureBodyParsers, with inflate: false.
+    bodyParser: false,
   });
 
   // Replace Nest's default line-formatted Logger with pino. The
@@ -58,6 +61,9 @@ async function bootstrap(): Promise<void> {
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     }),
   );
+
+  // Compressed request bodies are refused (415), never inflated.
+  configureBodyParsers(app);
 
   app.useGlobalPipes(
     new ValidationPipe({
